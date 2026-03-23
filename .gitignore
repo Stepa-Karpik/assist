@@ -1,0 +1,44 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Local planning scratch
+plan.md
+
+# Desktop build artifacts
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+desktop/release/
+desktop/.vite/
+desktop/.turbo/
+
+# Python environments
+server/.venv/
+bot/.venv/
+.venv/
+
+# Python caches
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+
+# Logs and env files
+*.log
+**/.env
+**/.env.*
+
+# Runtime user data should never live in git
+docs/user/
+runtime/
+data/
+secrets/
+
+# Database / local state
+*.sqlite
+*.sqlite3
+*.db
+
