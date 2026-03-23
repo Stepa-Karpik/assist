@@ -11,6 +11,8 @@ const config: ForgeConfig = {
       platforms: ["win32"],
       config: {
         name: "karpik",
+        authors: "Stepa Karpik",
+        owners: "Stepa Karpik",
         setupExe: "KarpikSetup.exe"
       }
     },
