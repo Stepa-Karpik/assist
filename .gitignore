@@ -27,6 +27,7 @@ bot/.venv/
 **/.pytest_cache/
 **/*.egg-info/
 **/*.pyc
+**/pytest-cache-files-*/
 server/.tmp/
 server/pytest-cache-files-*/
 
