@@ -1,3 +1,14 @@
+import { useState } from "react";
+
+import { Sidebar, type NavigationItem } from "./layout/Sidebar";
+import { BlockedTasksPage } from "./pages/BlockedTasksPage";
+import { ChatsPage } from "./pages/ChatsPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
+import { LogsPage } from "./pages/LogsPage";
+import { ServicesPage } from "./pages/ServicesPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { TelegramChatsPage } from "./pages/TelegramChatsPage";
+
 function ProgressBar() {
   return (
     <div className="progress-shell" aria-label="Global progress">
@@ -40,16 +51,34 @@ function QuickPopupView() {
   );
 }
 
-function MainShell() {
+const navigationItems: NavigationItem[] = [
+  { id: "chats", label: "Чаты" },
+  { id: "telegram", label: "Чаты Telegram" },
+  { id: "blocked", label: "Невыполненное" },
+  { id: "knowledge", label: "Knowledge / Review" },
+  { id: "logs", label: "Логи" },
+  { id: "services", label: "Сервисы" },
+  { id: "settings", label: "Настройки" }
+];
+
+function MainWindowView() {
+  const [activeSection, setActiveSection] = useState<NavigationItem["id"]>("chats");
+
   return (
-    <main className="app-shell">
-      <section className="hero-panel">
-        <p className="eyebrow">Karpik</p>
-        <h1>Desktop Shell Bootstrap</h1>
-        <p className="muted-text">
-          Main window, tray bootstrap, and runtime path setup are ready. The full navigation
-          structure will be added next.
-        </p>
+    <main className="desktop-layout">
+      <Sidebar
+        activeSection={activeSection}
+        items={navigationItems}
+        onSelect={setActiveSection}
+      />
+      <section className="content-panel">
+        {activeSection === "chats" && <ChatsPage />}
+        {activeSection === "telegram" && <TelegramChatsPage />}
+        {activeSection === "blocked" && <BlockedTasksPage />}
+        {activeSection === "knowledge" && <KnowledgePage />}
+        {activeSection === "logs" && <LogsPage />}
+        {activeSection === "services" && <ServicesPage />}
+        {activeSection === "settings" && <SettingsPage />}
       </section>
     </main>
   );
@@ -62,5 +91,5 @@ export default function App() {
     return <QuickPopupView />;
   }
 
-  return <MainShell />;
+  return <MainWindowView />;
 }
