@@ -1,6 +1,7 @@
 import started from "electron-squirrel-startup";
 import { app, BrowserWindow, nativeTheme, Tray } from "electron";
 
+import { ensureRuntimeFolders } from "./bootstrapFolders";
 import { getDataRoot } from "./dataRoot";
 import { createAppTray } from "./tray";
 import { createMainWindow, createQuickPopupWindow } from "./windows";
@@ -15,7 +16,7 @@ if (started) {
 
 async function bootstrap() {
   nativeTheme.themeSource = "system";
-  getDataRoot();
+  ensureRuntimeFolders(getDataRoot());
 
   mainWindow = createMainWindow();
   quickPopup = createQuickPopupWindow(mainWindow);
