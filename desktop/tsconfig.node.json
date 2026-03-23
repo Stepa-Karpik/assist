@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "forge.config.ts",
+    "vite.*.config.ts",
+    "src/main",
+    "src/preload"
+  ]
+}
