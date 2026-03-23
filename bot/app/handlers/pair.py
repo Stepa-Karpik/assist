@@ -1,6 +1,15 @@
 import re
+from typing import Protocol
+
+from app.pairing_client import PairAttemptStatus
 
 PAIR_COMMAND_PATTERN = re.compile(r"^/pair(?:@\w+)?\s+([A-Za-z0-9_-]+)\s*$")
+
+
+class SupportsPairAttempt(Protocol):
+    def submit_pair_attempt(
+        self, telegram_user_id: int, chat_id: int, code: str
+    ) -> PairAttemptStatus: ...
 
 
 def parse_pair_command(text: str) -> str | None:
@@ -12,9 +21,32 @@ def parse_pair_command(text: str) -> str | None:
     return match.group(1)
 
 
-def get_pair_success_text(code: str) -> str:
-    return f"Pairing code received: {code}. Verification flow will be added next."
+def get_pair_success_text() -> str:
+    return "Устройство привязано"
 
 
 def get_pair_failure_text() -> str:
-    return "Send /pair <code> to start device pairing."
+    return "Код недействителен"
+
+
+def resolve_pair_command(
+    text: str,
+    *,
+    telegram_user_id: int,
+    chat_id: int,
+    pairing_client: SupportsPairAttempt,
+) -> str | None:
+    code = parse_pair_command(text)
+
+    if code is None:
+        return get_pair_failure_text()
+
+    result = pairing_client.submit_pair_attempt(telegram_user_id, chat_id, code)
+
+    if result == "paired":
+        return get_pair_success_text()
+
+    if result == "invalid_code":
+        return get_pair_failure_text()
+
+    return None

@@ -1,2 +1,2 @@
 def get_start_text() -> str:
-    return "Karpik bot is online. Use /pair <code> to connect this Telegram account."
+    return "Karpik бот онлайн. Открой pairing на ПК и отправь /pair <code>."
