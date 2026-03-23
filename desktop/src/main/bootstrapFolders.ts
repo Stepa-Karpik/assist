@@ -10,6 +10,7 @@ type RuntimeFolderMap = {
   userServices: string;
   userWebsites: string;
   userDocs: string;
+  state: string;
   secrets: string;
 };
 
@@ -25,6 +26,7 @@ export function getRuntimeFolderMap(root: string): RuntimeFolderMap {
     userServices: path.join(userRoot, "services"),
     userWebsites: path.join(userRoot, "websites"),
     userDocs: path.join(userRoot, "docs"),
+    state: path.join(root, "state"),
     secrets: path.join(root, "secrets")
   };
 }
