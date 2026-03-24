@@ -210,4 +210,41 @@ describe("LocalChatStore", () => {
       ]
     });
   });
+
+  it("persists screenshot message artifacts", () => {
+    const stateRoot = createStateRoot();
+    const firstStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-24T12:30:00.000Z"),
+      generateChatId: () => "local-chat-5"
+    });
+    const chat = firstStore.createDesktopChat({
+      title: "Artifact chat"
+    });
+    firstStore.appendMessage(chat.chatId, {
+      role: "assistant",
+      text: "Screenshot captured.",
+      artifact: {
+        kind: "image_base64",
+        mimeType: "image/png",
+        fileName: "desktop-local.png",
+        contentBase64: "aGVsbG8="
+      }
+    });
+
+    const secondStore = new LocalChatStore({
+      stateRoot
+    });
+
+    expect(secondStore.getChat("local-chat-5")?.messages[0]).toEqual({
+      messageId: expect.any(String),
+      role: "assistant",
+      text: "Screenshot captured.",
+      createdAt: "2026-03-24T12:30:00.000Z",
+      artifactKind: "image_base64",
+      artifactMimeType: "image/png",
+      artifactFileName: "desktop-local.png",
+      artifactBase64: "aGVsbG8="
+    });
+  });
 });

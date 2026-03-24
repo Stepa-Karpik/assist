@@ -8,6 +8,18 @@ type LocalChatDetail = NonNullable<
   Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalChatDetail"]>>
 >;
 
+function buildArtifactDataUrl(message: LocalChatDetail["messages"][number]): string | null {
+  if (
+    message.artifactKind !== "image_base64" ||
+    !message.artifactMimeType ||
+    !message.artifactBase64
+  ) {
+    return null;
+  }
+
+  return `data:${message.artifactMimeType};base64,${message.artifactBase64}`;
+}
+
 type ChatsPageProps = {
   selectedChatId?: string | null;
   onSelectChat?: (chatId: string | null) => void;
@@ -294,6 +306,17 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
                       <span className="task-status">{message.createdAt}</span>
                     </div>
                     <p>{message.text}</p>
+                    {buildArtifactDataUrl(message) !== null ? (
+                      <figure>
+                        <img
+                          alt={message.artifactFileName ?? "local-artifact"}
+                          src={buildArtifactDataUrl(message) ?? undefined}
+                        />
+                        {message.artifactFileName ? (
+                          <figcaption className="muted-text">{message.artifactFileName}</figcaption>
+                        ) : null}
+                      </figure>
+                    ) : null}
                   </article>
                 ))}
               </div>

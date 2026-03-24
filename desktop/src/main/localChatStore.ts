@@ -14,11 +14,17 @@ export type LocalChatRecord = {
   workspaceId: string | null;
 };
 
+export type LocalChatMessageArtifactKind = "image_base64";
+
 export type LocalChatMessage = {
   messageId: string;
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  artifactKind?: LocalChatMessageArtifactKind;
+  artifactMimeType?: string | null;
+  artifactFileName?: string | null;
+  artifactBase64?: string | null;
 };
 
 export type LocalChatDetail = LocalChatRecord & {
@@ -45,6 +51,12 @@ type CreateContinuationChatInput = {
 type AppendMessageInput = {
   role: LocalChatMessage["role"];
   text: string;
+  artifact?: {
+    kind: LocalChatMessageArtifactKind;
+    mimeType: string;
+    fileName: string;
+    contentBase64: string;
+  };
 };
 
 type PersistedLocalChatRecord = Partial<LocalChatDetail>;
@@ -74,6 +86,24 @@ function cloneDetail(chat: LocalChatDetail): LocalChatDetail {
   };
 }
 
+function normalizeArtifactFields(value: Partial<LocalChatMessage> | undefined) {
+  if (
+    value?.artifactKind === "image_base64" &&
+    typeof value.artifactMimeType === "string" &&
+    typeof value.artifactFileName === "string" &&
+    typeof value.artifactBase64 === "string"
+  ) {
+    return {
+      artifactKind: value.artifactKind,
+      artifactMimeType: value.artifactMimeType,
+      artifactFileName: value.artifactFileName,
+      artifactBase64: value.artifactBase64
+    };
+  }
+
+  return {};
+}
+
 function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalChatMessage | null {
   if (value?.text === undefined || typeof value.text !== "string") {
     return null;
@@ -93,7 +123,8 @@ function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalCh
     createdAt:
       typeof value.createdAt === "string" && value.createdAt.length > 0
         ? value.createdAt
-        : new Date(0).toISOString()
+        : new Date(0).toISOString(),
+    ...normalizeArtifactFields(value)
   };
 }
 
@@ -218,7 +249,11 @@ export class LocalChatStore {
       messageId: crypto.randomUUID(),
       role: input.role,
       text: input.text,
-      createdAt: this.now().toISOString()
+      createdAt: this.now().toISOString(),
+      artifactKind: input.artifact?.kind,
+      artifactMimeType: input.artifact?.mimeType,
+      artifactFileName: input.artifact?.fileName,
+      artifactBase64: input.artifact?.contentBase64
     };
     const nextChat: LocalChatDetail = {
       ...chat,

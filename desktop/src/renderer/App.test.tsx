@@ -21,6 +21,10 @@ type LocalChatMessageItem = {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  artifactKind?: "image_base64";
+  artifactMimeType?: string | null;
+  artifactFileName?: string | null;
+  artifactBase64?: string | null;
 };
 
 type LocalChatDetail = LocalChatItem & {
@@ -878,6 +882,39 @@ describe("App navigation", () => {
       text: "status"
     });
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("renders screenshot artifacts in local chat messages", async () => {
+    localChatsState = [
+      {
+        chatId: "local-chat-11",
+        source: "desktop_chat",
+        title: "Artifacts chat",
+        createdAt: "2026-03-24T12:00:00.000Z",
+        updatedAt: "2026-03-24T12:00:00.000Z",
+        messageCount: 1,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: null,
+        messages: [
+          {
+            messageId: "message-artifact-1",
+            role: "assistant",
+            text: "Screenshot captured.",
+            createdAt: "2026-03-24T12:00:00.000Z",
+            artifactKind: "image_base64",
+            artifactMimeType: "image/png",
+            artifactFileName: "desktop-local.png",
+            artifactBase64: "aGVsbG8="
+          }
+        ]
+      }
+    ];
+
+    render(<App />);
+
+    const image = await screen.findByRole("img", { name: "desktop-local.png" });
+    expect(image).toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
   });
 
   it("routes a quick popup request into the selected local chat", async () => {

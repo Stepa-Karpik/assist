@@ -87,7 +87,8 @@ export function createLocalChatRuntime({
         });
         return chatStore.appendMessage(chatId, {
           role: "assistant",
-          text: executionResult.resultText
+          text: executionResult.resultText,
+          artifact: executionResult.artifact
         });
       }
 

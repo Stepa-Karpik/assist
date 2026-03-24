@@ -135,4 +135,45 @@ describe("createLocalChatRuntime", () => {
       "system:Waiting for local review. Files: README.md"
     ]);
   });
+
+  it("stores screenshot artifacts in the assistant message", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-24T13:15:00.000Z"),
+      generateChatId: () => "local-chat-4"
+    });
+    chatStore.createDesktopChat({
+      title: "Screenshot chat"
+    });
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      executeTask: async () => ({
+        ok: true as const,
+        resultText: "Screenshot captured.",
+        artifact: {
+          kind: "image_base64",
+          mimeType: "image/png",
+          fileName: "desktop-local.png",
+          contentBase64: "aGVsbG8="
+        }
+      }),
+      generateTaskId: () => "local-task-4"
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-4",
+      text: "screenshot"
+    });
+
+    expect(detail.messages[1]).toEqual(
+      expect.objectContaining({
+        role: "assistant",
+        text: "Screenshot captured.",
+        artifactKind: "image_base64",
+        artifactMimeType: "image/png",
+        artifactFileName: "desktop-local.png",
+        artifactBase64: "aGVsbG8="
+      })
+    );
+  });
 });

@@ -86,6 +86,10 @@ type LocalChatMessageItem = {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  artifactKind?: "image_base64";
+  artifactMimeType?: string | null;
+  artifactFileName?: string | null;
+  artifactBase64?: string | null;
 };
 
 type LocalChatDetail = LocalChatItem & {
