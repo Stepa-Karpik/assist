@@ -804,6 +804,53 @@ describe("App navigation", () => {
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
   });
 
+  it("creates a new local chat from the quick popup header", async () => {
+    window.karpik = {
+      ...window.karpik!,
+      view: "quick-popup"
+    };
+    getQuickAccessState
+      .mockResolvedValueOnce({
+        targetChat: {
+          chatId: "local-chat-10",
+          source: "desktop_chat",
+          title: "Execution chat",
+          createdAt: "2026-03-24T12:00:00.000Z",
+          updatedAt: "2026-03-24T12:00:00.000Z",
+          messageCount: 1,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: "assist-repo"
+        },
+        localChatCount: 1,
+        recentActivity: []
+      })
+      .mockResolvedValueOnce({
+        targetChat: {
+          chatId: "local-chat-1",
+          source: "desktop_chat",
+          title: "РќРѕРІС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚",
+          createdAt: "2026-03-24T12:30:00.000Z",
+          updatedAt: "2026-03-24T12:30:00.000Z",
+          messageCount: 0,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: null
+        },
+        localChatCount: 2,
+        recentActivity: []
+      });
+
+    render(<App />);
+
+    expect(await screen.findByText("Execution chat")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "New local chat" }));
+
+    expect(createDesktopChat).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("РќРѕРІС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚")).toBeInTheDocument();
+    expect(await screen.findByText("Local chats: 2")).toBeInTheDocument();
+  });
+
   it("shows runtime activity entries in the logs page", async () => {
     getActivityLog.mockResolvedValueOnce([
       {

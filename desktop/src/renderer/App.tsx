@@ -154,6 +154,25 @@ function QuickPopupView() {
     }
   }
 
+  async function handleCreateDesktopChat() {
+    if (!window.karpik?.createDesktopChat) {
+      setError("Local chat API РЅРµРґРѕСЃС‚СѓРїРµРЅ РІ СЌС‚РѕРј РѕРєСЂСѓР¶РµРЅРёРё.");
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await window.karpik.createDesktopChat();
+      const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
+      setQuickState(nextState ?? emptyQuickAccessState);
+      setResponseText(null);
+      setRequestText("");
+    } catch {
+      setError("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚.");
+    }
+  }
+
   return (
     <main className="quick-popup">
       <div className="quick-header">
@@ -161,7 +180,14 @@ function QuickPopupView() {
           <p className="eyebrow">Karpik</p>
           <h1>Quick Access</h1>
         </div>
-        <button className="ghost-button" type="button">
+        <button
+          aria-label="New local chat"
+          className="ghost-button"
+          onClick={() => {
+            void handleCreateDesktopChat();
+          }}
+          type="button"
+        >
           +
         </button>
       </div>
