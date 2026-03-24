@@ -82,7 +82,9 @@ describe("syncClient pairing api", () => {
     });
     await client.fetchTaskHistory();
     await client.startTask("task-1");
-    await client.completeTask("task-1", "desktop-local is online");
+    await client.completeTask("task-1", {
+      resultText: "desktop-local is online"
+    });
     await client.failTask("task-2", "Unsupported task intent.");
 
     expect(fetchImpl).toHaveBeenNthCalledWith(

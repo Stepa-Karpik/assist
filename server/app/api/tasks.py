@@ -175,7 +175,9 @@ def complete_task(
     payload: TaskCompleteRequest,
     request: Request,
 ) -> TaskRecord:
-    task = request.app.state.task_store.complete_task(task_id, payload.result_text)
+    task = request.app.state.task_store.complete_task(
+        task_id, payload.result_text, payload.artifact
+    )
 
     if task is None:
         raise HTTPException(

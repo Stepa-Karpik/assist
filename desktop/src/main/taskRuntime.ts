@@ -1,6 +1,7 @@
 import type { RemoteTaskRecord, TaskListResponse } from "./syncClient";
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
 import type { TaskExecutionResult } from "./taskExecutor";
+import type { TaskResultArtifact } from "./syncClient";
 
 type TaskSyncClient = {
   fetchTaskHistory: () => Promise<Response>;
@@ -8,7 +9,10 @@ type TaskSyncClient = {
   startTask: (taskId: string) => Promise<Response>;
   awaitLocalApproval: (taskId: string, resultText: string) => Promise<Response>;
   blockTask: (taskId: string, errorText: string) => Promise<Response>;
-  completeTask: (taskId: string, resultText: string) => Promise<Response>;
+  completeTask: (
+    taskId: string,
+    payload: { resultText: string; artifact?: TaskResultArtifact }
+  ) => Promise<Response>;
   failTask: (taskId: string, errorText: string) => Promise<Response>;
 };
 
@@ -79,7 +83,10 @@ export async function runTaskSyncCycle({
     }
 
     if (executionResult.ok) {
-      await client.completeTask(task.task_id, executionResult.resultText);
+      await client.completeTask(task.task_id, {
+        resultText: executionResult.resultText,
+        artifact: executionResult.artifact
+      });
       continue;
     }
 

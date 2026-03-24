@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 
 DeliveryKind = Literal["task_done", "task_failed"]
 DeliveryStatus = Literal["pending", "delivered"]
+DeliveryArtifactKind = Literal["image_base64"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +25,10 @@ class DeliveryEvent:
     error_text: str | None
     status: DeliveryStatus
     created_at: str
+    artifact_kind: DeliveryArtifactKind | None = None
+    artifact_mime_type: str | None = None
+    artifact_file_name: str | None = None
+    artifact_base64: str | None = None
 
 
 def parse_delivery_event(value: object) -> DeliveryEvent | None:
@@ -60,6 +65,13 @@ def parse_delivery_event(value: object) -> DeliveryEvent | None:
 
     result_text = value.get("result_text")
     error_text = value.get("error_text")
+    artifact_kind = value.get("artifact_kind")
+    artifact_mime_type = value.get("artifact_mime_type")
+    artifact_file_name = value.get("artifact_file_name")
+    artifact_base64 = value.get("artifact_base64")
+
+    if artifact_kind is not None and artifact_kind != "image_base64":
+        return None
 
     return DeliveryEvent(
         event_id=required_strings["event_id"],
@@ -71,6 +83,10 @@ def parse_delivery_event(value: object) -> DeliveryEvent | None:
         intent=required_strings["intent"],
         result_text=result_text if isinstance(result_text, str) else None,
         error_text=error_text if isinstance(error_text, str) else None,
+        artifact_kind=artifact_kind if isinstance(artifact_kind, str) else None,
+        artifact_mime_type=artifact_mime_type if isinstance(artifact_mime_type, str) else None,
+        artifact_file_name=artifact_file_name if isinstance(artifact_file_name, str) else None,
+        artifact_base64=artifact_base64 if isinstance(artifact_base64, str) else None,
         status=status,
         created_at=required_strings["created_at"],
     )

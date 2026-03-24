@@ -1,9 +1,10 @@
 import asyncio
+import base64
 from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 
 from app.config import Settings, get_settings
 from app.delivery import run_delivery_poll_loop
@@ -167,6 +168,14 @@ async def main() -> None:
         run_delivery_poll_loop(
             client=delivery_client,
             send_message=lambda chat_id, text: bot.send_message(chat_id, text),
+            send_photo=lambda chat_id, caption, event: bot.send_photo(
+                chat_id,
+                BufferedInputFile(
+                    base64.b64decode(event.artifact_base64 or ""),
+                    filename=event.artifact_file_name or "artifact.png",
+                ),
+                caption=caption,
+            ),
             poll_interval_seconds=settings.delivery_poll_seconds,
         )
     )

@@ -1,6 +1,12 @@
 from datetime import UTC, datetime
 
-from app.models.task import RequiredAuth, TaskCreateRequest, TaskRecord, TaskStatus
+from app.models.task import (
+    RequiredAuth,
+    TaskArtifact,
+    TaskCreateRequest,
+    TaskRecord,
+    TaskStatus,
+)
 from app.services.state_backend import JsonStateBackend
 
 
@@ -91,7 +97,9 @@ class InMemoryTaskStore:
         self._persist()
         return task
 
-    def complete_task(self, task_id: str, result_text: str) -> TaskRecord | None:
+    def complete_task(
+        self, task_id: str, result_text: str, artifact: TaskArtifact | None = None
+    ) -> TaskRecord | None:
         task = self.get_task(task_id)
 
         if task is None or task.status not in {"running", "awaiting_local_approval"}:
@@ -101,6 +109,10 @@ class InMemoryTaskStore:
         task.finished_at = datetime.now(UTC)
         task.result_text = result_text
         task.error_text = None
+        task.artifact_kind = artifact.kind if artifact is not None else None
+        task.artifact_mime_type = artifact.mime_type if artifact is not None else None
+        task.artifact_file_name = artifact.file_name if artifact is not None else None
+        task.artifact_base64 = artifact.content_base64 if artifact is not None else None
         self._persist()
         return task
 
@@ -114,6 +126,10 @@ class InMemoryTaskStore:
         task.finished_at = datetime.now(UTC)
         task.result_text = None
         task.error_text = error_text
+        task.artifact_kind = None
+        task.artifact_mime_type = None
+        task.artifact_file_name = None
+        task.artifact_base64 = None
         self._persist()
         return task
 
@@ -127,6 +143,10 @@ class InMemoryTaskStore:
         task.result_text = result_text
         task.error_text = None
         task.finished_at = None
+        task.artifact_kind = None
+        task.artifact_mime_type = None
+        task.artifact_file_name = None
+        task.artifact_base64 = None
         self._persist()
         return task
 
@@ -140,6 +160,10 @@ class InMemoryTaskStore:
         task.finished_at = datetime.now(UTC)
         task.result_text = None
         task.error_text = error_text
+        task.artifact_kind = None
+        task.artifact_mime_type = None
+        task.artifact_file_name = None
+        task.artifact_base64 = None
         self._persist()
         return task
 

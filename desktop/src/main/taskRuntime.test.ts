@@ -82,7 +82,10 @@ describe("runTaskSyncCycle", () => {
       intent: "status",
       status: "queued"
     });
-    expect(completeTask).toHaveBeenCalledWith("task-1", "desktop-local is online");
+    expect(completeTask).toHaveBeenCalledWith("task-1", {
+      resultText: "desktop-local is online",
+      artifact: undefined
+    });
     expect(failTask).not.toHaveBeenCalled();
     expect(awaitLocalApproval).not.toHaveBeenCalled();
     expect(blockTask).not.toHaveBeenCalled();

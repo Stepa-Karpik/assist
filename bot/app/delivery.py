@@ -15,22 +15,35 @@ class SupportsDeliveryClient(Protocol):
 
 
 def render_delivery_text(event: DeliveryEvent) -> str:
-    title = "Готово" if event.kind == "task_done" else "Ошибка"
+    title = "Р“РѕС‚РѕРІРѕ" if event.kind == "task_done" else "РћС€РёР±РєР°"
     details = event.result_text if event.kind == "task_done" else event.error_text
-    resolved_details = details or ("Готово." if event.kind == "task_done" else "Без деталей.")
+    resolved_details = details or ("Р“РѕС‚РѕРІРѕ." if event.kind == "task_done" else "Р‘РµР· РґРµС‚Р°Р»РµР№.")
     return f"{title}: {event.task_id}\n{event.intent}\n\n{resolved_details}"
+
+
+def has_image_artifact(event: DeliveryEvent) -> bool:
+    return (
+        event.artifact_kind == "image_base64"
+        and isinstance(event.artifact_mime_type, str)
+        and event.artifact_mime_type.startswith("image/")
+        and isinstance(event.artifact_base64, str)
+    )
 
 
 def deliver_outbox_cycle(
     *,
     client: SupportsDeliveryClient,
     send_message: Callable[[int, str], None],
+    send_photo: Callable[[int, str, DeliveryEvent], None] | None = None,
 ) -> None:
     for event in client.fetch_pending_events():
         text = render_delivery_text(event)
 
         try:
-            send_message(event.chat_id, text)
+            if has_image_artifact(event) and send_photo is not None:
+                send_photo(event.chat_id, text, event)
+            else:
+                send_message(event.chat_id, text)
         except Exception:
             continue
 
@@ -41,6 +54,8 @@ async def run_delivery_poll_loop(
     *,
     client: DeliveryServerClient,
     send_message: Callable[[int, str], asyncio.Future[None] | asyncio.Task[None] | object],
+    send_photo: Callable[[int, str, DeliveryEvent], asyncio.Future[None] | asyncio.Task[None] | object]
+    | None = None,
     poll_interval_seconds: float,
 ) -> None:
     while True:
@@ -48,7 +63,12 @@ async def run_delivery_poll_loop(
 
         for event in events:
             try:
-                await send_message(event.chat_id, render_delivery_text(event))
+                text = render_delivery_text(event)
+
+                if has_image_artifact(event) and send_photo is not None:
+                    await send_photo(event.chat_id, text, event)
+                else:
+                    await send_message(event.chat_id, text)
             except Exception:
                 continue
 

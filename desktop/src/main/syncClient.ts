@@ -34,8 +34,19 @@ export type RemoteTaskRecord = {
   finished_at?: string | null;
   result_text?: string | null;
   error_text?: string | null;
+  artifact_kind?: "image_base64" | null;
+  artifact_mime_type?: string | null;
+  artifact_file_name?: string | null;
+  artifact_base64?: string | null;
   attempt_count?: number;
   created_at?: string;
+};
+
+export type TaskResultArtifact = {
+  kind: "image_base64";
+  mimeType: string;
+  fileName: string;
+  contentBase64: string;
 };
 
 export type QueuePollPayload = {
@@ -224,14 +235,23 @@ export function createSyncClient({
       });
     },
 
-    completeTask(taskId: string, resultText: string) {
+    completeTask(taskId: string, payload: { resultText: string; artifact?: TaskResultArtifact }) {
       return fetchImpl(`${baseUrl}/api/tasks/${taskId}/complete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          result_text: resultText
+          result_text: payload.resultText,
+          artifact:
+            payload.artifact === undefined
+              ? undefined
+              : {
+                  kind: payload.artifact.kind,
+                  mime_type: payload.artifact.mimeType,
+                  file_name: payload.artifact.fileName,
+                  content_base64: payload.artifact.contentBase64
+                }
         })
       });
     },

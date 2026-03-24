@@ -8,6 +8,8 @@ import {
   type CodexWritePreviewDraft,
   type CodexWritePreviewResult
 } from "./codexWritePreview";
+import { createScreenshotCapture, type CapturedScreenshot } from "./screenshotCapture";
+import type { TaskResultArtifact } from "./syncClient";
 
 export type ExecutableTask = {
   task_id: string;
@@ -20,6 +22,7 @@ export type TaskExecutionResult =
   | {
       ok: true;
       resultText: string;
+      artifact?: TaskResultArtifact;
       requiresLocalApproval?: false;
     }
   | {
@@ -45,6 +48,7 @@ type TaskExecutorOptions = {
     prompt: string;
     workspaceRoot: string;
   }) => Promise<CodexWritePreviewResult>;
+  captureScreenshot?: () => Promise<CapturedScreenshot>;
   maxResultLength?: number;
 };
 
@@ -84,6 +88,7 @@ export function createTaskExecutor({
     stateRoot: path.join(os.tmpdir(), "karpik-codex-previews"),
     runCodex
   }).generatePreview,
+  captureScreenshot = createScreenshotCapture(deviceId),
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
@@ -109,6 +114,31 @@ export function createTaskExecutor({
           ok: true,
           resultText: `${deviceId} is online`
         };
+      }
+
+      if (/^screenshot(?:\s+.+)?$/i.test(normalizedIntent)) {
+        try {
+          const screenshot = await captureScreenshot();
+
+          return {
+            ok: true,
+            resultText: "Screenshot captured.",
+            artifact: {
+              kind: "image_base64",
+              mimeType: screenshot.mimeType,
+              fileName: screenshot.fileName,
+              contentBase64: screenshot.contentBase64
+            }
+          };
+        } catch (error: unknown) {
+          return {
+            ok: false,
+            errorText:
+              error instanceof Error && error.message
+                ? error.message
+                : "Unable to capture screenshot."
+          };
+        }
       }
 
       const codexWriteMatch = /^codex-write(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);

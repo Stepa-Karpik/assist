@@ -445,7 +445,9 @@ function registerIpcHandlers() {
     }
 
     const result = await localApprovalStore.approve(taskId);
-    const response = await syncClient.completeTask(taskId, result.resultText);
+    const response = await syncClient.completeTask(taskId, {
+      resultText: result.resultText
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to complete task after local approval: ${response.status}`);

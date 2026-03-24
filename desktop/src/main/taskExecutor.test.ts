@@ -365,6 +365,36 @@ describe("createTaskExecutor", () => {
     });
   });
 
+  it("captures a screenshot artifact for the screenshot intent", async () => {
+    const captureScreenshot = vi.fn(async () => ({
+      mimeType: "image/png",
+      fileName: "desktop-local-2026-03-24T13-00-00Z.png",
+      contentBase64: "c2NyZWVuc2hvdA=="
+    }));
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      captureScreenshot
+    });
+
+    const result = await executor.execute({
+      task_id: "task-4",
+      intent: "screenshot"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Screenshot captured.",
+      artifact: {
+        kind: "image_base64",
+        mimeType: "image/png",
+        fileName: "desktop-local-2026-03-24T13-00-00Z.png",
+        contentBase64: "c2NyZWVuc2hvdA=="
+      }
+    });
+    expect(captureScreenshot).toHaveBeenCalledTimes(1);
+  });
+
   it("fails unsupported task intents explicitly", async () => {
     const executor = createTaskExecutor({
       deviceId: "desktop-local",
@@ -372,8 +402,8 @@ describe("createTaskExecutor", () => {
     });
 
     const result = await executor.execute({
-      task_id: "task-4",
-      intent: "screenshot primary"
+      task_id: "task-unsupported",
+      intent: "run powershell Get-ChildItem"
     });
 
     expect(result).toEqual({

@@ -35,6 +35,10 @@ class InMemoryDeliveryStore:
             intent=task.intent,
             result_text=task.result_text,
             error_text=task.error_text,
+            artifact_kind=task.artifact_kind,
+            artifact_mime_type=task.artifact_mime_type,
+            artifact_file_name=task.artifact_file_name,
+            artifact_base64=task.artifact_base64,
         )
 
         with self._lock:

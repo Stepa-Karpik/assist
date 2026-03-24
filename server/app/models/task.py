@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 TaskSource = Literal["desktop", "telegram"]
 TaskRisk = Literal["low", "medium", "high"]
 RequiredAuth = Literal["none", "password", "password_and_totp", "local_only"]
+TaskArtifactKind = Literal["image_base64"]
 TaskStatus = Literal[
     "queued",
     "awaiting_auth",
@@ -30,6 +31,13 @@ class TaskCreateRequest(BaseModel):
     chat_id: int | None = None
 
 
+class TaskArtifact(BaseModel):
+    kind: TaskArtifactKind
+    mime_type: str
+    file_name: str
+    content_base64: str
+
+
 class TaskRecord(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid4()))
     device_id: str
@@ -45,6 +53,10 @@ class TaskRecord(BaseModel):
     finished_at: datetime | None = None
     result_text: str | None = None
     error_text: str | None = None
+    artifact_kind: TaskArtifactKind | None = None
+    artifact_mime_type: str | None = None
+    artifact_file_name: str | None = None
+    artifact_base64: str | None = None
     attempt_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -64,6 +76,7 @@ class TaskListResponse(BaseModel):
 
 class TaskCompleteRequest(BaseModel):
     result_text: str
+    artifact: TaskArtifact | None = None
 
 
 class TaskAwaitingLocalApprovalRequest(BaseModel):

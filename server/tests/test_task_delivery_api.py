@@ -162,3 +162,30 @@ def test_acknowledging_delivery_event_removes_it_from_pending_list() -> None:
     assert ack_response.json()["status"] == "delivered"
     assert ack_response.json()["event_id"] == event_id
     assert after_response.json()["items"] == []
+
+
+def test_completing_task_with_image_artifact_keeps_delivery_payload() -> None:
+    task_id = create_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={
+            "result_text": "Screenshot captured.",
+            "artifact": {
+                "kind": "image_base64",
+                "mime_type": "image/png",
+                "file_name": "screen.png",
+                "content_base64": "c2NyZWVuc2hvdA==",
+            },
+        },
+    )
+
+    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["artifact_kind"] == "image_base64"
+    assert response.json()["items"][0]["artifact_mime_type"] == "image/png"
+    assert response.json()["items"][0]["artifact_file_name"] == "screen.png"
+    assert response.json()["items"][0]["artifact_base64"] == "c2NyZWVuc2hvdA=="

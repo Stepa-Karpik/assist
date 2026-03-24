@@ -20,6 +20,9 @@ def get_minimum_risk(intent: str) -> TaskRisk:
     if normalized.startswith("write-note "):
         return "medium"
 
+    if normalized == "screenshot" or normalized.startswith("screenshot "):
+        return "high"
+
     return "high"
 
 
