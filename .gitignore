@@ -47,3 +47,4 @@ secrets/
 *.sqlite
 *.sqlite3
 *.db
+infra/backups/

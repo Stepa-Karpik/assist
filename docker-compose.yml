@@ -47,7 +47,7 @@ services:
       server:
         condition: service_healthy
     environment:
-      KARPIK_TELEGRAM_TOKEN: ${KARPIK_TELEGRAM_TOKEN}
+      KARPIK_TELEGRAM_TOKEN: ${KARPIK_TELEGRAM_TOKEN:-}
       KARPIK_BOT_NAME: ${KARPIK_BOT_NAME:-Karpik}
       KARPIK_SERVER_URL: http://server:8000
       KARPIK_DEVICE_ID: ${KARPIK_DEVICE_ID:-desktop-local}

@@ -53,3 +53,9 @@ Typical commands:
 - optional desktop update feed published under
   `https://<host>/desktop-updates/win32/x64`
 - optional Docker stack via `docker compose up -d --build`
+- Docker smoke check via
+  `powershell -ExecutionPolicy Bypass -File infra/scripts/server-smoke.ps1`
+- PostgreSQL backup via
+  `powershell -ExecutionPolicy Bypass -File infra/scripts/postgres-backup.ps1`
+- PostgreSQL restore via
+  `powershell -ExecutionPolicy Bypass -File infra/scripts/postgres-restore.ps1 -BackupFile <path-to-dump>`

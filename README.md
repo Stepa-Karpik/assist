@@ -33,6 +33,9 @@ Operational entry points:
 
 - one-command server stack: `docker compose up -d --build`
 - full stack with Telegram bot: `docker compose --profile telegram up -d --build`
+- Docker smoke check: `powershell -ExecutionPolicy Bypass -File infra/scripts/server-smoke.ps1`
+- PostgreSQL backup: `powershell -ExecutionPolicy Bypass -File infra/scripts/postgres-backup.ps1`
+- PostgreSQL restore: `powershell -ExecutionPolicy Bypass -File infra/scripts/postgres-restore.ps1 -BackupFile <path>`
 - published health checks: `GET /health` and `GET /api/health`
 - desktop install: `docs/runbooks/desktop-install.md`
 - desktop release and update feed publication: `docs/runbooks/desktop-release.md`
