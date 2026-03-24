@@ -137,6 +137,36 @@ def test_unknown_intent_escalates_low_to_high_and_requires_confirm_flow() -> Non
     assert response.json()["challenge_step"] == "password"
 
 
+def test_codex_intent_always_escalates_to_high_risk() -> None:
+    trust_telegram_user()
+    client.post(
+        "/api/auth/config/status",
+        json={
+            "device_id": "desktop-local",
+            "password_configured": True,
+            "totp_configured": True,
+        },
+    )
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "codex summarize the latest changes",
+            "source": "telegram",
+            "risk": "medium",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "awaiting_auth"
+    assert response.json()["task"]["risk"] == "high"
+    assert response.json()["task"]["required_auth"] == "password_and_totp"
+    assert response.json()["challenge_step"] == "password"
+
+
 def test_escalated_risk_still_requires_auth_setup() -> None:
     trust_telegram_user()
     client.post(

@@ -23,18 +23,26 @@ def get_minimum_risk(intent: str) -> TaskRisk:
     return "high"
 
 
+def is_force_high_intent(intent: str) -> bool:
+    normalized = intent.strip().lower()
+    return normalized == "codex" or normalized.startswith("codex ")
+
+
 def apply_task_policy(payload: TaskCreateRequest) -> TaskCreateRequest:
-    minimum_risk = get_minimum_risk(payload.intent)
+    normalized_intent = payload.intent.strip()
+    minimum_risk = get_minimum_risk(normalized_intent)
     effective_risk = payload.risk
 
-    should_escalate = minimum_risk != "high" or payload.risk == "low"
+    should_escalate = (
+        minimum_risk != "high" or payload.risk == "low" or is_force_high_intent(normalized_intent)
+    )
 
     if should_escalate and risk_rank(minimum_risk) > risk_rank(effective_risk):
         effective_risk = minimum_risk
 
     return payload.model_copy(
         update={
-            "intent": payload.intent.strip(),
+            "intent": normalized_intent,
             "risk": effective_risk,
         }
     )
