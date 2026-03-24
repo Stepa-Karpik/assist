@@ -179,13 +179,15 @@ const getQuickAccessState = vi.fn<
     targetChat: LocalChatItem | null;
     localChatCount: number;
     recentActivity: ActivityLogEntry[];
+    recentChats: LocalChatItem[];
   }>
 >(async () => ({
   targetChat: null,
   localChatCount: 0,
-  recentActivity: []
+  recentActivity: [],
+  recentChats: []
 }));
-const submitQuickRequest = vi.fn(async (payload: { text: string }) => ({
+const submitQuickRequest = vi.fn(async (payload: { chatId?: string; text: string }) => ({
   chat: {
     chatId: "local-chat-10",
     source: "desktop_chat" as const,
@@ -790,12 +792,36 @@ describe("App navigation", () => {
           taskId: "task-quick-2",
           createdAt: "2026-03-24T12:12:00.000Z"
         }
+      ],
+      recentChats: [
+        {
+          chatId: "local-chat-10",
+          source: "desktop_chat" as const,
+          title: "Execution chat",
+          createdAt: "2026-03-24T12:00:00.000Z",
+          updatedAt: "2026-03-24T12:00:00.000Z",
+          messageCount: 1,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: "assist-repo"
+        },
+        {
+          chatId: "local-chat-20",
+          source: "desktop_chat" as const,
+          title: "Scratchpad",
+          createdAt: "2026-03-24T12:30:00.000Z",
+          updatedAt: "2026-03-24T12:30:00.000Z",
+          messageCount: 0,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: null
+        }
       ]
     });
 
     render(<App />);
 
-    expect(await screen.findByText("Execution chat")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Target local chat")).toHaveValue("local-chat-10");
     expect(await screen.findByText("Approximate completion across active tasks: 80%")).toBeInTheDocument();
     expect(await screen.findByText("Remote task task-quick-2")).toBeInTheDocument();
     expect(await screen.findByText("codex-write update notes -> awaiting_local_approval")).toBeInTheDocument();
@@ -805,9 +831,71 @@ describe("App navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Send" }));
 
     expect(submitQuickRequest).toHaveBeenCalledWith({
+      chatId: "local-chat-10",
       text: "status"
     });
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("routes a quick popup request into the selected local chat", async () => {
+    window.karpik = {
+      ...window.karpik!,
+      view: "quick-popup"
+    };
+    getQuickAccessState.mockResolvedValueOnce({
+      targetChat: {
+        chatId: "local-chat-10",
+        source: "desktop_chat",
+        title: "Execution chat",
+        createdAt: "2026-03-24T12:00:00.000Z",
+        updatedAt: "2026-03-24T12:00:00.000Z",
+        messageCount: 1,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo"
+      },
+      localChatCount: 2,
+      recentActivity: [],
+      recentChats: [
+        {
+          chatId: "local-chat-10",
+          source: "desktop_chat",
+          title: "Execution chat",
+          createdAt: "2026-03-24T12:00:00.000Z",
+          updatedAt: "2026-03-24T12:00:00.000Z",
+          messageCount: 1,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: "assist-repo"
+        },
+        {
+          chatId: "local-chat-20",
+          source: "desktop_chat",
+          title: "Scratchpad",
+          createdAt: "2026-03-24T12:30:00.000Z",
+          updatedAt: "2026-03-24T12:30:00.000Z",
+          messageCount: 0,
+          referenceLabel: null,
+          telegramChatId: null,
+          workspaceId: null
+        }
+      ]
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("Target local chat"), {
+      target: { value: "local-chat-20" }
+    });
+    fireEvent.change(await screen.findByLabelText("Quick request"), {
+      target: { value: "status" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Send" }));
+
+    expect(submitQuickRequest).toHaveBeenCalledWith({
+      chatId: "local-chat-20",
+      text: "status"
+    });
   });
 
   it("creates a new local chat from the quick popup header", async () => {
@@ -829,7 +917,20 @@ describe("App navigation", () => {
           workspaceId: "assist-repo"
         },
         localChatCount: 1,
-        recentActivity: []
+        recentActivity: [],
+        recentChats: [
+          {
+            chatId: "local-chat-10",
+            source: "desktop_chat",
+            title: "Execution chat",
+            createdAt: "2026-03-24T12:00:00.000Z",
+            updatedAt: "2026-03-24T12:00:00.000Z",
+            messageCount: 1,
+            referenceLabel: null,
+            telegramChatId: null,
+            workspaceId: "assist-repo"
+          }
+        ]
       })
       .mockResolvedValueOnce({
         targetChat: {
@@ -844,16 +945,40 @@ describe("App navigation", () => {
           workspaceId: null
         },
         localChatCount: 2,
-        recentActivity: []
+        recentActivity: [],
+        recentChats: [
+          {
+            chatId: "local-chat-1",
+            source: "desktop_chat",
+            title: "Р СњР С•Р Р†РЎвЂ№Р в„– Р В»Р С•Р С”Р В°Р В»РЎРЉР Р…РЎвЂ№Р в„– РЎвЂЎР В°РЎвЂљ",
+            createdAt: "2026-03-24T12:30:00.000Z",
+            updatedAt: "2026-03-24T12:30:00.000Z",
+            messageCount: 0,
+            referenceLabel: null,
+            telegramChatId: null,
+            workspaceId: null
+          },
+          {
+            chatId: "local-chat-10",
+            source: "desktop_chat",
+            title: "Execution chat",
+            createdAt: "2026-03-24T12:00:00.000Z",
+            updatedAt: "2026-03-24T12:00:00.000Z",
+            messageCount: 1,
+            referenceLabel: null,
+            telegramChatId: null,
+            workspaceId: "assist-repo"
+          }
+        ]
       });
 
     render(<App />);
 
-    expect(await screen.findByText("Execution chat")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Target local chat")).toHaveValue("local-chat-10");
     fireEvent.click(await screen.findByRole("button", { name: "New local chat" }));
 
     expect(createDesktopChat).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("РќРѕРІС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Target local chat")).toHaveValue("local-chat-1");
     expect(await screen.findByText("Local chats: 2")).toBeInTheDocument();
   });
 

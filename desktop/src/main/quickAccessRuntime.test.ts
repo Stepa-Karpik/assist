@@ -97,4 +97,49 @@ describe("createQuickAccessRuntime", () => {
       text: "codex summarize repo"
     });
   });
+
+  it("routes a quick request into an explicitly selected local chat", async () => {
+    const stateRoot = createStateRoot();
+    const chatStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-24T16:20:00.000Z"),
+      generateChatId: (() => {
+        let counter = 0;
+        return () => {
+          counter += 1;
+          return `local-chat-${counter}`;
+        };
+      })()
+    });
+    chatStore.createDesktopChat({
+      title: "Execution chat"
+    });
+    chatStore.createDesktopChat({
+      title: "Scratchpad"
+    });
+    const sendMessage = vi.fn(async ({ chatId }: { chatId: string; text: string }) =>
+      chatStore.appendMessage(chatId, {
+        role: "assistant",
+        text: "done"
+      })
+    );
+    const runtime = createQuickAccessRuntime({
+      chatStore,
+      activityLogStore: new ActivityLogStore({
+        stateRoot
+      }),
+      sendMessage
+    });
+
+    const result = await runtime.submitRequest({
+      chatId: "local-chat-1",
+      text: "status"
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      chatId: "local-chat-1",
+      text: "status"
+    });
+    expect(result.chat.chatId).toBe("local-chat-1");
+  });
 });

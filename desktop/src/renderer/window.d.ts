@@ -96,6 +96,7 @@ type QuickAccessState = {
   targetChat: LocalChatItem | null;
   localChatCount: number;
   recentActivity: ActivityLogEntry[];
+  recentChats: LocalChatItem[];
 };
 
 type RuntimeStatus = {
@@ -174,6 +175,7 @@ declare global {
         text: string;
       }) => Promise<LocalChatDetail | null>;
       submitQuickRequest: (payload: {
+        chatId?: string;
         text: string;
       }) => Promise<{
         chat: LocalChatItem;

@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld("karpik", {
   }) => ipcRenderer.invoke("knowledge:read-entry", payload),
   sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
     ipcRenderer.invoke("chats:send-message", payload),
-  submitQuickRequest: (payload: { text: string }) =>
+  submitQuickRequest: (payload: { chatId?: string; text: string }) =>
     ipcRenderer.invoke("quick-access:submit-request", payload),
   openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),

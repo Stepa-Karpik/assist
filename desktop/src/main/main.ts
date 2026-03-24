@@ -509,7 +509,7 @@ function registerIpcHandlers() {
   );
   ipcMain.handle(
     "quick-access:submit-request",
-    async (_event, payload: { text: string }) => {
+    async (_event, payload: { chatId?: string; text: string }) => {
       if (quickAccessRuntime === null) {
         throw new Error("Quick access runtime is not initialized");
       }

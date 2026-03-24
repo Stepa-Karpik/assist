@@ -33,7 +33,8 @@ type QuickAccessState = Awaited<
 const emptyQuickAccessState: NonNullable<QuickAccessState> = {
   targetChat: null,
   localChatCount: 0,
-  recentActivity: []
+  recentActivity: [],
+  recentChats: []
 };
 
 const emptyTaskSnapshot: TaskSnapshot = [];
@@ -85,11 +86,24 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
 function QuickPopupView() {
   const [quickState, setQuickState] = useState<NonNullable<QuickAccessState>>(emptyQuickAccessState);
   const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshot>(emptyTaskSnapshot);
+  const [selectedTargetChatId, setSelectedTargetChatId] = useState<string | null>(null);
   const [requestText, setRequestText] = useState("");
   const [responseText, setResponseText] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const quickProgress = buildQuickProgressState(taskSnapshot);
+  const selectedTargetChat =
+    quickState.recentChats.find((chat) => chat.chatId === selectedTargetChatId) ?? quickState.targetChat;
+
+  useEffect(() => {
+    setSelectedTargetChatId((currentChatId) => {
+      if (currentChatId && quickState.recentChats.some((chat) => chat.chatId === currentChatId)) {
+        return currentChatId;
+      }
+
+      return quickState.targetChat?.chatId ?? quickState.recentChats[0]?.chatId ?? null;
+    });
+  }, [quickState]);
 
   useEffect(() => {
     let isSubscribed = true;
@@ -136,6 +150,7 @@ function QuickPopupView() {
 
     try {
       const result = await window.karpik.submitQuickRequest({
+        chatId: selectedTargetChatId ?? undefined,
         text: normalizedRequest
       });
       const [nextState, nextTaskSnapshot] = await Promise.all([
@@ -163,9 +178,10 @@ function QuickPopupView() {
     setError(null);
 
     try {
-      await window.karpik.createDesktopChat();
+      const createdChat = await window.karpik.createDesktopChat();
       const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
       setQuickState(nextState ?? emptyQuickAccessState);
+      setSelectedTargetChatId(createdChat.chatId);
       setResponseText(null);
       setRequestText("");
     } catch {
@@ -204,9 +220,31 @@ function QuickPopupView() {
       <section className="quick-card">
         <p className="section-label">Target chat</p>
         <p className="muted-text">
-          {quickState.targetChat?.title ?? "Новый локальный чат будет создан автоматически"}
+          {selectedTargetChat?.title ?? "Новый локальный чат будет создан автоматически"}
         </p>
+        {quickState.targetChat && selectedTargetChat?.chatId !== quickState.targetChat.chatId ? (
+          <p className="muted-text">Last active chat: {quickState.targetChat.title}</p>
+        ) : null}
         <p className="muted-text">Local chats: {quickState.localChatCount}</p>
+        {quickState.recentChats.length > 0 ? (
+          <>
+            <label className="section-label" htmlFor="quick-target-chat">
+              Target local chat
+            </label>
+            <select
+              className="quick-input"
+              id="quick-target-chat"
+              onChange={(event) => setSelectedTargetChatId(event.target.value || null)}
+              value={selectedTargetChatId ?? ""}
+            >
+              {quickState.recentChats.map((chat) => (
+                <option key={chat.chatId} value={chat.chatId}>
+                  {chat.title}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
       </section>
 
       <section className="quick-card">
@@ -240,7 +278,7 @@ function QuickPopupView() {
               void handleSubmit();
             }
           }}
-          placeholder="Send to the last active local chat"
+          placeholder="Send to the selected local chat"
           type="text"
           value={requestText}
         />

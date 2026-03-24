@@ -5,6 +5,7 @@ export type QuickAccessState = {
   targetChat: LocalChatRecord | null;
   localChatCount: number;
   recentActivity: ActivityLogEntry[];
+  recentChats: LocalChatRecord[];
 };
 
 export type QuickAccessSubmitResult = {
@@ -19,8 +20,18 @@ type QuickAccessRuntimeOptions = {
   recentActivityLimit?: number;
 };
 
-function resolveTargetChat(chatStore: LocalChatStore): LocalChatRecord {
-  return chatStore.list()[0] ?? chatStore.createDesktopChat();
+function resolveTargetChat(chatStore: LocalChatStore, targetChatId?: string): LocalChatRecord {
+  const chats = chatStore.list();
+
+  if (targetChatId) {
+    const requestedChat = chats.find((candidate) => candidate.chatId === targetChatId);
+
+    if (requestedChat) {
+      return requestedChat;
+    }
+  }
+
+  return chats[0] ?? chatStore.createDesktopChat();
 }
 
 export function createQuickAccessRuntime({
@@ -36,12 +47,13 @@ export function createQuickAccessRuntime({
       return {
         targetChat: chats[0] ?? null,
         localChatCount: chats.length,
-        recentActivity: activityLogStore.list().slice(0, recentActivityLimit)
+        recentActivity: activityLogStore.list().slice(0, recentActivityLimit),
+        recentChats: chats.slice(0, recentActivityLimit)
       };
     },
 
-    async submitRequest({ text }: { text: string }): Promise<QuickAccessSubmitResult> {
-      const chat = resolveTargetChat(chatStore);
+    async submitRequest({ chatId, text }: { chatId?: string; text: string }): Promise<QuickAccessSubmitResult> {
+      const chat = resolveTargetChat(chatStore, chatId);
       const detail = await sendMessage({
         chatId: chat.chatId,
         text
