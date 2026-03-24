@@ -1,19 +1,27 @@
 import started from "electron-squirrel-startup";
 import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 
+import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
 import { getDataRoot } from "./dataRoot";
 import { PairingStore } from "./pairingStore";
-import { type PairingEventListResponse, createSyncClient } from "./syncClient";
+import {
+  type AuthEventListResponse,
+  type PairingEventListResponse,
+  createSyncClient
+} from "./syncClient";
 import { createAppTray } from "./tray";
 import { createMainWindow, createQuickPopupWindow } from "./windows";
 
 let mainWindow: BrowserWindow | null = null;
 let quickPopup: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let authPollInterval: NodeJS.Timeout | null = null;
 let pairingPollInterval: NodeJS.Timeout | null = null;
 let ipcHandlersRegistered = false;
+let authStore: AuthStore | null = null;
 const pairingStore = new PairingStore();
+const authPollIntervalMs = 2_000;
 const pairingPollIntervalMs = 2_000;
 const syncClient = createSyncClient({
   serverUrl: process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000",
@@ -26,6 +34,48 @@ if (started) {
 
 function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
+}
+
+async function syncAuthConfigState() {
+  if (authStore === null) {
+    return;
+  }
+
+  const response = await syncClient.announceAuthConfigState(authStore.getConfigState());
+
+  if (!response.ok) {
+    logResponseError("Syncing auth config state", response);
+  }
+}
+
+async function pollAuthEvents() {
+  if (authStore === null) {
+    return;
+  }
+
+  const response = await syncClient.fetchAuthEvents();
+
+  if (!response.ok) {
+    logResponseError("Fetching auth events", response);
+    return;
+  }
+
+  const payload = (await response.json()) as AuthEventListResponse;
+
+  for (const event of payload.items) {
+    const accepted =
+      event.step === "password"
+        ? authStore.validatePassword(event.value)
+        : authStore.validateTotp(event.value);
+
+    const resolveResponse = await syncClient.resolveAuthEvent(event.event_id, {
+      accepted
+    });
+
+    if (!resolveResponse.ok) {
+      logResponseError("Resolving auth event", resolveResponse);
+    }
+  }
 }
 
 async function pollPairingEvents() {
@@ -65,6 +115,22 @@ async function pollPairingEvents() {
   }
 }
 
+function ensureAuthPolling() {
+  if (authPollInterval !== null) {
+    return;
+  }
+
+  void pollAuthEvents().catch((error: unknown) => {
+    console.error("Failed to poll auth events", error);
+  });
+
+  authPollInterval = setInterval(() => {
+    void pollAuthEvents().catch((error: unknown) => {
+      console.error("Failed to poll auth events", error);
+    });
+  }, authPollIntervalMs);
+}
+
 function ensurePairingPolling() {
   if (pairingPollInterval !== null) {
     return;
@@ -81,6 +147,15 @@ function ensurePairingPolling() {
   }, pairingPollIntervalMs);
 }
 
+function stopAuthPolling() {
+  if (authPollInterval === null) {
+    return;
+  }
+
+  clearInterval(authPollInterval);
+  authPollInterval = null;
+}
+
 function stopPairingPolling() {
   if (pairingPollInterval === null) {
     return;
@@ -95,6 +170,21 @@ function registerIpcHandlers() {
     return;
   }
 
+  ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
+  ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
+    if (authStore === null) {
+      throw new Error("Auth store is not initialized");
+    }
+
+    const state = authStore.saveConfig(payload);
+    const response = await syncClient.announceAuthConfigState(state);
+
+    if (!response.ok) {
+      throw new Error(`Failed to sync auth config state: ${response.status}`);
+    }
+
+    return state;
+  });
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
@@ -118,7 +208,10 @@ function registerIpcHandlers() {
 
 async function bootstrap() {
   nativeTheme.themeSource = "system";
-  ensureRuntimeFolders(getDataRoot());
+  const runtimeFolders = ensureRuntimeFolders(getDataRoot());
+  authStore = new AuthStore({
+    secretsRoot: runtimeFolders.secrets
+  });
   registerIpcHandlers();
 
   mainWindow = createMainWindow();
@@ -127,10 +220,14 @@ async function bootstrap() {
     mainWindow,
     quickPopup
   });
+  ensureAuthPolling();
   ensurePairingPolling();
 
   void syncClient.announceOnline().catch((error: unknown) => {
     console.error("Failed to announce device online", error);
+  });
+  void syncAuthConfigState().catch((error: unknown) => {
+    console.error("Failed to sync auth config state", error);
   });
 }
 
@@ -152,6 +249,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopAuthPolling();
   stopPairingPolling();
 
   if (pairingStore.getState().isActive) {

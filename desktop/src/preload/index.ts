@@ -4,6 +4,9 @@ const view = new URLSearchParams(window.location.search).get("view") ?? "main";
 
 contextBridge.exposeInMainWorld("karpik", {
   view,
+  getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   getPairingState: () => ipcRenderer.invoke("pairing:get-state"),
-  openPairingSession: () => ipcRenderer.invoke("pairing:open-session")
+  openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
+  saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
+    ipcRenderer.invoke("auth:save-config", payload)
 });

@@ -3,6 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
+const getAuthConfigState = vi.fn(async () => ({
+  passwordConfigured: false,
+  totpConfigured: false
+}));
+
+const saveAuthConfig = vi.fn(async () => ({
+  passwordConfigured: true,
+  totpConfigured: true
+}));
+
 const getPairingState = vi.fn(async () => ({
   code: null,
   expiresAt: null,
@@ -21,15 +31,19 @@ describe("App navigation", () => {
   beforeEach(() => {
     window.karpik = {
       view: "main",
+      getAuthConfigState,
       getPairingState,
-      openPairingSession
+      openPairingSession,
+      saveAuthConfig
     };
   });
 
   afterEach(() => {
     cleanup();
+    getAuthConfigState.mockClear();
     getPairingState.mockClear();
     openPairingSession.mockClear();
+    saveAuthConfig.mockClear();
   });
 
   it("renders all primary sections", () => {
@@ -50,7 +64,12 @@ describe("App navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
 
     expect(await screen.findByRole("button", { name: "Открыть pairing" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Пароль для remote auth")).toBeInTheDocument();
+    expect(await screen.findByLabelText("TOTP secret")).toBeInTheDocument();
     expect(await screen.findByText("Pairing не активен")).toBeInTheDocument();
+    expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
+    expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();
+    expect(getAuthConfigState).toHaveBeenCalledTimes(1);
     expect(getPairingState).toHaveBeenCalledTimes(1);
   });
 
@@ -62,5 +81,25 @@ describe("App navigation", () => {
 
     expect(openPairingSession).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Код: PAIR42")).toBeInTheDocument();
+  });
+
+  it("saves auth settings from the settings page", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    fireEvent.change(await screen.findByLabelText("Пароль для remote auth"), {
+      target: { value: "secret-password" }
+    });
+    fireEvent.change(await screen.findByLabelText("TOTP secret"), {
+      target: { value: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить auth-настройки" }));
+
+    expect(saveAuthConfig).toHaveBeenCalledWith({
+      password: "secret-password",
+      totpSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    });
+    expect(await screen.findByText("Password: настроен")).toBeInTheDocument();
+    expect(await screen.findByText("TOTP: настроен")).toBeInTheDocument();
   });
 });

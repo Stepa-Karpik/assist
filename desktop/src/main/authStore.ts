@@ -8,7 +8,7 @@ type AuthStoreOptions = {
   saltFactory?: () => Buffer;
 };
 
-type AuthConfigInput = {
+export type AuthConfigInput = {
   password?: string;
   totpSecret?: string;
 };

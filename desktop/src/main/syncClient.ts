@@ -4,6 +4,10 @@ export type OnlineEventPayload = {
 };
 
 export type PairingResult = "paired" | "invalid_code" | "ignored";
+export type AuthConfigState = {
+  passwordConfigured: boolean;
+  totpConfigured: boolean;
+};
 
 export type QueuePollPayload = {
   device_id: string;
@@ -41,6 +45,33 @@ export type PairingEventResolutionInput = {
 export type PairingEventResolutionPayload = {
   result: PairingResult;
   trusted_telegram_user_id?: number;
+};
+
+export type AuthConfigStatusPayload = {
+  device_id: string;
+  password_configured: boolean;
+  totp_configured: boolean;
+};
+
+export type AuthInputEvent = {
+  event_id: string;
+  type: "auth_input";
+  device_id: string;
+  challenge_id: string;
+  telegram_user_id: number;
+  chat_id: number;
+  step: "password" | "totp" | "confirm";
+  value: string;
+  status: "pending" | "resolved";
+  accepted: boolean | null;
+};
+
+export type AuthEventListResponse = {
+  items: AuthInputEvent[];
+};
+
+export type AuthEventResolutionInput = {
+  accepted: boolean;
 };
 
 type FetchLike = typeof fetch;
@@ -94,6 +125,17 @@ export function buildEventResolutionPayload(
         result,
         trusted_telegram_user_id: trustedTelegramUserId
       };
+}
+
+export function buildAuthConfigStatusPayload(
+  deviceId: string,
+  state: AuthConfigState
+): AuthConfigStatusPayload {
+  return {
+    device_id: deviceId,
+    password_configured: state.passwordConfigured,
+    totp_configured: state.totpConfigured
+  };
 }
 
 export function createSyncClient({
@@ -157,6 +199,33 @@ export function createSyncClient({
         body: JSON.stringify(
           buildEventResolutionPayload(resolution.result, resolution.trustedTelegramUserId)
         )
+      });
+    },
+
+    announceAuthConfigState(state: AuthConfigState) {
+      return fetchImpl(`${baseUrl}/api/auth/config/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(buildAuthConfigStatusPayload(deviceId, state))
+      });
+    },
+
+    fetchAuthEvents() {
+      const params = new URLSearchParams(buildQueuePollPayload(deviceId));
+      return fetchImpl(`${baseUrl}/api/auth/events?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    resolveAuthEvent(eventId: string, resolution: AuthEventResolutionInput) {
+      return fetchImpl(`${baseUrl}/api/auth/events/${eventId}/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(resolution)
       });
     }
   };

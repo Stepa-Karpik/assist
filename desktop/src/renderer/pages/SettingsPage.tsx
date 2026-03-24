@@ -7,11 +7,21 @@ type PairingState = {
   trustedTelegramUserIds: number[];
 };
 
+type AuthConfigState = {
+  passwordConfigured: boolean;
+  totpConfigured: boolean;
+};
+
 const emptyPairingState: PairingState = {
   code: null,
   expiresAt: null,
   isActive: false,
   trustedTelegramUserIds: []
+};
+
+const emptyAuthConfigState: AuthConfigState = {
+  passwordConfigured: false,
+  totpConfigured: false
 };
 
 function formatExpiryHint(expiresAt: string | null): string {
@@ -28,33 +38,37 @@ function formatExpiryHint(expiresAt: string | null): string {
   return `Действует до: ${expiresAtDate.toLocaleString("ru-RU")}`;
 }
 
+function describeAuthStatus(isConfigured: boolean): string {
+  return isConfigured ? "настроен" : "не настроен";
+}
+
 export function SettingsPage() {
   const [pairingState, setPairingState] = useState<PairingState>(emptyPairingState);
+  const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
+  const [password, setPassword] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
+  const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isSubscribed = true;
 
-    async function loadPairingState() {
-      if (!window.karpik?.getPairingState) {
-        if (isSubscribed) {
-          setIsLoading(false);
-        }
-
-        return;
-      }
-
+    async function loadSettingsState() {
       try {
-        const nextState = await window.karpik.getPairingState();
+        const [nextPairingState, nextAuthConfigState] = await Promise.all([
+          window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
+          window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState)
+        ]);
 
         if (isSubscribed) {
-          setPairingState(nextState);
+          setPairingState(nextPairingState);
+          setAuthConfigState(nextAuthConfigState);
         }
       } catch {
         if (isSubscribed) {
-          setError("Не удалось получить локальное состояние pairing.");
+          setError("Не удалось получить локальное состояние безопасности.");
         }
       } finally {
         if (isSubscribed) {
@@ -63,7 +77,7 @@ export function SettingsPage() {
       }
     }
 
-    void loadPairingState();
+    void loadSettingsState();
 
     return () => {
       isSubscribed = false;
@@ -89,6 +103,30 @@ export function SettingsPage() {
     }
   }
 
+  async function handleSaveAuthConfig() {
+    if (!window.karpik?.saveAuthConfig) {
+      setError("Auth API недоступен в этом окружении.");
+      return;
+    }
+
+    setError(null);
+    setIsSavingAuthConfig(true);
+
+    try {
+      const nextState = await window.karpik.saveAuthConfig({
+        password,
+        totpSecret
+      });
+      setAuthConfigState(nextState);
+      setPassword("");
+      setTotpSecret("");
+    } catch {
+      setError("Не удалось сохранить auth-настройки.");
+    } finally {
+      setIsSavingAuthConfig(false);
+    }
+  }
+
   const pairingStatus = isLoading ? "Загрузка pairing-состояния..." : "Pairing не активен";
 
   return (
@@ -98,6 +136,42 @@ export function SettingsPage() {
       <p className="muted-text">
         Здесь управляются pairing-код, доверенные Telegram ID и локальная политика доступа.
       </p>
+
+      <section className="quick-card">
+        <p className="section-label">Remote auth</p>
+        <p>Password: {describeAuthStatus(authConfigState.passwordConfigured)}</p>
+        <p>TOTP: {describeAuthStatus(authConfigState.totpConfigured)}</p>
+        <label className="section-label" htmlFor="settings-password">
+          Пароль для remote auth
+        </label>
+        <input
+          className="quick-input"
+          id="settings-password"
+          onChange={(event) => setPassword(event.target.value)}
+          type="password"
+          value={password}
+        />
+        <label className="section-label" htmlFor="settings-totp-secret">
+          TOTP secret
+        </label>
+        <input
+          className="quick-input"
+          id="settings-totp-secret"
+          onChange={(event) => setTotpSecret(event.target.value)}
+          type="text"
+          value={totpSecret}
+        />
+        <button
+          className="ghost-button"
+          disabled={isLoading || isSavingAuthConfig}
+          onClick={() => {
+            void handleSaveAuthConfig();
+          }}
+          type="button"
+        >
+          {isSavingAuthConfig ? "Сохраняем..." : "Сохранить auth-настройки"}
+        </button>
+      </section>
 
       <section className="quick-card">
         <p className="section-label">Telegram pairing</p>

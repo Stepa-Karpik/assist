@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildAuthConfigStatusPayload,
   buildEventResolutionPayload,
   buildOnlineEventPayload,
   buildPairingOpenPayload,
@@ -41,10 +42,23 @@ describe("syncClient payload builders", () => {
       result: "invalid_code"
     });
   });
+
+  it("describes the auth config status payload", () => {
+    expect(
+      buildAuthConfigStatusPayload("desktop-local", {
+        passwordConfigured: true,
+        totpConfigured: false
+      })
+    ).toEqual({
+      device_id: "desktop-local",
+      password_configured: true,
+      totp_configured: false
+    });
+  });
 });
 
 describe("syncClient pairing api", () => {
-  it("opens pairing sessions and resolves pairing events", async () => {
+  it("opens pairing sessions, syncs auth state, and resolves events", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
     const client = createSyncClient({
       serverUrl: "http://127.0.0.1:8000/",
@@ -57,6 +71,14 @@ describe("syncClient pairing api", () => {
     await client.resolvePairingEvent("evt-1", {
       result: "paired",
       trustedTelegramUserId: 42
+    });
+    await client.announceAuthConfigState({
+      passwordConfigured: true,
+      totpConfigured: false
+    });
+    await client.fetchAuthEvents();
+    await client.resolveAuthEvent("auth-1", {
+      accepted: true
     });
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
@@ -93,6 +115,44 @@ describe("syncClient pairing api", () => {
         body: JSON.stringify({
           result: "paired",
           trusted_telegram_user_id: 42
+        })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      "http://127.0.0.1:8000/api/auth/config/status",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: "desktop-local",
+          password_configured: true,
+          totp_configured: false
+        })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      5,
+      "http://127.0.0.1:8000/api/auth/events?device_id=desktop-local",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      6,
+      "http://127.0.0.1:8000/api/auth/events/auth-1/resolve",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          accepted: true
         })
       })
     );
