@@ -17,6 +17,7 @@ def test_create_task_returns_queued_status():
 
     assert response.status_code == 201
     assert response.json()["status"] == "queued"
+    assert response.json()["task"]["status"] == "queued"
 
 
 def test_list_tasks_returns_queued_tasks_for_device():
