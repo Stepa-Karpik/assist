@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import type { TaskSnapshot } from "./pages/taskSnapshot";
 
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
@@ -20,7 +21,7 @@ const getPairingState = vi.fn(async () => ({
   trustedTelegramUserIds: []
 }));
 
-const getTaskSnapshot = vi.fn(async () => []);
+const getTaskSnapshot = vi.fn<() => Promise<TaskSnapshot>>(async () => []);
 
 const openPairingSession = vi.fn(async () => ({
   code: "PAIR42",
@@ -105,5 +106,49 @@ describe("App navigation", () => {
     });
     expect(await screen.findByText("Password: настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: настроен")).toBeInTheDocument();
+  });
+
+  it("shows Telegram task snapshot items", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-1",
+        intent: "status",
+        status: "done",
+        result_text: "desktop-local is online",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
+
+    expect(await screen.findByText("task-1")).toBeInTheDocument();
+    expect(await screen.findByText("status")).toBeInTheDocument();
+    expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("shows blocked and failed tasks in the blocked page", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-2",
+        intent: "read docs/missing.txt",
+        status: "failed",
+        result_text: null,
+        error_text: "File not found.",
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Невыполненное" }));
+
+    expect(await screen.findByText("task-2")).toBeInTheDocument();
+    expect(await screen.findByText("read docs/missing.txt")).toBeInTheDocument();
+    expect(await screen.findByText("File not found.")).toBeInTheDocument();
   });
 });
