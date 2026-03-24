@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
@@ -41,6 +41,12 @@ class TaskRecord(BaseModel):
     telegram_user_id: int | None = None
     chat_id: int | None = None
     challenge_id: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result_text: str | None = None
+    error_text: str | None = None
+    attempt_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class TaskIntakeResponse(BaseModel):
@@ -54,3 +60,11 @@ class TaskIntakeResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     items: list[TaskRecord]
+
+
+class TaskCompleteRequest(BaseModel):
+    result_text: str
+
+
+class TaskFailRequest(BaseModel):
+    error_text: str

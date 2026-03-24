@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.models.task import (
     RequiredAuth,
+    TaskCompleteRequest,
     TaskCreateRequest,
+    TaskFailRequest,
     TaskIntakeResponse,
+    TaskRecord,
     TaskListResponse,
     TaskRisk,
 )
@@ -105,5 +108,73 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
 
 
 @router.get("", response_model=TaskListResponse)
-def list_tasks(device_id: str, request: Request) -> TaskListResponse:
-    return TaskListResponse(items=request.app.state.task_store.list_queued_tasks(device_id))
+def list_tasks(
+    device_id: str,
+    request: Request,
+    include_history: bool = False,
+    chat_id: int | None = None,
+) -> TaskListResponse:
+    return TaskListResponse(
+        items=request.app.state.task_store.list_tasks(
+            device_id,
+            include_history=include_history,
+            chat_id=chat_id,
+        )
+    )
+
+
+@router.get("/{task_id}", response_model=TaskRecord)
+def get_task(task_id: str, request: Request) -> TaskRecord:
+    task = request.app.state.task_store.get_task(task_id)
+
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    return task
+
+
+@router.post("/{task_id}/start", response_model=TaskRecord)
+def start_task(task_id: str, request: Request) -> TaskRecord:
+    task = request.app.state.task_store.start_task(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be started",
+        )
+
+    return task
+
+
+@router.post("/{task_id}/complete", response_model=TaskRecord)
+def complete_task(
+    task_id: str,
+    payload: TaskCompleteRequest,
+    request: Request,
+) -> TaskRecord:
+    task = request.app.state.task_store.complete_task(task_id, payload.result_text)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be completed",
+        )
+
+    return task
+
+
+@router.post("/{task_id}/fail", response_model=TaskRecord)
+def fail_task(
+    task_id: str,
+    payload: TaskFailRequest,
+    request: Request,
+) -> TaskRecord:
+    task = request.app.state.task_store.fail_task(task_id, payload.error_text)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be failed",
+        )
+
+    return task
