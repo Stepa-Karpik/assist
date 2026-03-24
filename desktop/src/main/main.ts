@@ -19,6 +19,7 @@ import { LocalChatStore } from "./localChatStore";
 import { createLocalChatRuntime } from "./localChatRuntime";
 import { PairingStore } from "./pairingStore";
 import { createQuickAccessRuntime } from "./quickAccessRuntime";
+import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
   type DevicePresenceResponse,
@@ -243,34 +244,68 @@ function buildTaskSignature(task: RemoteTaskRecord): string {
 }
 
 function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
-  if (taskActivityInitialized && activityLogStore !== null) {
-    const previousSignatures = new Map(
-      taskSnapshot.map((task) => [task.task_id, buildTaskSignature(task)])
-    );
-
-    for (const task of nextSnapshot) {
-      const nextSignature = buildTaskSignature(task);
-
-      if (previousSignatures.get(task.task_id) === nextSignature) {
-        continue;
-      }
-
-      activityLogStore.append({
-        kind: "remote_task",
-        status: buildTaskActivityStatus(task),
-        title: buildTaskActivityTitle(task),
-        detail: buildTaskActivityDetail(task),
-        taskId: task.task_id
+  if (taskActivityInitialized) {
+    if (localChatStore !== null) {
+      mirrorRemoteTaskUpdates({
+        previousSnapshot: taskSnapshot,
+        nextSnapshot,
+        mirrorTask: (task) => {
+          localChatStore?.mirrorRemoteTaskUpdate({
+            telegramChatId: task.chat_id!,
+            taskId: task.task_id,
+            intent: task.intent,
+            status: task.status,
+            resultText: task.result_text,
+            errorText: task.error_text,
+            artifact:
+              task.artifact_kind === "image_base64" &&
+              task.artifact_mime_type !== null &&
+              task.artifact_mime_type !== undefined &&
+              task.artifact_file_name !== null &&
+              task.artifact_file_name !== undefined &&
+              task.artifact_base64 !== null &&
+              task.artifact_base64 !== undefined
+                ? {
+                    kind: task.artifact_kind,
+                    mimeType: task.artifact_mime_type,
+                    fileName: task.artifact_file_name,
+                    contentBase64: task.artifact_base64
+                  }
+                : undefined
+          });
+        }
       });
+    }
 
-      if (appPreferencesStore?.getState().notificationsEnabled) {
-        const notification = buildTaskNotification(task);
+    if (activityLogStore !== null) {
+      const previousSignatures = new Map(
+        taskSnapshot.map((task) => [task.task_id, buildTaskSignature(task)])
+      );
 
-        if (notification !== null) {
-          new Notification({
-            title: notification.title,
-            body: notification.body
-          }).show();
+      for (const task of nextSnapshot) {
+        const nextSignature = buildTaskSignature(task);
+
+        if (previousSignatures.get(task.task_id) === nextSignature) {
+          continue;
+        }
+
+        activityLogStore.append({
+          kind: "remote_task",
+          status: buildTaskActivityStatus(task),
+          title: buildTaskActivityTitle(task),
+          detail: buildTaskActivityDetail(task),
+          taskId: task.task_id
+        });
+
+        if (appPreferencesStore?.getState().notificationsEnabled) {
+          const notification = buildTaskNotification(task);
+
+          if (notification !== null) {
+            new Notification({
+              title: notification.title,
+              body: notification.body
+            }).show();
+          }
         }
       }
     }

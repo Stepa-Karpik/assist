@@ -298,4 +298,66 @@ describe("LocalChatStore", () => {
       artifactBase64: "aGVsbG8="
     });
   });
+
+  it("mirrors a remote task update into a linked continuation chat only once per signature", () => {
+    const stateRoot = createStateRoot();
+    const timestamps = [
+      new Date("2026-03-24T12:05:00.000Z"),
+      new Date("2026-03-24T12:10:00.000Z"),
+      new Date("2026-03-24T12:15:00.000Z")
+    ];
+    const store = new LocalChatStore({
+      stateRoot,
+      now: () => timestamps.shift() ?? new Date("2026-03-24T12:15:00.000Z"),
+      generateChatId: () => "local-chat-6"
+    });
+    store.createContinuationChat({
+      telegramChatId: 5001,
+      title: "Telegram 5001",
+      workspaceId: "assist-repo"
+    });
+
+    const firstMirror = store.mirrorRemoteTaskUpdate({
+      telegramChatId: 5001,
+      taskId: "task-shot",
+      intent: "screenshot",
+      status: "done",
+      resultText: "Screenshot captured.",
+      artifact: {
+        kind: "image_base64",
+        mimeType: "image/png",
+        fileName: "desktop-remote.png",
+        contentBase64: "aGVsbG8="
+      }
+    });
+    const secondMirror = store.mirrorRemoteTaskUpdate({
+      telegramChatId: 5001,
+      taskId: "task-shot",
+      intent: "screenshot",
+      status: "done",
+      resultText: "Screenshot captured.",
+      artifact: {
+        kind: "image_base64",
+        mimeType: "image/png",
+        fileName: "desktop-remote.png",
+        contentBase64: "aGVsbG8="
+      }
+    });
+
+    expect(firstMirror?.messages).toHaveLength(1);
+    expect(firstMirror?.messages[0]).toEqual({
+      messageId: expect.any(String),
+      role: "system",
+      text: "Telegram task task-shot completed.\nscreenshot\nScreenshot captured.",
+      createdAt: "2026-03-24T12:10:00.000Z",
+      artifactKind: "image_base64",
+      artifactMimeType: "image/png",
+      artifactFileName: "desktop-remote.png",
+      artifactBase64: "aGVsbG8=",
+      remoteTaskId: "task-shot",
+      remoteTaskSignature: expect.any(String)
+    });
+    expect(secondMirror?.messages).toHaveLength(1);
+    expect(secondMirror?.updatedAt).toBe("2026-03-24T12:10:00.000Z");
+  });
 });

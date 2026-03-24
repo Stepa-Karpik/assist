@@ -25,6 +25,8 @@ export type LocalChatMessage = {
   artifactMimeType?: string | null;
   artifactFileName?: string | null;
   artifactBase64?: string | null;
+  remoteTaskId?: string | null;
+  remoteTaskSignature?: string | null;
 };
 
 export type LocalChatDetail = LocalChatRecord & {
@@ -51,6 +53,31 @@ type CreateContinuationChatInput = {
 type AppendMessageInput = {
   role: LocalChatMessage["role"];
   text: string;
+  artifact?: {
+    kind: LocalChatMessageArtifactKind;
+    mimeType: string;
+    fileName: string;
+    contentBase64: string;
+  };
+  remoteTaskId?: string | null;
+  remoteTaskSignature?: string | null;
+};
+
+type MirrorRemoteTaskUpdateInput = {
+  telegramChatId: number;
+  taskId: string;
+  intent: string;
+  status:
+    | "queued"
+    | "awaiting_auth"
+    | "awaiting_local_approval"
+    | "blocked"
+    | "running"
+    | "done"
+    | "failed"
+    | "stalled";
+  resultText?: string | null;
+  errorText?: string | null;
   artifact?: {
     kind: LocalChatMessageArtifactKind;
     mimeType: string;
@@ -104,6 +131,20 @@ function normalizeArtifactFields(value: Partial<LocalChatMessage> | undefined) {
   return {};
 }
 
+function normalizeRemoteTaskFields(value: Partial<LocalChatMessage> | undefined) {
+  if (
+    typeof value?.remoteTaskId === "string" &&
+    typeof value?.remoteTaskSignature === "string"
+  ) {
+    return {
+      remoteTaskId: value.remoteTaskId,
+      remoteTaskSignature: value.remoteTaskSignature
+    };
+  }
+
+  return {};
+}
+
 function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalChatMessage | null {
   if (value?.text === undefined || typeof value.text !== "string") {
     return null;
@@ -124,8 +165,52 @@ function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalCh
       typeof value.createdAt === "string" && value.createdAt.length > 0
         ? value.createdAt
         : new Date(0).toISOString(),
-    ...normalizeArtifactFields(value)
+    ...normalizeArtifactFields(value),
+    ...normalizeRemoteTaskFields(value)
   };
+}
+
+function buildRemoteTaskMirrorSignature(input: MirrorRemoteTaskUpdateInput): string {
+  return JSON.stringify([
+    input.telegramChatId,
+    input.taskId,
+    input.status,
+    input.intent,
+    input.resultText ?? null,
+    input.errorText ?? null,
+    input.artifact?.fileName ?? null,
+    input.artifact?.contentBase64 ?? null
+  ]);
+}
+
+function buildRemoteTaskMirrorText(input: MirrorRemoteTaskUpdateInput): string {
+  const statusLine = (() => {
+    switch (input.status) {
+      case "done":
+        return `Telegram task ${input.taskId} completed.`;
+      case "failed":
+        return `Telegram task ${input.taskId} failed.`;
+      case "blocked":
+        return `Telegram task ${input.taskId} was blocked.`;
+      case "awaiting_auth":
+        return `Telegram task ${input.taskId} awaits auth.`;
+      case "awaiting_local_approval":
+        return `Telegram task ${input.taskId} awaits local approval.`;
+      case "stalled":
+        return `Telegram task ${input.taskId} stalled.`;
+      case "running":
+        return `Telegram task ${input.taskId} is running.`;
+      case "queued":
+        return `Telegram task ${input.taskId} is queued.`;
+      default:
+        return `Telegram task ${input.taskId} updated.`;
+    }
+  })();
+  const detailLine = input.resultText ?? input.errorText ?? null;
+
+  return detailLine === null
+    ? `${statusLine}\n${input.intent}`
+    : `${statusLine}\n${input.intent}\n${detailLine}`;
 }
 
 function normalizeChat(value: PersistedLocalChatRecord): LocalChatDetail | null {
@@ -277,7 +362,13 @@ export class LocalChatStore {
       artifactKind: input.artifact?.kind,
       artifactMimeType: input.artifact?.mimeType,
       artifactFileName: input.artifact?.fileName,
-      artifactBase64: input.artifact?.contentBase64
+      artifactBase64: input.artifact?.contentBase64,
+      ...(input.remoteTaskId && input.remoteTaskSignature
+        ? {
+            remoteTaskId: input.remoteTaskId,
+            remoteTaskSignature: input.remoteTaskSignature
+          }
+        : {})
     };
     const nextChat: LocalChatDetail = {
       ...chat,
@@ -292,6 +383,32 @@ export class LocalChatStore {
     ]);
     this.persist();
     return cloneDetail(nextChat);
+  }
+
+  mirrorRemoteTaskUpdate(input: MirrorRemoteTaskUpdateInput): LocalChatDetail | null {
+    const chat = this.chats.find(
+      (candidate) =>
+        candidate.source === "local_continuation_chat" &&
+        candidate.telegramChatId === input.telegramChatId
+    );
+
+    if (chat === undefined) {
+      return null;
+    }
+
+    const remoteTaskSignature = buildRemoteTaskMirrorSignature(input);
+
+    if (chat.messages.some((message) => message.remoteTaskSignature === remoteTaskSignature)) {
+      return cloneDetail(chat);
+    }
+
+    return this.appendMessage(chat.chatId, {
+      role: "system",
+      text: buildRemoteTaskMirrorText(input),
+      artifact: input.artifact,
+      remoteTaskId: input.taskId,
+      remoteTaskSignature
+    });
   }
 
   private load(): LocalChatDetail[] {
