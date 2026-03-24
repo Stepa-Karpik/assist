@@ -160,6 +160,7 @@ def complete_task(
             detail="Task cannot be completed",
         )
 
+    request.app.state.delivery_store.create_for_task(task)
     return task
 
 
@@ -177,4 +178,5 @@ def fail_task(
             detail="Task cannot be failed",
         )
 
+    request.app.state.delivery_store.create_for_task(task)
     return task
