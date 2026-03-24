@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),
+  getKnowledgeState: () => ipcRenderer.invoke("knowledge:get-state"),
   getLocalApprovals: () => ipcRenderer.invoke("tasks:get-local-approvals"),
   getPairingState: () => ipcRenderer.invoke("pairing:get-state"),
   getQuickAccessState: () => ipcRenderer.invoke("quick-access:get-state"),
@@ -22,6 +23,10 @@ contextBridge.exposeInMainWorld("karpik", {
     title?: string;
     workspaceId?: string | null;
   }) => ipcRenderer.invoke("chats:create-continuation", payload),
+  readKnowledgeEntry: (payload: {
+    sectionId: "master_info" | "knowledge" | "notes" | "websites";
+    relativePath: string;
+  }) => ipcRenderer.invoke("knowledge:read-entry", payload),
   sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
     ipcRenderer.invoke("chats:send-message", payload),
   submitQuickRequest: (payload: { text: string }) =>

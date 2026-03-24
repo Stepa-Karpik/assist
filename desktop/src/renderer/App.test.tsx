@@ -55,6 +55,15 @@ type RuntimeStatus = {
   blockedTaskCount: number;
 };
 
+type KnowledgeSection = {
+  id: "master_info" | "knowledge" | "notes" | "websites";
+  label: string;
+  entries: Array<{
+    relativePath: string;
+    displayName: string;
+  }>;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -208,6 +217,44 @@ const getRuntimeStatus = vi.fn<() => Promise<RuntimeStatus>>(async () => ({
   pendingTaskCount: 1,
   blockedTaskCount: 0
 }));
+const getKnowledgeState = vi.fn<() => Promise<KnowledgeSection[]>>(async () => [
+  {
+    id: "knowledge",
+    label: "Knowledge",
+    entries: [
+      {
+        relativePath: "review.md",
+        displayName: "review.md"
+      },
+      {
+        relativePath: "weekly.md",
+        displayName: "weekly.md"
+      }
+    ]
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    entries: [
+      {
+        relativePath: "daily.txt",
+        displayName: "daily.txt"
+      }
+    ]
+  }
+]);
+const readKnowledgeEntry = vi.fn(
+  async (payload: { sectionId: KnowledgeSection["id"]; relativePath: string }) => ({
+    sectionId: payload.sectionId,
+    relativePath: payload.relativePath,
+    content:
+      payload.relativePath === "weekly.md"
+        ? "weekly review"
+        : payload.relativePath === "daily.txt"
+          ? "daily note"
+          : "review body"
+  })
+);
 
 const openPairingSession = vi.fn(async () => ({
   code: "PAIR42",
@@ -311,6 +358,7 @@ describe("App navigation", () => {
       getActivityLog,
       getAuthConfigState,
       getCodexConfigState,
+      getKnowledgeState,
       getLocalApprovals,
       getLocalChats,
       getLocalChatDetail,
@@ -321,6 +369,7 @@ describe("App navigation", () => {
       openPairingSession,
       approveLocalApproval,
       rejectLocalApproval,
+      readKnowledgeEntry,
       createDesktopChat,
       createLocalContinuationChat,
       submitQuickRequest,
@@ -336,6 +385,7 @@ describe("App navigation", () => {
     getActivityLog.mockClear();
     getAuthConfigState.mockClear();
     getCodexConfigState.mockClear();
+    getKnowledgeState.mockClear();
     getLocalApprovals.mockClear();
     getLocalChats.mockClear();
     getLocalChatDetail.mockClear();
@@ -346,6 +396,7 @@ describe("App navigation", () => {
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
+    readKnowledgeEntry.mockClear();
     createDesktopChat.mockClear();
     createLocalContinuationChat.mockClear();
     submitQuickRequest.mockClear();
@@ -698,5 +749,21 @@ describe("App navigation", () => {
     expect(await screen.findByText("Server URL: http://127.0.0.1:8000")).toBeInTheDocument();
     expect(await screen.findByText("Last active chat: Execution chat")).toBeInTheDocument();
     expect(await screen.findByText("Default workspace: Assist")).toBeInTheDocument();
+  });
+
+  it("shows knowledge files and switches preview", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge / Review" }));
+
+    expect(await screen.findByText("review.md")).toBeInTheDocument();
+    expect(await screen.findByText("review body")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "weekly.md" }));
+
+    expect(readKnowledgeEntry).toHaveBeenCalledWith({
+      sectionId: "knowledge",
+      relativePath: "weekly.md"
+    });
+    expect(await screen.findByText("weekly review")).toBeInTheDocument();
   });
 });

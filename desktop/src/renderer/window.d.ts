@@ -108,6 +108,25 @@ type RuntimeStatus = {
   blockedTaskCount: number;
 };
 
+type KnowledgeSectionId = "master_info" | "knowledge" | "notes" | "websites";
+
+type KnowledgeEntry = {
+  relativePath: string;
+  displayName: string;
+};
+
+type KnowledgeSection = {
+  id: KnowledgeSectionId;
+  label: string;
+  entries: KnowledgeEntry[];
+};
+
+type KnowledgeEntryDetail = {
+  sectionId: KnowledgeSectionId;
+  relativePath: string;
+  content: string;
+};
+
 declare global {
   interface Window {
     karpik?: {
@@ -115,6 +134,7 @@ declare global {
       getActivityLog: () => Promise<ActivityLogEntry[]>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
+      getKnowledgeState: () => Promise<KnowledgeSection[]>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
@@ -133,6 +153,10 @@ declare global {
         workspaceId?: string | null;
       }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
+      readKnowledgeEntry: (payload: {
+        sectionId: KnowledgeSectionId;
+        relativePath: string;
+      }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       sendLocalChatMessage: (payload: {
         chatId: string;

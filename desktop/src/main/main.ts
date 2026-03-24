@@ -11,6 +11,7 @@ import {
 } from "./codexSettingsStore";
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { getDataRoot } from "./dataRoot";
+import { createKnowledgeStore } from "./knowledgeStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalChatRuntime } from "./localChatRuntime";
@@ -38,6 +39,7 @@ let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
+let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
@@ -325,6 +327,12 @@ function registerIpcHandlers() {
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
+  ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listSections() ?? []);
+  ipcMain.handle(
+    "knowledge:read-entry",
+    (_event, payload: { sectionId: "master_info" | "knowledge" | "notes" | "websites"; relativePath: string }) =>
+      knowledgeStore?.readEntry(payload) ?? null
+  );
   ipcMain.handle("quick-access:get-state", () => quickAccessRuntime?.getState());
   ipcMain.handle("runtime:get-status", () => {
     const pairingState = pairingStore.getState();
@@ -484,6 +492,9 @@ async function bootstrap() {
   const runtimeFolders = ensureRuntimeFolders(getDataRoot());
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
+  });
+  knowledgeStore = createKnowledgeStore({
+    runtimeRoot: runtimeFolders.root
   });
   activityLogStore = new ActivityLogStore({
     stateRoot: runtimeFolders.state
