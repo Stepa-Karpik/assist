@@ -58,8 +58,13 @@ def parse_status_command(text: str) -> str | None:
     return task_id.strip() if task_id is not None else ""
 
 
-def get_queued_task_text(task_id: str) -> str:
-    return f"Задача {task_id} поставлена в очередь."
+def get_queued_task_text(task_id: str, *, device_online: bool | None = None) -> str:
+    base_text = f"Задача {task_id} поставлена в очередь."
+
+    if device_online is False:
+        return f"{base_text} ПК сейчас офлайн."
+
+    return base_text
 
 
 def get_running_task_text(task_id: str) -> str:
@@ -78,8 +83,13 @@ def get_task_not_found_text() -> str:
     return "Задача не найдена."
 
 
-def get_auth_success_text() -> str:
-    return "Авторизация пройдена. Задача поставлена в очередь."
+def get_auth_success_text(*, device_online: bool | None = None) -> str:
+    base_text = "Авторизация пройдена. Задача поставлена в очередь."
+
+    if device_online is False:
+        return f"{base_text} ПК сейчас офлайн."
+
+    return base_text
 
 
 def get_auth_password_prompt_text() -> str:
@@ -112,10 +122,10 @@ def get_setup_required_text() -> str:
 
 def map_task_workflow_response(result: TaskWorkflowResult) -> str | None:
     if result.status == "queued" and result.task_id is not None:
-        return get_queued_task_text(result.task_id)
+        return get_queued_task_text(result.task_id, device_online=result.device_online)
 
     if result.status == "queued":
-        return get_auth_success_text()
+        return get_auth_success_text(device_online=result.device_online)
 
     if result.status == "awaiting_auth" and result.challenge_step == "password":
         return get_auth_password_prompt_text()

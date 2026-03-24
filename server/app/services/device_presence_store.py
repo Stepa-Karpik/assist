@@ -29,6 +29,11 @@ class InMemoryDevicePresenceStore:
             self._persist()
             return self._build_record(device_id)
 
+    def reset(self) -> None:
+        with self._lock:
+            self._last_seen = {}
+            self._persist()
+
     def get_presence(self, device_id: str) -> DevicePresenceRecord | None:
         with self._lock:
             if device_id not in self._last_seen:

@@ -38,6 +38,7 @@ class TaskWorkflowResult:
     challenge_step: str | None = None
     message: str | None = None
     task_id: str | None = None
+    device_online: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +110,9 @@ def parse_workflow_result(body: str) -> TaskWorkflowResult:
         challenge_step=parsed.get("challenge_step"),
         message=parsed.get("message"),
         task_id=extract_task_id(parsed),
+        device_online=parsed.get("device_online")
+        if isinstance(parsed.get("device_online"), bool)
+        else None,
     )
 
 

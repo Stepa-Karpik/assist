@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from pathlib import Path
 from threading import Lock
 from typing import TypeVar
@@ -30,7 +31,7 @@ class JsonStateBackend:
             with temp_path.open("w", encoding="utf-8") as handle:
                 json.dump(state, handle, ensure_ascii=True, indent=2, sort_keys=True)
 
-            temp_path.replace(self._path)
+            self._replace_with_retry(temp_path)
 
     def _load_all_unlocked(self) -> dict[str, object]:
         if not self._path.exists():
@@ -46,3 +47,21 @@ class JsonStateBackend:
             return {}
 
         return payload
+
+    def _replace_with_retry(self, temp_path: Path) -> None:
+        last_error: PermissionError | None = None
+
+        for attempt in range(5):
+            try:
+                temp_path.replace(self._path)
+                return
+            except PermissionError as error:
+                last_error = error
+
+                if attempt == 4:
+                    raise
+
+                time.sleep(0.02)
+
+        if last_error is not None:
+            raise last_error

@@ -115,6 +115,25 @@ def test_low_risk_task_queues_immediately():
     assert response == get_queued_task_text("task-1")
 
 
+def test_low_risk_task_reports_offline_queue_state():
+    task_client = FakeTaskClient(
+        task_result=TaskWorkflowResult(
+            status="queued",
+            task_id="task-1",
+            device_online=False,
+        )
+    )
+
+    response = resolve_task_command(
+        "/task low send status",
+        telegram_user_id=42,
+        chat_id=1001,
+        task_client=task_client,
+    )
+
+    assert response == "Задача task-1 поставлена в очередь. ПК сейчас офлайн."
+
+
 def test_medium_risk_task_prompts_for_password():
     task_client = FakeTaskClient(
         task_result=TaskWorkflowResult(status="awaiting_auth", challenge_step="password")

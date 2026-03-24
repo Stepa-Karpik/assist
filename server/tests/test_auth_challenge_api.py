@@ -9,6 +9,7 @@ def setup_function() -> None:
     app.state.pairing_store.reset()
     app.state.task_store.reset()
     app.state.challenge_store.reset()
+    app.state.device_presence_store.reset()
 
 
 def trust_telegram_user(
@@ -58,8 +59,33 @@ def test_low_risk_trusted_telegram_task_queues_immediately() -> None:
 
     assert response.status_code == 201
     assert response.json()["status"] == "queued"
+    assert response.json()["device_online"] is False
     assert response.json()["task"]["status"] == "queued"
     assert response.json()["task"]["required_auth"] == "none"
+
+
+def test_low_risk_trusted_telegram_task_reports_online_device_presence() -> None:
+    trust_telegram_user()
+    client.post(
+        "/api/devices/online",
+        json={"device_id": "desktop-local", "status": "online"},
+    )
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Send a short status reply",
+            "source": "telegram",
+            "risk": "low",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "queued"
+    assert response.json()["device_online"] is True
 
 
 def test_medium_risk_trusted_telegram_task_requires_password_when_no_trust_window() -> None:
@@ -292,4 +318,5 @@ def test_missing_desktop_auth_setup_returns_setup_required() -> None:
 
     assert response.status_code == 201
     assert response.json()["status"] == "setup_required"
+    assert response.json()["device_online"] is False
     assert response.json()["task"] is None

@@ -46,6 +46,8 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
     task_store = request.app.state.task_store
     pairing_store = request.app.state.pairing_store
     challenge_store = request.app.state.challenge_store
+    device_presence = request.app.state.device_presence_store.get_presence(payload.device_id)
+    device_online = device_presence.is_online if device_presence is not None else False
 
     if (
         payload.source != "telegram"
@@ -53,7 +55,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
         or payload.chat_id is None
     ):
         task = task_store.create_task(payload)
-        return TaskIntakeResponse(status="queued", task=task)
+        return TaskIntakeResponse(status="queued", task=task, device_online=device_online)
 
     trusted_users = pairing_store.get_trusted_users(payload.device_id)
     if payload.telegram_user_id not in trusted_users:
@@ -63,11 +65,16 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
         payload.device_id, payload.telegram_user_id, payload.chat_id
     )
     if lock_expires_at is not None:
-        return TaskIntakeResponse(status="locked", lock_expires_at=lock_expires_at)
+        return TaskIntakeResponse(
+            status="locked",
+            lock_expires_at=lock_expires_at,
+            device_online=device_online,
+        )
 
     if requires_desktop_auth_setup(payload, request):
         return TaskIntakeResponse(
             status="setup_required",
+            device_online=device_online,
             message="Настрой пароль и TOTP в GUI Karpik на ПК.",
         )
 
@@ -75,14 +82,14 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
 
     if payload.risk == "low":
         task = task_store.create_task(payload, required_auth=required_auth)
-        return TaskIntakeResponse(status="queued", task=task)
+        return TaskIntakeResponse(status="queued", task=task, device_online=device_online)
 
     if challenge_store.has_trust_window(
         payload.device_id, payload.telegram_user_id, payload.chat_id, payload.risk
     ):
         if payload.risk == "medium":
             task = task_store.create_task(payload, required_auth=required_auth)
-            return TaskIntakeResponse(status="queued", task=task)
+            return TaskIntakeResponse(status="queued", task=task, device_online=device_online)
 
         task = task_store.create_task(
             payload,
@@ -96,6 +103,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
             task=task.model_copy(),
             challenge_id=challenge.challenge_id,
             challenge_step=challenge.step,
+            device_online=device_online,
         )
 
     task = task_store.create_task(
@@ -110,6 +118,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
         task=task.model_copy(),
         challenge_id=challenge.challenge_id,
         challenge_step=challenge.step,
+        device_online=device_online,
     )
 
 

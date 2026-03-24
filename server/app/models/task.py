@@ -64,6 +64,7 @@ class TaskRecord(BaseModel):
 class TaskIntakeResponse(BaseModel):
     status: TaskIntakeStatus
     task: TaskRecord | None = None
+    device_online: bool | None = None
     challenge_id: str | None = None
     challenge_step: ChallengeStep | None = None
     lock_expires_at: datetime | None = None

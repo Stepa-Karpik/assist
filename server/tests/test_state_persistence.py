@@ -111,3 +111,26 @@ def test_delivery_store_reloads_pending_events(state_file: Path) -> None:
     assert len(events) == 1
     assert events[0].task_id == task.task_id
     assert events[0].kind == "task_done"
+
+
+def test_state_backend_retries_atomic_replace_after_transient_permission_error(
+    state_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend = JsonStateBackend(state_file)
+    original_replace = Path.replace
+    call_count = {"value": 0}
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        call_count["value"] += 1
+
+        if call_count["value"] == 1:
+            raise PermissionError("busy")
+
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+
+    backend.write_section("tasks", [{"task_id": "task-1"}])
+
+    assert call_count["value"] == 2
+    assert backend.read_section("tasks", []) == [{"task_id": "task-1"}]
