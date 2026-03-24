@@ -93,6 +93,57 @@ describe("LocalChatStore", () => {
     });
   });
 
+  it("reuses an existing continuation chat for the same Telegram chat", () => {
+    const stateRoot = createStateRoot();
+    const timestamps = [
+      new Date("2026-03-24T12:05:00.000Z"),
+      new Date("2026-03-24T12:10:00.000Z")
+    ];
+    const generatedIds = ["local-chat-2", "local-chat-3"];
+    const store = new LocalChatStore({
+      stateRoot,
+      now: () => timestamps.shift() ?? new Date("2026-03-24T12:10:00.000Z"),
+      generateChatId: () => generatedIds.shift() ?? "local-chat-4"
+    });
+
+    const firstChat = store.createContinuationChat({
+      telegramChatId: 5001,
+      title: "Telegram 5001",
+      workspaceId: "assist-repo"
+    });
+    store.appendMessage(firstChat.chatId, {
+      role: "assistant",
+      text: "Ready."
+    });
+
+    const reusedChat = store.createContinuationChat({
+      telegramChatId: 5001,
+      title: "Telegram 5001 / updated",
+      workspaceId: "default-workspace"
+    });
+
+    expect(reusedChat).toEqual({
+      chatId: "local-chat-2",
+      source: "local_continuation_chat",
+      title: "Telegram 5001 / updated",
+      createdAt: "2026-03-24T12:05:00.000Z",
+      updatedAt: "2026-03-24T12:10:00.000Z",
+      messageCount: 1,
+      referenceLabel: "Ссылается на Telegram chat 5001",
+      telegramChatId: 5001,
+      workspaceId: "default-workspace"
+    });
+    expect(store.list()).toHaveLength(1);
+    expect(store.getChat("local-chat-2")?.messages).toEqual([
+      {
+        messageId: expect.any(String),
+        role: "assistant",
+        text: "Ready.",
+        createdAt: "2026-03-24T12:10:00.000Z"
+      }
+    ]);
+  });
+
   it("lists chats newest first by updatedAt", () => {
     const stateRoot = createStateRoot();
     const firstStore = new LocalChatStore({

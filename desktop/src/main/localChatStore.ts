@@ -205,7 +205,7 @@ export class LocalChatStore {
       messageCount: 0,
       referenceLabel: null,
       telegramChatId: null,
-      workspaceId,
+      workspaceId: workspaceId ?? null,
       messages: []
     };
 
@@ -217,9 +217,33 @@ export class LocalChatStore {
   createContinuationChat({
     telegramChatId,
     title,
-    workspaceId = null
+    workspaceId
   }: CreateContinuationChatInput): LocalChatRecord {
     const timestamp = this.now().toISOString();
+    const existingChat = this.chats.find(
+      (chat) =>
+        chat.source === "local_continuation_chat" &&
+        chat.telegramChatId === telegramChatId
+    );
+
+    if (existingChat !== undefined) {
+      const nextWorkspaceId: string | null =
+        workspaceId === undefined ? existingChat.workspaceId : workspaceId;
+      const nextChat: LocalChatDetail = {
+        ...existingChat,
+        title: title?.trim() || existingChat.title,
+        updatedAt: timestamp,
+        workspaceId: nextWorkspaceId
+      };
+
+      this.chats = sortChats([
+        nextChat,
+        ...this.chats.filter((chat) => chat.chatId !== existingChat.chatId)
+      ]);
+      this.persist();
+      return toSummary(nextChat);
+    }
+
     const nextChat: LocalChatDetail = {
       chatId: this.generateChatId(),
       source: "local_continuation_chat",
@@ -229,7 +253,7 @@ export class LocalChatStore {
       messageCount: 0,
       referenceLabel: `Ссылается на Telegram chat ${telegramChatId}`,
       telegramChatId,
-      workspaceId,
+      workspaceId: workspaceId ?? null,
       messages: []
     };
 
