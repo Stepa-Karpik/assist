@@ -12,6 +12,7 @@ import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { getDataRoot } from "./dataRoot";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
+import { createLocalChatRuntime } from "./localChatRuntime";
 import { PairingStore } from "./pairingStore";
 import {
   type AuthEventListResponse,
@@ -36,6 +37,7 @@ let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
+let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 const pairingStore = new PairingStore();
@@ -251,6 +253,7 @@ function registerIpcHandlers() {
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
+  ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
   ipcMain.handle("tasks:get-local-approvals", () => localApprovalStore?.list() ?? []);
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
@@ -305,6 +308,16 @@ function registerIpcHandlers() {
       }
 
       return localChatStore.createContinuationChat(payload);
+    }
+  );
+  ipcMain.handle(
+    "chats:send-message",
+    async (_event, payload: { chatId: string; text: string }) => {
+      if (localChatRuntime === null) {
+        throw new Error("Local chat runtime is not initialized");
+      }
+
+      return localChatRuntime.sendMessage(payload);
     }
   );
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
@@ -373,6 +386,20 @@ async function bootstrap() {
     settingsRoot: runtimeFolders.settings,
     defaultWorkspaceRoot: runtimeFolders.userRoot
   });
+  const getWorkspaceRootForLocalChat = (chatId: string): string => {
+    const defaultWorkspaceRoot =
+      codexSettingsStore?.getWorkspaceForChat(null).rootPath ?? runtimeFolders.userRoot;
+    const workspaceId = localChatStore?.getChat(chatId)?.workspaceId;
+
+    if (!workspaceId || codexSettingsStore === null) {
+      return defaultWorkspaceRoot;
+    }
+
+    return (
+      codexSettingsStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)
+        ?.rootPath ?? defaultWorkspaceRoot
+    );
+  };
   taskExecutor = createTaskExecutor({
     deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
     userRoot: runtimeFolders.userRoot,
@@ -382,6 +409,14 @@ async function bootstrap() {
     generateCodexWritePreview: createCodexWritePreviewGenerator({
       stateRoot: runtimeFolders.state
     }).generatePreview
+  });
+  localChatRuntime = createLocalChatRuntime({
+    chatStore: localChatStore,
+    executeTask: (task) => taskExecutor!.execute(task),
+    persistLocalApproval: async (intent, draft) => {
+      localApprovalStore?.saveDraft(intent, draft);
+    },
+    getWorkspaceRootForChat: getWorkspaceRootForLocalChat
   });
   registerIpcHandlers();
 

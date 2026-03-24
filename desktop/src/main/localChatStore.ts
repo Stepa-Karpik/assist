@@ -14,6 +14,17 @@ export type LocalChatRecord = {
   workspaceId: string | null;
 };
 
+export type LocalChatMessage = {
+  messageId: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  createdAt: string;
+};
+
+export type LocalChatDetail = LocalChatRecord & {
+  messages: LocalChatMessage[];
+};
+
 type LocalChatStoreOptions = {
   stateRoot: string;
   now?: () => Date;
@@ -31,8 +42,93 @@ type CreateContinuationChatInput = {
   workspaceId?: string | null;
 };
 
-function sortChats(chats: LocalChatRecord[]): LocalChatRecord[] {
+type AppendMessageInput = {
+  role: LocalChatMessage["role"];
+  text: string;
+};
+
+type PersistedLocalChatRecord = Partial<LocalChatDetail>;
+
+function sortChats<T extends { updatedAt: string }>(chats: T[]): T[] {
   return [...chats].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function toSummary(chat: LocalChatDetail): LocalChatRecord {
+  return {
+    chatId: chat.chatId,
+    source: chat.source,
+    title: chat.title,
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
+    messageCount: chat.messages.length,
+    referenceLabel: chat.referenceLabel,
+    telegramChatId: chat.telegramChatId,
+    workspaceId: chat.workspaceId
+  };
+}
+
+function cloneDetail(chat: LocalChatDetail): LocalChatDetail {
+  return {
+    ...toSummary(chat),
+    messages: chat.messages.map((message) => ({ ...message }))
+  };
+}
+
+function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalChatMessage | null {
+  if (value?.text === undefined || typeof value.text !== "string") {
+    return null;
+  }
+
+  if (value.role !== "user" && value.role !== "assistant" && value.role !== "system") {
+    return null;
+  }
+
+  return {
+    messageId:
+      typeof value.messageId === "string" && value.messageId.length > 0
+        ? value.messageId
+        : crypto.randomUUID(),
+    role: value.role,
+    text: value.text,
+    createdAt:
+      typeof value.createdAt === "string" && value.createdAt.length > 0
+        ? value.createdAt
+        : new Date(0).toISOString()
+  };
+}
+
+function normalizeChat(value: PersistedLocalChatRecord): LocalChatDetail | null {
+  if (
+    typeof value.chatId !== "string" ||
+    (value.source !== "desktop_chat" && value.source !== "local_continuation_chat") ||
+    typeof value.title !== "string" ||
+    typeof value.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  const messages = Array.isArray(value.messages)
+    ? value.messages
+        .map((message) => normalizeMessage(message))
+        .filter((message): message is LocalChatMessage => message !== null)
+    : [];
+  const updatedAt =
+    typeof value.updatedAt === "string" && value.updatedAt.length > 0
+      ? value.updatedAt
+      : messages.at(-1)?.createdAt ?? value.createdAt;
+
+  return {
+    chatId: value.chatId,
+    source: value.source,
+    title: value.title,
+    createdAt: value.createdAt,
+    updatedAt,
+    messageCount: messages.length,
+    referenceLabel: typeof value.referenceLabel === "string" ? value.referenceLabel : null,
+    telegramChatId: typeof value.telegramChatId === "number" ? value.telegramChatId : null,
+    workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : null,
+    messages
+  };
 }
 
 export class LocalChatStore {
@@ -42,7 +138,7 @@ export class LocalChatStore {
 
   private readonly generateChatId: () => string;
 
-  private chats: LocalChatRecord[];
+  private chats: LocalChatDetail[];
 
   constructor({
     stateRoot,
@@ -56,7 +152,12 @@ export class LocalChatStore {
   }
 
   list(): LocalChatRecord[] {
-    return sortChats(this.chats).map((chat) => ({ ...chat }));
+    return sortChats(this.chats).map((chat) => toSummary(chat));
+  }
+
+  getChat(chatId: string): LocalChatDetail | null {
+    const chat = this.chats.find((candidate) => candidate.chatId === chatId);
+    return chat ? cloneDetail(chat) : null;
   }
 
   createDesktopChat({
@@ -64,7 +165,7 @@ export class LocalChatStore {
     workspaceId = null
   }: CreateDesktopChatInput = {}): LocalChatRecord {
     const timestamp = this.now().toISOString();
-    const nextChat: LocalChatRecord = {
+    const nextChat: LocalChatDetail = {
       chatId: this.generateChatId(),
       source: "desktop_chat",
       title,
@@ -73,12 +174,13 @@ export class LocalChatStore {
       messageCount: 0,
       referenceLabel: null,
       telegramChatId: null,
-      workspaceId
+      workspaceId,
+      messages: []
     };
 
     this.chats = sortChats([nextChat, ...this.chats]);
     this.persist();
-    return { ...nextChat };
+    return toSummary(nextChat);
   }
 
   createContinuationChat({
@@ -87,7 +189,7 @@ export class LocalChatStore {
     workspaceId = null
   }: CreateContinuationChatInput): LocalChatRecord {
     const timestamp = this.now().toISOString();
-    const nextChat: LocalChatRecord = {
+    const nextChat: LocalChatDetail = {
       chatId: this.generateChatId(),
       source: "local_continuation_chat",
       title: title?.trim() || `Telegram ${telegramChatId}`,
@@ -96,21 +198,60 @@ export class LocalChatStore {
       messageCount: 0,
       referenceLabel: `Ссылается на Telegram chat ${telegramChatId}`,
       telegramChatId,
-      workspaceId
+      workspaceId,
+      messages: []
     };
 
     this.chats = sortChats([nextChat, ...this.chats]);
     this.persist();
-    return { ...nextChat };
+    return toSummary(nextChat);
   }
 
-  private load(): LocalChatRecord[] {
+  appendMessage(chatId: string, input: AppendMessageInput): LocalChatDetail {
+    const chat = this.chats.find((candidate) => candidate.chatId === chatId);
+
+    if (chat === undefined) {
+      throw new Error("Local chat not found.");
+    }
+
+    const nextMessage: LocalChatMessage = {
+      messageId: crypto.randomUUID(),
+      role: input.role,
+      text: input.text,
+      createdAt: this.now().toISOString()
+    };
+    const nextChat: LocalChatDetail = {
+      ...chat,
+      updatedAt: nextMessage.createdAt,
+      messageCount: chat.messages.length + 1,
+      messages: [...chat.messages, nextMessage]
+    };
+
+    this.chats = sortChats([
+      nextChat,
+      ...this.chats.filter((candidate) => candidate.chatId !== chatId)
+    ]);
+    this.persist();
+    return cloneDetail(nextChat);
+  }
+
+  private load(): LocalChatDetail[] {
     if (!fs.existsSync(this.filePath)) {
       return [];
     }
 
     try {
-      return sortChats(JSON.parse(fs.readFileSync(this.filePath, "utf8")) as LocalChatRecord[]);
+      const rawValue = JSON.parse(fs.readFileSync(this.filePath, "utf8")) as unknown;
+
+      if (!Array.isArray(rawValue)) {
+        return [];
+      }
+
+      return sortChats(
+        rawValue
+          .map((item) => normalizeChat(item as PersistedLocalChatRecord))
+          .filter((item): item is LocalChatDetail => item !== null)
+      );
     } catch {
       return [];
     }

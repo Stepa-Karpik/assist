@@ -9,10 +9,11 @@ import {
   type CodexWritePreviewResult
 } from "./codexWritePreview";
 
-type ExecutableTask = {
+export type ExecutableTask = {
   task_id: string;
   intent: string;
   chat_id?: number | null;
+  workspace_root?: string | null;
 };
 
 export type TaskExecutionResult =
@@ -91,6 +92,14 @@ export function createTaskExecutor({
     (() => getCodexWorkspaceRoot?.() ?? normalizedUserRoot);
   const notesRoot = path.join(normalizedUserRoot, "docs", "notes");
 
+  function getWorkspaceRoot(task: ExecutableTask): string {
+    if (typeof task.workspace_root === "string" && task.workspace_root.trim().length > 0) {
+      return path.resolve(task.workspace_root.trim());
+    }
+
+    return path.resolve(resolveCodexWorkspaceRoot(task).trim());
+  }
+
   return {
     async execute(task: ExecutableTask): Promise<TaskExecutionResult> {
       const normalizedIntent = task.intent.trim();
@@ -114,7 +123,7 @@ export function createTaskExecutor({
           };
         }
 
-        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot(task).trim());
+        const workspaceRoot = getWorkspaceRoot(task);
 
         try {
           const workspaceStat = await fs.stat(workspaceRoot);
@@ -175,7 +184,7 @@ export function createTaskExecutor({
           };
         }
 
-        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot(task).trim());
+        const workspaceRoot = getWorkspaceRoot(task);
 
         try {
           const workspaceStat = await fs.stat(workspaceRoot);

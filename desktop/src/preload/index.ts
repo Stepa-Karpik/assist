@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("karpik", {
   view,
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
+  getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),
   getLocalApprovals: () => ipcRenderer.invoke("tasks:get-local-approvals"),
   getPairingState: () => ipcRenderer.invoke("pairing:get-state"),
@@ -18,6 +19,8 @@ contextBridge.exposeInMainWorld("karpik", {
     title?: string;
     workspaceId?: string | null;
   }) => ipcRenderer.invoke("chats:create-continuation", payload),
+  sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
+    ipcRenderer.invoke("chats:send-message", payload),
   openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>

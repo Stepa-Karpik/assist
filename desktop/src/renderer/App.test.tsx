@@ -16,6 +16,17 @@ type LocalChatItem = {
   workspaceId: string | null;
 };
 
+type LocalChatMessageItem = {
+  messageId: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  createdAt: string;
+};
+
+type LocalChatDetail = LocalChatItem & {
+  messages: LocalChatMessageItem[];
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -111,11 +122,17 @@ const openPairingSession = vi.fn(async () => ({
   trustedTelegramUserIds: []
 }));
 
-let localChatsState: LocalChatItem[] = [];
+let localChatsState: LocalChatDetail[] = [];
 
-const getLocalChats = vi.fn(async () => localChatsState);
+const getLocalChats = vi.fn(async () =>
+  localChatsState.map(({ messages, ...chatSummary }) => chatSummary)
+);
+const getLocalChatDetail = vi.fn(async (chatId: string) => {
+  const chat = localChatsState.find((candidate) => candidate.chatId === chatId);
+  return chat ?? null;
+});
 const createDesktopChat = vi.fn(async () => {
-  const nextChat: LocalChatItem = {
+  const nextChat: LocalChatDetail = {
     chatId: "local-chat-1",
     source: "desktop_chat",
     title: "Новый локальный чат",
@@ -124,10 +141,12 @@ const createDesktopChat = vi.fn(async () => {
     messageCount: 0,
     referenceLabel: null,
     telegramChatId: null,
-    workspaceId: null
+    workspaceId: null,
+    messages: []
   };
   localChatsState = [nextChat];
-  return nextChat;
+  const { messages, ...chatSummary } = nextChat;
+  return chatSummary;
 });
 const createLocalContinuationChat = vi.fn(
   async (payload: {
@@ -135,7 +154,7 @@ const createLocalContinuationChat = vi.fn(
     title?: string;
     workspaceId?: string | null;
   }) => {
-    const nextChat: LocalChatItem = {
+    const nextChat: LocalChatDetail = {
       chatId: "local-chat-2",
       source: "local_continuation_chat",
       title: payload.title ?? `Telegram ${payload.telegramChatId}`,
@@ -144,10 +163,49 @@ const createLocalContinuationChat = vi.fn(
       messageCount: 0,
       referenceLabel: `Ссылается на Telegram chat ${payload.telegramChatId}`,
       telegramChatId: payload.telegramChatId,
-      workspaceId: payload.workspaceId ?? null
+      workspaceId: payload.workspaceId ?? null,
+      messages: []
     };
     localChatsState = [nextChat, ...localChatsState];
-    return nextChat;
+    const { messages, ...chatSummary } = nextChat;
+    return chatSummary;
+  }
+);
+const sendLocalChatMessage = vi.fn(
+  async (payload: { chatId: string; text: string }) => {
+    const chat = localChatsState.find((candidate) => candidate.chatId === payload.chatId);
+
+    if (!chat) {
+      return null;
+    }
+
+    const updatedChat: LocalChatDetail = {
+      ...chat,
+      updatedAt: "2026-03-24T12:10:00.000Z",
+      messageCount: chat.messages.length + 2,
+      messages: [
+        ...chat.messages,
+        {
+          messageId: `user-${payload.chatId}`,
+          role: "user",
+          text: payload.text,
+          createdAt: "2026-03-24T12:10:00.000Z"
+        },
+        {
+          messageId: `assistant-${payload.chatId}`,
+          role: "assistant",
+          text: payload.text === "status" ? "desktop-local is online" : "done",
+          createdAt: "2026-03-24T12:10:01.000Z"
+        }
+      ]
+    };
+
+    localChatsState = [
+      updatedChat,
+      ...localChatsState.filter((candidate) => candidate.chatId !== payload.chatId)
+    ];
+
+    return updatedChat;
   }
 );
 
@@ -160,6 +218,7 @@ describe("App navigation", () => {
       getCodexConfigState,
       getLocalApprovals,
       getLocalChats,
+      getLocalChatDetail,
       getPairingState,
       getTaskSnapshot,
       openPairingSession,
@@ -167,6 +226,7 @@ describe("App navigation", () => {
       rejectLocalApproval,
       createDesktopChat,
       createLocalContinuationChat,
+      sendLocalChatMessage,
       saveAuthConfig,
       saveChatWorkspaceBinding,
       saveCodexConfig
@@ -179,6 +239,7 @@ describe("App navigation", () => {
     getCodexConfigState.mockClear();
     getLocalApprovals.mockClear();
     getLocalChats.mockClear();
+    getLocalChatDetail.mockClear();
     getPairingState.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
@@ -186,6 +247,7 @@ describe("App navigation", () => {
     rejectLocalApproval.mockClear();
     createDesktopChat.mockClear();
     createLocalContinuationChat.mockClear();
+    sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
@@ -212,6 +274,44 @@ describe("App navigation", () => {
     expect(createDesktopChat).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Новый локальный чат")).toBeInTheDocument();
     expect(await screen.findByText("desktop_chat")).toBeInTheDocument();
+  });
+
+  it("shows local chat detail and sends a local request", async () => {
+    localChatsState = [
+      {
+        chatId: "local-chat-10",
+        source: "desktop_chat",
+        title: "Execution chat",
+        createdAt: "2026-03-24T12:00:00.000Z",
+        updatedAt: "2026-03-24T12:00:00.000Z",
+        messageCount: 1,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo",
+        messages: [
+          {
+            messageId: "message-1",
+            role: "assistant",
+            text: "Ready.",
+            createdAt: "2026-03-24T12:00:00.000Z"
+          }
+        ]
+      }
+    ];
+
+    render(<App />);
+
+    expect(await screen.findByText("Ready.")).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Local request"), {
+      target: { value: "status" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Send" }));
+
+    expect(sendLocalChatMessage).toHaveBeenCalledWith({
+      chatId: "local-chat-10",
+      text: "status"
+    });
+    expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
   });
 
   it("shows pairing controls and workspace registry settings", async () => {

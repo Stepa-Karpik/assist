@@ -193,6 +193,32 @@ describe("createTaskExecutor", () => {
     });
   });
 
+  it("prefers explicit local workspace context for codex tasks", async () => {
+    const workspaceRoot = createUserRoot();
+    const runCodex = vi.fn(async () => "Codex local chat summary");
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      resolveCodexWorkspace: () => "D:\\ignored",
+      runCodex
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-local-chat",
+      intent: "codex summarize current workspace",
+      workspace_root: workspaceRoot
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Codex local chat summary"
+    });
+    expect(runCodex).toHaveBeenCalledWith({
+      prompt: "summarize current workspace",
+      workspaceRoot
+    });
+  });
+
   it("rejects empty codex prompts", async () => {
     const runCodex = vi.fn(async () => "unused");
     const executor = createTaskExecutor({

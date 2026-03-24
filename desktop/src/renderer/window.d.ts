@@ -63,6 +63,17 @@ type LocalChatItem = {
   workspaceId: string | null;
 };
 
+type LocalChatMessageItem = {
+  messageId: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  createdAt: string;
+};
+
+type LocalChatDetail = LocalChatItem & {
+  messages: LocalChatMessageItem[];
+};
+
 declare global {
   interface Window {
     karpik?: {
@@ -70,6 +81,7 @@ declare global {
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
+      getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
       getPairingState: () => Promise<PairingState>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
@@ -85,6 +97,10 @@ declare global {
       }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
+      sendLocalChatMessage: (payload: {
+        chatId: string;
+        text: string;
+      }) => Promise<LocalChatDetail | null>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveChatWorkspaceBinding: (payload: {
         chatId: number;

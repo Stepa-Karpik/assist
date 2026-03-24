@@ -120,4 +120,94 @@ describe("LocalChatStore", () => {
       "local-chat-1"
     ]);
   });
+
+  it("appends messages and exposes chat detail", () => {
+    const stateRoot = createStateRoot();
+    const store = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-24T12:20:00.000Z"),
+      generateChatId: () => "local-chat-3"
+    });
+    const chat = store.createDesktopChat({
+      title: "Execution chat"
+    });
+
+    store.appendMessage(chat.chatId, {
+      role: "user",
+      text: "status"
+    });
+    const detail = store.appendMessage(chat.chatId, {
+      role: "assistant",
+      text: "desktop-local is online"
+    });
+
+    expect(detail).toEqual({
+      chatId: "local-chat-3",
+      source: "desktop_chat",
+      title: "Execution chat",
+      createdAt: "2026-03-24T12:20:00.000Z",
+      updatedAt: "2026-03-24T12:20:00.000Z",
+      messageCount: 2,
+      referenceLabel: null,
+      telegramChatId: null,
+      workspaceId: null,
+      messages: [
+        {
+          messageId: expect.any(String),
+          role: "user",
+          text: "status",
+          createdAt: "2026-03-24T12:20:00.000Z"
+        },
+        {
+          messageId: expect.any(String),
+          role: "assistant",
+          text: "desktop-local is online",
+          createdAt: "2026-03-24T12:20:00.000Z"
+        }
+      ]
+    });
+
+    expect(store.list()[0].messageCount).toBe(2);
+    expect(store.getChat(chat.chatId)?.messages).toHaveLength(2);
+  });
+
+  it("reloads persisted message history from disk", () => {
+    const stateRoot = createStateRoot();
+    const firstStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-24T12:25:00.000Z"),
+      generateChatId: () => "local-chat-4"
+    });
+    const chat = firstStore.createDesktopChat({
+      title: "Reload chat"
+    });
+    firstStore.appendMessage(chat.chatId, {
+      role: "user",
+      text: "read docs/note.txt"
+    });
+
+    const secondStore = new LocalChatStore({
+      stateRoot
+    });
+
+    expect(secondStore.getChat("local-chat-4")).toEqual({
+      chatId: "local-chat-4",
+      source: "desktop_chat",
+      title: "Reload chat",
+      createdAt: "2026-03-24T12:25:00.000Z",
+      updatedAt: "2026-03-24T12:25:00.000Z",
+      messageCount: 1,
+      referenceLabel: null,
+      telegramChatId: null,
+      workspaceId: null,
+      messages: [
+        {
+          messageId: expect.any(String),
+          role: "user",
+          text: "read docs/note.txt",
+          createdAt: "2026-03-24T12:25:00.000Z"
+        }
+      ]
+    });
+  });
 });

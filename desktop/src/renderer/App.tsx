@@ -63,6 +63,7 @@ const navigationItems: NavigationItem[] = [
 
 function MainWindowView() {
   const [activeSection, setActiveSection] = useState<NavigationItem["id"]>("chats");
+  const [selectedLocalChatId, setSelectedLocalChatId] = useState<string | null>(null);
 
   return (
     <main className="desktop-layout">
@@ -72,10 +73,16 @@ function MainWindowView() {
         onSelect={setActiveSection}
       />
       <section className="content-panel">
-        {activeSection === "chats" && <ChatsPage />}
+        {activeSection === "chats" && (
+          <ChatsPage
+            onSelectChat={setSelectedLocalChatId}
+            selectedChatId={selectedLocalChatId}
+          />
+        )}
         {activeSection === "telegram" && (
           <TelegramChatsPage
-            onContinueToLocalChats={() => {
+            onContinueToLocalChats={(chatId) => {
+              setSelectedLocalChatId(chatId);
               setActiveSection("chats");
             }}
           />

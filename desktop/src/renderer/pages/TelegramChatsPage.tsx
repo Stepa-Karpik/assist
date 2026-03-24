@@ -51,7 +51,7 @@ function groupTasksByChat(tasks: TaskSnapshotItem[]): Array<{
 }
 
 type TelegramChatsPageProps = {
-  onContinueToLocalChats?: () => void;
+  onContinueToLocalChats?: (chatId: string) => void;
 };
 
 export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageProps) {
@@ -169,12 +169,12 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
     setBusyChatId(chatId);
 
     try {
-      await window.karpik.createLocalContinuationChat({
+      const nextChat = await window.karpik.createLocalContinuationChat({
         telegramChatId: chatId,
         title: `Telegram ${chatId}`,
         workspaceId
       });
-      onContinueToLocalChats?.();
+      onContinueToLocalChats?.(nextChat.chatId);
     } catch {
       setError("Не удалось создать локальный continuation chat.");
     } finally {

@@ -218,3 +218,51 @@ h1 {
 .task-error {
   color: #fca5a5;
 }
+
+.local-chats-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.local-chat-sidebar,
+.local-chat-detail,
+.local-chat-messages {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.local-chat-summary {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.local-chat-summary.active {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.local-chat-message-user {
+  border-color: rgba(56, 189, 248, 0.26);
+}
+
+.local-chat-message-assistant {
+  border-color: rgba(34, 197, 94, 0.26);
+}
+
+.local-chat-message-system {
+  border-color: rgba(250, 204, 21, 0.24);
+}
+
+.local-chat-composer {
+  gap: 12px;
+}
+
+.local-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+}
