@@ -13,3 +13,5 @@ Current deployment split:
 - `/api/` is served by the FastAPI control plane
 - `/desktop-updates/win32/x64/` is a static directory with `RELEASES`,
   `KarpikSetup.exe`, and `.nupkg` artifacts produced by `desktop/npm run make`
+- base Docker command starts `postgres + server + nginx`
+- Telegram ingress is enabled with `docker compose --profile telegram up -d --build`

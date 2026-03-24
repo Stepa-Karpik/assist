@@ -35,6 +35,7 @@ server/pytest-cache-files-*/
 *.log
 **/.env
 **/.env.*
+!.env.example
 
 # Runtime user data should never live in git
 docs/user/

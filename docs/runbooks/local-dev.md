@@ -52,3 +52,4 @@ Typical commands:
 - Telegram bot token configured through environment variables or local secrets
 - optional desktop update feed published under
   `https://<host>/desktop-updates/win32/x64`
+- optional Docker stack via `docker compose up -d --build`

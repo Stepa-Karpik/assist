@@ -31,6 +31,8 @@ Current state:
 
 Operational entry points:
 
+- one-command server stack: `docker compose up -d --build`
+- full stack with Telegram bot: `docker compose --profile telegram up -d --build`
 - desktop install: `docs/runbooks/desktop-install.md`
 - desktop release and update feed publication: `docs/runbooks/desktop-release.md`
 - local development: `docs/runbooks/local-dev.md`
