@@ -7,18 +7,32 @@ from aiogram.types import Message
 from app.config import Settings, get_settings
 from app.handlers.messages import get_default_message
 from app.handlers.pair import resolve_pair_command
+from app.handlers.task import (
+    resolve_auth_command,
+    resolve_confirm_command,
+    resolve_decline_command,
+    resolve_task_command,
+)
 from app.handlers.start import get_start_text
 from app.pairing_client import PairingServerClient
+from app.task_client import TaskServerClient
 
 
 def create_dispatcher(
-    settings: Settings | None = None, pairing_client: PairingServerClient | None = None
+    settings: Settings | None = None,
+    pairing_client: PairingServerClient | None = None,
+    task_client: TaskServerClient | None = None,
 ) -> Dispatcher:
     resolved_settings = settings or get_settings()
     resolved_pairing_client = pairing_client or PairingServerClient(
         server_url=resolved_settings.server_url,
         device_id=resolved_settings.device_id,
         wait_seconds=resolved_settings.pair_wait_seconds,
+    )
+    resolved_task_client = task_client or TaskServerClient(
+        server_url=resolved_settings.server_url,
+        device_id=resolved_settings.device_id,
+        wait_seconds=resolved_settings.auth_wait_seconds,
     )
     dispatcher = Dispatcher()
 
@@ -37,6 +51,70 @@ def create_dispatcher(
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
             pairing_client=resolved_pairing_client,
+        )
+
+        if response is not None:
+            await message.answer(response)
+
+    @dispatcher.message(Command("task"))
+    async def task_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            resolve_task_command,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
+        )
+
+        if response is not None:
+            await message.answer(response)
+
+    @dispatcher.message(Command("auth"))
+    async def auth_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            resolve_auth_command,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
+        )
+
+        if response is not None:
+            await message.answer(response)
+
+    @dispatcher.message(Command("confirm"))
+    async def confirm_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            resolve_confirm_command,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
+        )
+
+        if response is not None:
+            await message.answer(response)
+
+    @dispatcher.message(Command("decline"))
+    async def decline_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            resolve_decline_command,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
         )
 
         if response is not None:
