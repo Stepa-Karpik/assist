@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createTaskExecutor } from "./taskExecutor";
 
@@ -137,6 +137,94 @@ describe("createTaskExecutor", () => {
     expect(result).toEqual({
       ok: false,
       errorText: "Path is outside the allowed runtime area."
+    });
+  });
+
+  it("runs codex prompts in the configured workspace", async () => {
+    const workspaceRoot = createUserRoot();
+    const runCodex = vi.fn(async () => "Codex summary");
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      runCodex
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex",
+      intent: "codex summarize the latest notes"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Codex summary"
+    });
+    expect(runCodex).toHaveBeenCalledWith({
+      prompt: "summarize the latest notes",
+      workspaceRoot
+    });
+  });
+
+  it("rejects empty codex prompts", async () => {
+    const runCodex = vi.fn(async () => "unused");
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      runCodex
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-empty",
+      intent: "codex    "
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errorText: "Codex prompt is empty."
+    });
+    expect(runCodex).not.toHaveBeenCalled();
+  });
+
+  it("fails codex tasks when the configured workspace does not exist", async () => {
+    const runCodex = vi.fn(async () => "unused");
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => "D:\\Missing\\Workspace",
+      runCodex
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-missing",
+      intent: "codex inspect the workspace"
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errorText: "Codex workspace does not exist."
+    });
+    expect(runCodex).not.toHaveBeenCalled();
+  });
+
+  it("surfaces codex runner failures explicitly", async () => {
+    const workspaceRoot = createUserRoot();
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      runCodex: async () => {
+        throw new Error("Codex CLI is unavailable.");
+      }
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-error",
+      intent: "codex inspect the workspace"
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errorText: "Codex CLI is unavailable."
     });
   });
 

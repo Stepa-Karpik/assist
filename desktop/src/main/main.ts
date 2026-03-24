@@ -279,7 +279,8 @@ async function bootstrap() {
   });
   taskExecutor = createTaskExecutor({
     deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
-    userRoot: runtimeFolders.userRoot
+    userRoot: runtimeFolders.userRoot,
+    getCodexWorkspaceRoot: () => codexSettingsStore?.getState().workspaceRoot ?? runtimeFolders.userRoot
   });
   registerIpcHandlers();
 

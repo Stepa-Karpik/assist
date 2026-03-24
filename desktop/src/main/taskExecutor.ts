@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { createCodexRunner, type CodexRunRequest } from "./codexRunner";
+
 type ExecutableTask = {
   task_id: string;
   intent: string;
@@ -19,6 +21,8 @@ export type TaskExecutionResult =
 type TaskExecutorOptions = {
   deviceId: string;
   userRoot: string;
+  getCodexWorkspaceRoot?: () => string;
+  runCodex?: (request: CodexRunRequest) => Promise<string>;
   maxResultLength?: number;
 };
 
@@ -47,9 +51,12 @@ function isSafeNoteName(value: string): boolean {
 export function createTaskExecutor({
   deviceId,
   userRoot,
+  getCodexWorkspaceRoot,
+  runCodex = createCodexRunner(),
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
+  const resolveCodexWorkspaceRoot = getCodexWorkspaceRoot ?? (() => normalizedUserRoot);
   const notesRoot = path.join(normalizedUserRoot, "docs", "notes");
 
   return {
@@ -61,6 +68,57 @@ export function createTaskExecutor({
           ok: true,
           resultText: `${deviceId} is online`
         };
+      }
+
+      const codexMatch = /^codex(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);
+
+      if (codexMatch !== null) {
+        const prompt = codexMatch[1]?.trim();
+
+        if (!prompt) {
+          return {
+            ok: false,
+            errorText: "Codex prompt is empty."
+          };
+        }
+
+        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot().trim());
+
+        try {
+          const workspaceStat = await fs.stat(workspaceRoot);
+
+          if (!workspaceStat.isDirectory()) {
+            return {
+              ok: false,
+              errorText: "Codex workspace does not exist."
+            };
+          }
+        } catch {
+          return {
+            ok: false,
+            errorText: "Codex workspace does not exist."
+          };
+        }
+
+        try {
+          const resultText = await runCodex({
+            prompt,
+            workspaceRoot
+          });
+
+          return {
+            ok: true,
+            resultText: trimResultText(resultText, maxResultLength)
+          };
+        } catch (error: unknown) {
+          return {
+            ok: false,
+            errorText:
+              error instanceof Error && error.message
+                ? error.message
+                : "Codex execution failed."
+          };
+        }
       }
 
       const readMatch = /^read\s+(.+)$/i.exec(normalizedIntent);
