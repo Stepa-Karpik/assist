@@ -16,7 +16,9 @@ contextBridge.exposeInMainWorld("karpik", {
   getQuickAccessState: () => ipcRenderer.invoke("quick-access:get-state"),
   getRuntimeStatus: () => ipcRenderer.invoke("runtime:get-status"),
   getTaskSnapshot: () => ipcRenderer.invoke("tasks:get-snapshot"),
+  getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   approveLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:approve-local-approval", taskId),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   createDesktopChat: (payload?: { title?: string; workspaceId?: string | null }) =>
     ipcRenderer.invoke("chats:create-desktop", payload),
   createLocalContinuationChat: (payload: {
@@ -33,6 +35,7 @@ contextBridge.exposeInMainWorld("karpik", {
   submitQuickRequest: (payload: { chatId?: string; text: string }) =>
     ipcRenderer.invoke("quick-access:submit-request", payload),
   openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   retryTask: (taskId: string) => ipcRenderer.invoke("tasks:retry", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>

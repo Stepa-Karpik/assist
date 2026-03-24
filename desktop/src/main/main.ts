@@ -1,5 +1,5 @@
 import started from "electron-squirrel-startup";
-import { app, BrowserWindow, ipcMain, nativeTheme, Notification, Tray } from "electron";
+import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, Notification, Tray } from "electron";
 
 import { ActivityLogStore } from "./activityLogStore";
 import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
@@ -31,6 +31,7 @@ import { createTaskExecutor } from "./taskExecutor";
 import { buildTaskNotification } from "./taskNotifications";
 import { runTaskSyncCycle } from "./taskRuntime";
 import { createAppTray } from "./tray";
+import { createUpdateService, type UpdaterAdapter } from "./updateService";
 import { createMainWindow, createQuickPopupWindow } from "./windows";
 
 let mainWindow: BrowserWindow | null = null;
@@ -53,6 +54,7 @@ let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
 let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
+let updateService: ReturnType<typeof createUpdateService> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 let taskActivityInitialized = false;
 const pairingStore = new PairingStore();
@@ -62,6 +64,7 @@ const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
 const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
 const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
+const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
 const syncClient = createSyncClient({
   serverUrl,
   deviceId
@@ -464,6 +467,21 @@ function registerIpcHandlers() {
       blockedTaskCount: taskSnapshot.filter((task) => task.status === "blocked" || task.status === "failed").length
     };
   });
+  ipcMain.handle("updates:get-state", () => updateService?.getState() ?? null);
+  ipcMain.handle("updates:check", async () => {
+    if (updateService === null) {
+      throw new Error("Update service is not initialized");
+    }
+
+    return updateService.checkForUpdates();
+  });
+  ipcMain.handle("updates:install", async () => {
+    if (updateService === null) {
+      throw new Error("Update service is not initialized");
+    }
+
+    updateService.installUpdate();
+  });
   ipcMain.handle("tasks:get-local-approvals", () => localApprovalStore?.list() ?? []);
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
@@ -678,6 +696,13 @@ async function bootstrap() {
     chatStore: localChatStore,
     activityLogStore,
     sendMessage: (payload) => localChatRuntime!.sendMessage(payload)
+  });
+  updateService = createUpdateService({
+    currentVersion: app.getVersion(),
+    feedUrl: updateFeedUrl,
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    updater: autoUpdater as unknown as UpdaterAdapter
   });
   registerIpcHandlers();
 

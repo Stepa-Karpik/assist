@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 type RuntimeStatus = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getRuntimeStatus"]>
 >;
+type UpdateState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getUpdateState"]>
+>;
 
 const emptyRuntimeStatus: RuntimeStatus = {
   deviceId: "",
@@ -23,6 +26,15 @@ const emptyRuntimeStatus: RuntimeStatus = {
   pendingTaskCount: 0,
   blockedTaskCount: 0
 };
+const emptyUpdateState: UpdateState = {
+  currentVersion: "",
+  feedUrl: null,
+  isSupported: false,
+  phase: "disabled",
+  lastCheckedAt: null,
+  availableReleaseName: null,
+  message: null
+};
 
 function formatBoolean(value: boolean): string {
   return value ? "yes" : "no";
@@ -30,7 +42,10 @@ function formatBoolean(value: boolean): string {
 
 export function ServicesPage() {
   const [status, setStatus] = useState<RuntimeStatus>(emptyRuntimeStatus);
+  const [updateState, setUpdateState] = useState<UpdateState>(emptyUpdateState);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,13 +53,18 @@ export function ServicesPage() {
 
     async function loadStatus() {
       try {
-        const nextStatus = await (window.karpik?.getRuntimeStatus?.() ?? Promise.resolve(emptyRuntimeStatus));
+        const [nextStatus, nextUpdateState] = await Promise.all([
+          window.karpik?.getRuntimeStatus?.() ?? Promise.resolve(emptyRuntimeStatus),
+          window.karpik?.getUpdateState?.() ?? Promise.resolve(emptyUpdateState)
+        ]);
 
         if (!isSubscribed) {
           return;
         }
 
         setStatus(nextStatus);
+        setUpdateState(nextUpdateState ?? emptyUpdateState);
+        setError(null);
       } catch {
         if (isSubscribed) {
           setError("Не удалось загрузить runtime status.");
@@ -67,12 +87,41 @@ export function ServicesPage() {
     };
   }, []);
 
+  async function handleCheckForUpdates() {
+    try {
+      setIsCheckingUpdates(true);
+      const nextState = await (window.karpik?.checkForUpdates?.() ?? Promise.resolve(emptyUpdateState));
+      setUpdateState((currentState) =>
+        currentState.phase === "downloaded" && nextState.phase === "checking"
+          ? currentState
+          : nextState
+      );
+      setError(null);
+    } catch {
+      setError("Не удалось проверить обновления.");
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    try {
+      setIsInstallingUpdate(true);
+      await window.karpik?.installUpdate?.();
+      setError(null);
+    } catch {
+      setError("Не удалось запустить установку обновления.");
+    } finally {
+      setIsInstallingUpdate(false);
+    }
+  }
+
   return (
     <div className="page-shell">
       <p className="eyebrow">Сервисы</p>
       <h2>Connected Integrations</h2>
       <p className="muted-text">
-        Desktop runtime snapshot: device, server endpoint, auth readiness, workspace routing and local chat activity.
+        Desktop runtime snapshot: device, server endpoint, auth readiness, workspace routing, local chat activity and updates.
       </p>
 
       {isLoading ? <p className="muted-text">Загружаем runtime status...</p> : null}
@@ -116,6 +165,39 @@ export function ServicesPage() {
             <p>Activity log entries: {status.activityLogCount}</p>
             <p>Pending tasks: {status.pendingTaskCount}</p>
             <p>Blocked tasks: {status.blockedTaskCount}</p>
+          </article>
+
+          <article className="task-card">
+            <div className="task-card-header">
+              <strong>Desktop updates</strong>
+              <span className="task-status">{updateState.phase}</span>
+            </div>
+            <p>Current version: {updateState.currentVersion || "unknown"}</p>
+            <p>Feed URL: {updateState.feedUrl ?? "not configured"}</p>
+            <p>Updater enabled: {formatBoolean(updateState.isSupported)}</p>
+            <p>Last checked: {updateState.lastCheckedAt ?? "never"}</p>
+            <p>Available release: {updateState.availableReleaseName ?? "none"}</p>
+            <p>{updateState.message ?? "No updater activity yet."}</p>
+            <div className="action-row">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCheckForUpdates();
+                }}
+                disabled={isCheckingUpdates || !updateState.isSupported}
+              >
+                {isCheckingUpdates ? "Проверяем..." : "Проверить обновления"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleInstallUpdate();
+                }}
+                disabled={isInstallingUpdate || updateState.phase !== "downloaded"}
+              >
+                {isInstallingUpdate ? "Запускаем..." : "Установить обновление"}
+              </button>
+            </div>
           </article>
         </div>
       ) : null}

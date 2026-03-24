@@ -62,6 +62,16 @@ type RuntimeStatus = {
   blockedTaskCount: number;
 };
 
+type UpdateState = {
+  currentVersion: string;
+  feedUrl: string | null;
+  isSupported: boolean;
+  phase: "disabled" | "idle" | "checking" | "downloading" | "downloaded" | "error";
+  lastCheckedAt: string | null;
+  availableReleaseName: string | null;
+  message: string | null;
+};
+
 type KnowledgeSection = {
   id: "master_info" | "knowledge" | "notes" | "websites";
   label: string;
@@ -249,6 +259,25 @@ const getRuntimeStatus = vi.fn<() => Promise<RuntimeStatus>>(async () => ({
   pendingTaskCount: 1,
   blockedTaskCount: 0
 }));
+const getUpdateState = vi.fn<() => Promise<UpdateState>>(async () => ({
+  currentVersion: "0.1.0",
+  feedUrl: "https://karpik.example.com/desktop-updates/win32/x64",
+  isSupported: true,
+  phase: "downloaded",
+  lastCheckedAt: "2026-03-24T18:40:00.000Z",
+  availableReleaseName: "0.2.0",
+  message: "Update 0.2.0 is ready to install."
+}));
+const checkForUpdates = vi.fn(async () => ({
+  currentVersion: "0.1.0",
+  feedUrl: "https://karpik.example.com/desktop-updates/win32/x64",
+  isSupported: true,
+  phase: "checking" as const,
+  lastCheckedAt: "2026-03-24T18:41:00.000Z",
+  availableReleaseName: null,
+  message: "Checking for updates..."
+}));
+const installUpdate = vi.fn(async () => undefined);
 const getKnowledgeState = vi.fn<() => Promise<KnowledgeSection[]>>(async () => [
   {
     id: "knowledge",
@@ -398,6 +427,7 @@ describe("App navigation", () => {
       getPairingState,
       getQuickAccessState,
       getRuntimeStatus,
+      getUpdateState,
       getTaskSnapshot,
       openPairingSession,
       approveLocalApproval,
@@ -406,6 +436,8 @@ describe("App navigation", () => {
       readKnowledgeEntry,
       createDesktopChat,
       createLocalContinuationChat,
+      checkForUpdates,
+      installUpdate,
       submitQuickRequest,
       sendLocalChatMessage,
       saveAuthConfig,
@@ -428,6 +460,7 @@ describe("App navigation", () => {
     getPairingState.mockClear();
     getQuickAccessState.mockClear();
     getRuntimeStatus.mockClear();
+    getUpdateState.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
@@ -436,6 +469,8 @@ describe("App navigation", () => {
     readKnowledgeEntry.mockClear();
     createDesktopChat.mockClear();
     createLocalContinuationChat.mockClear();
+    checkForUpdates.mockClear();
+    installUpdate.mockClear();
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
@@ -638,6 +673,21 @@ describe("App navigation", () => {
     expect(await screen.findByText("status")).toBeInTheDocument();
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace for chat 5001")).toBeInTheDocument();
+  });
+
+  it("shows desktop update controls in services and allows installing a downloaded update", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
+
+    expect(await screen.findByText("Desktop updates")).toBeInTheDocument();
+    expect(await screen.findByText("Current version: 0.1.0")).toBeInTheDocument();
+    expect(await screen.findByText("Available release: 0.2.0")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Проверить обновления" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Установить обновление" }));
+
+    expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(installUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("renders screenshot artifacts in Telegram task cards", async () => {

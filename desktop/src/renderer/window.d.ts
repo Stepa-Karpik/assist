@@ -127,6 +127,16 @@ type RuntimeStatus = {
   blockedTaskCount: number;
 };
 
+type UpdateState = {
+  currentVersion: string;
+  feedUrl: string | null;
+  isSupported: boolean;
+  phase: "disabled" | "idle" | "checking" | "downloading" | "downloaded" | "error";
+  lastCheckedAt: string | null;
+  availableReleaseName: string | null;
+  message: string | null;
+};
+
 type KnowledgeSectionId = "master_info" | "knowledge" | "notes" | "websites";
 
 type KnowledgeEntry = {
@@ -162,7 +172,9 @@ declare global {
       getQuickAccessState: () => Promise<QuickAccessState | null>;
       getRuntimeStatus: () => Promise<RuntimeStatus>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
+      getUpdateState: () => Promise<UpdateState>;
       approveLocalApproval: (taskId: string) => Promise<void>;
+      checkForUpdates: () => Promise<UpdateState>;
       createDesktopChat: (payload?: {
         title?: string;
         workspaceId?: string | null;
@@ -173,6 +185,7 @@ declare global {
         workspaceId?: string | null;
       }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
+      installUpdate: () => Promise<void>;
       readKnowledgeEntry: (payload: {
         sectionId: KnowledgeSectionId;
         relativePath: string;
