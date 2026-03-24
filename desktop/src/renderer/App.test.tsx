@@ -27,6 +27,34 @@ type LocalChatDetail = LocalChatItem & {
   messages: LocalChatMessageItem[];
 };
 
+type ActivityLogEntry = {
+  entryId: string;
+  kind: "local_request" | "local_result" | "remote_task";
+  status: "info" | "success" | "warning" | "error";
+  title: string;
+  detail: string | null;
+  chatId: string | null;
+  taskId: string | null;
+  createdAt: string;
+};
+
+type RuntimeStatus = {
+  deviceId: string;
+  serverUrl: string;
+  pairingActive: boolean;
+  trustedTelegramUserCount: number;
+  passwordConfigured: boolean;
+  totpConfigured: boolean;
+  workspaceCount: number;
+  defaultWorkspaceName: string;
+  defaultWorkspaceRoot: string;
+  localChatCount: number;
+  lastActiveChatTitle: string | null;
+  activityLogCount: number;
+  pendingTaskCount: number;
+  blockedTaskCount: number;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -114,6 +142,72 @@ const getLocalApprovals = vi.fn<
 >(async () => []);
 const approveLocalApproval = vi.fn(async () => undefined);
 const rejectLocalApproval = vi.fn(async () => undefined);
+const getActivityLog = vi.fn<() => Promise<ActivityLogEntry[]>>(async () => []);
+const getQuickAccessState = vi.fn<
+  () => Promise<{
+    targetChat: LocalChatItem | null;
+    localChatCount: number;
+    recentActivity: ActivityLogEntry[];
+  }>
+>(async () => ({
+  targetChat: null,
+  localChatCount: 0,
+  recentActivity: []
+}));
+const submitQuickRequest = vi.fn(async (payload: { text: string }) => ({
+  chat: {
+    chatId: "local-chat-10",
+    source: "desktop_chat" as const,
+    title: "Execution chat",
+    createdAt: "2026-03-24T12:00:00.000Z",
+    updatedAt: "2026-03-24T12:11:00.000Z",
+    messageCount: 2,
+    referenceLabel: null,
+    telegramChatId: null,
+    workspaceId: "assist-repo"
+  },
+  detail: {
+    chatId: "local-chat-10",
+    source: "desktop_chat" as const,
+    title: "Execution chat",
+    createdAt: "2026-03-24T12:00:00.000Z",
+    updatedAt: "2026-03-24T12:11:00.000Z",
+    messageCount: 2,
+    referenceLabel: null,
+    telegramChatId: null,
+    workspaceId: "assist-repo",
+    messages: [
+      {
+        messageId: "quick-user-1",
+        role: "user" as const,
+        text: payload.text,
+        createdAt: "2026-03-24T12:10:00.000Z"
+      },
+      {
+        messageId: "quick-assistant-1",
+        role: "assistant" as const,
+        text: "desktop-local is online",
+        createdAt: "2026-03-24T12:11:00.000Z"
+      }
+    ]
+  }
+}));
+const getRuntimeStatus = vi.fn<() => Promise<RuntimeStatus>>(async () => ({
+  deviceId: "desktop-local",
+  serverUrl: "http://127.0.0.1:8000",
+  pairingActive: false,
+  trustedTelegramUserCount: 1,
+  passwordConfigured: true,
+  totpConfigured: true,
+  workspaceCount: 2,
+  defaultWorkspaceName: "Assist",
+  defaultWorkspaceRoot: "D:\\Projects\\assist",
+  localChatCount: 3,
+  lastActiveChatTitle: "Execution chat",
+  activityLogCount: 4,
+  pendingTaskCount: 1,
+  blockedTaskCount: 0
+}));
 
 const openPairingSession = vi.fn(async () => ({
   code: "PAIR42",
@@ -214,18 +308,22 @@ describe("App navigation", () => {
     localChatsState = [];
     window.karpik = {
       view: "main",
+      getActivityLog,
       getAuthConfigState,
       getCodexConfigState,
       getLocalApprovals,
       getLocalChats,
       getLocalChatDetail,
       getPairingState,
+      getQuickAccessState,
+      getRuntimeStatus,
       getTaskSnapshot,
       openPairingSession,
       approveLocalApproval,
       rejectLocalApproval,
       createDesktopChat,
       createLocalContinuationChat,
+      submitQuickRequest,
       sendLocalChatMessage,
       saveAuthConfig,
       saveChatWorkspaceBinding,
@@ -235,18 +333,22 @@ describe("App navigation", () => {
 
   afterEach(() => {
     cleanup();
+    getActivityLog.mockClear();
     getAuthConfigState.mockClear();
     getCodexConfigState.mockClear();
     getLocalApprovals.mockClear();
     getLocalChats.mockClear();
     getLocalChatDetail.mockClear();
     getPairingState.mockClear();
+    getQuickAccessState.mockClear();
+    getRuntimeStatus.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
     createDesktopChat.mockClear();
     createLocalContinuationChat.mockClear();
+    submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
     saveChatWorkspaceBinding.mockClear();
@@ -528,5 +630,73 @@ describe("App navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
 
     expect(approveLocalApproval).toHaveBeenCalledWith("task-approval");
+  });
+
+  it("submits a quick popup request into the last active local chat", async () => {
+    window.karpik = {
+      ...window.karpik!,
+      view: "quick-popup"
+    };
+    getQuickAccessState.mockResolvedValueOnce({
+      targetChat: {
+        chatId: "local-chat-10",
+        source: "desktop_chat",
+        title: "Execution chat",
+        createdAt: "2026-03-24T12:00:00.000Z",
+        updatedAt: "2026-03-24T12:00:00.000Z",
+        messageCount: 1,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo"
+      },
+      localChatCount: 1,
+      recentActivity: []
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Execution chat")).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Quick request"), {
+      target: { value: "status" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Send" }));
+
+    expect(submitQuickRequest).toHaveBeenCalledWith({
+      text: "status"
+    });
+    expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("shows runtime activity entries in the logs page", async () => {
+    getActivityLog.mockResolvedValueOnce([
+      {
+        entryId: "log-1",
+        kind: "local_result",
+        status: "success",
+        title: "Quick request completed",
+        detail: "desktop-local is online",
+        chatId: "local-chat-10",
+        taskId: null,
+        createdAt: "2026-03-24T12:20:00.000Z"
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Логи" }));
+
+    expect(await screen.findByText("Quick request completed")).toBeInTheDocument();
+    expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("shows runtime service status in the services page", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
+
+    expect(await screen.findByText("Device ID: desktop-local")).toBeInTheDocument();
+    expect(await screen.findByText("Server URL: http://127.0.0.1:8000")).toBeInTheDocument();
+    expect(await screen.findByText("Last active chat: Execution chat")).toBeInTheDocument();
+    expect(await screen.findByText("Default workspace: Assist")).toBeInTheDocument();
   });
 });

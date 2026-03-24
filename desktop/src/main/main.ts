@@ -1,6 +1,7 @@
 import started from "electron-squirrel-startup";
 import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 
+import { ActivityLogStore } from "./activityLogStore";
 import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
 import {
@@ -14,6 +15,7 @@ import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalChatRuntime } from "./localChatRuntime";
 import { PairingStore } from "./pairingStore";
+import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import {
   type AuthEventListResponse,
   type PairingEventListResponse,
@@ -35,18 +37,23 @@ let taskPollInFlight = false;
 let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
+let activityLogStore: ActivityLogStore | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
+let taskActivityInitialized = false;
 const pairingStore = new PairingStore();
 const authPollIntervalMs = 2_000;
 const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
+const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
+const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
 const syncClient = createSyncClient({
-  serverUrl: process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000",
-  deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local"
+  serverUrl,
+  deviceId
 });
 
 if (started) {
@@ -144,7 +151,7 @@ async function pollTaskState() {
   taskPollInFlight = true;
 
   try {
-    taskSnapshot = await runTaskSyncCycle({
+    const nextSnapshot = await runTaskSyncCycle({
       client: syncClient,
       executeTask: (task) => taskExecutor!.execute(task),
       persistLocalApproval: async (task, draft) => {
@@ -154,6 +161,7 @@ async function pollTaskState() {
         await localApprovalStore?.discardDraft(draft);
       }
     });
+    updateTaskSnapshot(nextSnapshot);
   } finally {
     taskPollInFlight = false;
   }
@@ -167,7 +175,69 @@ async function refreshTaskSnapshot() {
   }
 
   const payload = (await response.json()) as { items: RemoteTaskRecord[] };
-  taskSnapshot = payload.items;
+  updateTaskSnapshot(payload.items);
+}
+
+function buildTaskActivityStatus(task: RemoteTaskRecord): "info" | "success" | "warning" | "error" {
+  if (task.status === "done") {
+    return "success";
+  }
+
+  if (task.status === "failed" || task.status === "blocked") {
+    return "error";
+  }
+
+  if (task.status === "awaiting_auth" || task.status === "awaiting_local_approval" || task.status === "stalled") {
+    return "warning";
+  }
+
+  return "info";
+}
+
+function buildTaskActivityTitle(task: RemoteTaskRecord): string {
+  return `Remote task ${task.task_id}`;
+}
+
+function buildTaskActivityDetail(task: RemoteTaskRecord): string {
+  const suffix = task.result_text ?? task.error_text ?? "";
+  return suffix ? `${task.intent} -> ${task.status}: ${suffix}` : `${task.intent} -> ${task.status}`;
+}
+
+function buildTaskSignature(task: RemoteTaskRecord): string {
+  return JSON.stringify([
+    task.status,
+    task.result_text ?? null,
+    task.error_text ?? null,
+    task.started_at ?? null,
+    task.finished_at ?? null
+  ]);
+}
+
+function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
+  if (taskActivityInitialized && activityLogStore !== null) {
+    const previousSignatures = new Map(
+      taskSnapshot.map((task) => [task.task_id, buildTaskSignature(task)])
+    );
+
+    for (const task of nextSnapshot) {
+      const nextSignature = buildTaskSignature(task);
+
+      if (previousSignatures.get(task.task_id) === nextSignature) {
+        continue;
+      }
+
+      activityLogStore.append({
+        kind: "remote_task",
+        status: buildTaskActivityStatus(task),
+        title: buildTaskActivityTitle(task),
+        detail: buildTaskActivityDetail(task),
+        taskId: task.task_id
+      });
+    }
+  }
+
+  taskSnapshot = nextSnapshot;
+  taskActivityInitialized = true;
 }
 
 function ensureAuthPolling() {
@@ -251,9 +321,38 @@ function registerIpcHandlers() {
   }
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
+  ipcMain.handle("activity-log:get", () => activityLogStore?.list() ?? []);
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
+  ipcMain.handle("quick-access:get-state", () => quickAccessRuntime?.getState());
+  ipcMain.handle("runtime:get-status", () => {
+    const pairingState = pairingStore.getState();
+    const authConfigState = authStore?.getConfigState();
+    const codexConfigState = codexSettingsStore?.getState();
+    const localChats = localChatStore?.list() ?? [];
+    const defaultWorkspace =
+      codexConfigState?.workspaces.find(
+        (workspace) => workspace.id === codexConfigState.defaultWorkspaceId
+      ) ?? codexConfigState?.workspaces[0];
+
+    return {
+      deviceId,
+      serverUrl,
+      pairingActive: pairingState.isActive,
+      trustedTelegramUserCount: pairingState.trustedTelegramUserIds.length,
+      passwordConfigured: authConfigState?.passwordConfigured ?? false,
+      totpConfigured: authConfigState?.totpConfigured ?? false,
+      workspaceCount: codexConfigState?.workspaces.length ?? 0,
+      defaultWorkspaceName: defaultWorkspace?.name ?? "Default",
+      defaultWorkspaceRoot: defaultWorkspace?.rootPath ?? "",
+      localChatCount: localChats.length,
+      lastActiveChatTitle: localChats[0]?.title ?? null,
+      activityLogCount: activityLogStore?.count() ?? 0,
+      pendingTaskCount: taskSnapshot.filter((task) => task.status === "queued" || task.status === "running").length,
+      blockedTaskCount: taskSnapshot.filter((task) => task.status === "blocked" || task.status === "failed").length
+    };
+  });
   ipcMain.handle("tasks:get-local-approvals", () => localApprovalStore?.list() ?? []);
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
@@ -320,6 +419,16 @@ function registerIpcHandlers() {
       return localChatRuntime.sendMessage(payload);
     }
   );
+  ipcMain.handle(
+    "quick-access:submit-request",
+    async (_event, payload: { text: string }) => {
+      if (quickAccessRuntime === null) {
+        throw new Error("Quick access runtime is not initialized");
+      }
+
+      return quickAccessRuntime.submitRequest(payload);
+    }
+  );
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
@@ -376,6 +485,9 @@ async function bootstrap() {
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
   });
+  activityLogStore = new ActivityLogStore({
+    stateRoot: runtimeFolders.state
+  });
   localApprovalStore = new LocalApprovalStore({
     stateRoot: runtimeFolders.state
   });
@@ -416,7 +528,15 @@ async function bootstrap() {
     persistLocalApproval: async (intent, draft) => {
       localApprovalStore?.saveDraft(intent, draft);
     },
-    getWorkspaceRootForChat: getWorkspaceRootForLocalChat
+    getWorkspaceRootForChat: getWorkspaceRootForLocalChat,
+    logActivity: (input) => {
+      activityLogStore?.append(input);
+    }
+  });
+  quickAccessRuntime = createQuickAccessRuntime({
+    chatStore: localChatStore,
+    activityLogStore,
+    sendMessage: (payload) => localChatRuntime!.sendMessage(payload)
   });
   registerIpcHandlers();
 

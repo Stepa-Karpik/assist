@@ -266,3 +266,15 @@ h1 {
   display: flex;
   justify-content: flex-end;
 }
+
+.activity-log-card.status-success {
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.activity-log-card.status-warning {
+  border-color: rgba(250, 204, 21, 0.28);
+}
+
+.activity-log-card.status-error {
+  border-color: rgba(248, 113, 113, 0.32);
+}

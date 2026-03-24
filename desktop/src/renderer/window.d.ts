@@ -51,6 +51,17 @@ type LocalApprovalItem = {
   createdAt: string;
 };
 
+type ActivityLogEntry = {
+  entryId: string;
+  kind: "local_request" | "local_result" | "remote_task";
+  status: "info" | "success" | "warning" | "error";
+  title: string;
+  detail: string | null;
+  chatId: string | null;
+  taskId: string | null;
+  createdAt: string;
+};
+
 type LocalChatItem = {
   chatId: string;
   source: "desktop_chat" | "local_continuation_chat";
@@ -74,16 +85,42 @@ type LocalChatDetail = LocalChatItem & {
   messages: LocalChatMessageItem[];
 };
 
+type QuickAccessState = {
+  targetChat: LocalChatItem | null;
+  localChatCount: number;
+  recentActivity: ActivityLogEntry[];
+};
+
+type RuntimeStatus = {
+  deviceId: string;
+  serverUrl: string;
+  pairingActive: boolean;
+  trustedTelegramUserCount: number;
+  passwordConfigured: boolean;
+  totpConfigured: boolean;
+  workspaceCount: number;
+  defaultWorkspaceName: string;
+  defaultWorkspaceRoot: string;
+  localChatCount: number;
+  lastActiveChatTitle: string | null;
+  activityLogCount: number;
+  pendingTaskCount: number;
+  blockedTaskCount: number;
+};
+
 declare global {
   interface Window {
     karpik?: {
       view: string;
+      getActivityLog: () => Promise<ActivityLogEntry[]>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
       getPairingState: () => Promise<PairingState>;
+      getQuickAccessState: () => Promise<QuickAccessState | null>;
+      getRuntimeStatus: () => Promise<RuntimeStatus>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
       approveLocalApproval: (taskId: string) => Promise<void>;
       createDesktopChat: (payload?: {
@@ -101,6 +138,12 @@ declare global {
         chatId: string;
         text: string;
       }) => Promise<LocalChatDetail | null>;
+      submitQuickRequest: (payload: {
+        text: string;
+      }) => Promise<{
+        chat: LocalChatItem;
+        detail: LocalChatDetail;
+      }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveChatWorkspaceBinding: (payload: {
         chatId: number;

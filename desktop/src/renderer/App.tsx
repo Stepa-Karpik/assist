@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Sidebar, type NavigationItem } from "./layout/Sidebar";
 import { BlockedTasksPage } from "./pages/BlockedTasksPage";
@@ -17,7 +17,78 @@ function ProgressBar() {
   );
 }
 
+type QuickAccessState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getQuickAccessState"]>
+>;
+
+const emptyQuickAccessState: NonNullable<QuickAccessState> = {
+  targetChat: null,
+  localChatCount: 0,
+  recentActivity: []
+};
+
 function QuickPopupView() {
+  const [quickState, setQuickState] = useState<NonNullable<QuickAccessState>>(emptyQuickAccessState);
+  const [requestText, setRequestText] = useState("");
+  const [responseText, setResponseText] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function loadQuickState() {
+      try {
+        const nextState = await (window.karpik?.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
+
+        if (isSubscribed && nextState !== null) {
+          setQuickState(nextState);
+        }
+      } catch {
+        if (isSubscribed) {
+          setError("Не удалось загрузить quick access state.");
+        }
+      }
+    }
+
+    void loadQuickState();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, []);
+
+  async function handleSubmit() {
+    if (!window.karpik?.submitQuickRequest) {
+      setError("Quick access API недоступен в этом окружении.");
+      return;
+    }
+
+    const normalizedRequest = requestText.trim();
+
+    if (!normalizedRequest) {
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const result = await window.karpik.submitQuickRequest({
+        text: normalizedRequest
+      });
+      const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
+
+      setQuickState(nextState ?? emptyQuickAccessState);
+      setResponseText(result.detail.messages.at(-1)?.text ?? null);
+      setRequestText("");
+    } catch {
+      setError("Не удалось выполнить quick request.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <main className="quick-popup">
       <div className="quick-header">
@@ -37,15 +108,45 @@ function QuickPopupView() {
       </section>
 
       <section className="quick-card">
+        <p className="section-label">Target chat</p>
+        <p className="muted-text">
+          {quickState.targetChat?.title ?? "Новый локальный чат будет создан автоматически"}
+        </p>
+        <p className="muted-text">Local chats: {quickState.localChatCount}</p>
+      </section>
+
+      <section className="quick-card">
         <label className="section-label" htmlFor="quick-task">
           Quick request
         </label>
         <input
           className="quick-input"
           id="quick-task"
+          onChange={(event) => setRequestText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void handleSubmit();
+            }
+          }}
           placeholder="Send to the last active local chat"
           type="text"
+          value={requestText}
         />
+        <div className="local-chat-actions">
+          <button
+            className="ghost-button"
+            disabled={isSubmitting || requestText.trim().length === 0}
+            onClick={() => {
+              void handleSubmit();
+            }}
+            type="button"
+          >
+            {isSubmitting ? "Sending..." : "Send"}
+          </button>
+        </div>
+        {responseText ? <p className="task-result">{responseText}</p> : null}
+        {error ? <p className="task-error">{error}</p> : null}
       </section>
     </main>
   );

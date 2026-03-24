@@ -18,6 +18,13 @@ type LocalChatRuntimeOptions = {
   ) => Promise<void> | void;
   getWorkspaceRootForChat?: (chatId: string) => string | null | undefined;
   generateTaskId?: () => string;
+  logActivity?: (input: {
+    kind: "local_request" | "local_result";
+    status: "info" | "success" | "warning" | "error";
+    title: string;
+    detail?: string | null;
+    chatId: string;
+  }) => void;
 };
 
 export function createLocalChatRuntime({
@@ -25,7 +32,8 @@ export function createLocalChatRuntime({
   executeTask,
   persistLocalApproval,
   getWorkspaceRootForChat,
-  generateTaskId = () => crypto.randomUUID()
+  generateTaskId = () => crypto.randomUUID(),
+  logActivity
 }: LocalChatRuntimeOptions) {
   return {
     async sendMessage({ chatId, text }: SendLocalChatMessageInput): Promise<LocalChatDetail> {
@@ -39,6 +47,13 @@ export function createLocalChatRuntime({
         role: "user",
         text: normalizedText
       });
+      logActivity?.({
+        kind: "local_request",
+        status: "info",
+        title: "Local request",
+        detail: normalizedText,
+        chatId
+      });
 
       const workspaceRoot = getWorkspaceRootForChat?.(chatId);
       const executionResult = await executeTask({
@@ -49,6 +64,13 @@ export function createLocalChatRuntime({
 
       if (executionResult.ok && executionResult.requiresLocalApproval) {
         await persistLocalApproval?.(normalizedText, executionResult.draft);
+        logActivity?.({
+          kind: "local_result",
+          status: "warning",
+          title: "Local request is waiting for review",
+          detail: executionResult.waitingText,
+          chatId
+        });
         return chatStore.appendMessage(chatId, {
           role: "system",
           text: executionResult.waitingText
@@ -56,12 +78,26 @@ export function createLocalChatRuntime({
       }
 
       if (executionResult.ok) {
+        logActivity?.({
+          kind: "local_result",
+          status: "success",
+          title: "Local request completed",
+          detail: executionResult.resultText,
+          chatId
+        });
         return chatStore.appendMessage(chatId, {
           role: "assistant",
           text: executionResult.resultText
         });
       }
 
+      logActivity?.({
+        kind: "local_result",
+        status: "error",
+        title: "Local request failed",
+        detail: executionResult.errorText,
+        chatId
+      });
       return chatStore.appendMessage(chatId, {
         role: "system",
         text: executionResult.errorText
