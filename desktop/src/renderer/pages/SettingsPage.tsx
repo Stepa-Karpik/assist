@@ -62,6 +62,21 @@ const emptyCodexConfigState: CodexConfigState = {
   chatBindings: {}
 };
 
+const supportedRemoteTasks = [
+  "/pair <code>",
+  "/task low status",
+  "/task low screenshot",
+  "/task low read docs/notes/<file>",
+  "/task low list docs/notes",
+  "/task low write-note <name> :: <text>",
+  "/task high codex <prompt>",
+  "/task high codex-write <prompt>",
+  "/status [task_id]",
+  "/auth <value>",
+  "/confirm",
+  "/decline"
+];
+
 function formatExpiryHint(expiresAt: string | null): string {
   if (expiresAt === null) {
     return "Код действует 5 минут и принимается только пока ПК онлайн.";
@@ -448,6 +463,18 @@ export function SettingsPage() {
         >
           {isSavingAppPreferences ? "Saving..." : "Save desktop behavior"}
         </button>
+      </section>
+
+      <section className="quick-card">
+        <p className="section-label">Supported remote tasks</p>
+        <p className="muted-text">
+          Codex and codex-write are always treated as high-risk tasks.
+        </p>
+        {supportedRemoteTasks.map((taskExample) => (
+          <p className="muted-text" key={taskExample}>
+            {taskExample}
+          </p>
+        ))}
       </section>
 
       <section className="quick-card">

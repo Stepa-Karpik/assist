@@ -502,6 +502,9 @@ describe("App navigation", () => {
     expect(await screen.findByLabelText("Workspace name 1")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace path 2")).toBeInTheDocument();
     expect(await screen.findByLabelText("Default workspace")).toBeInTheDocument();
+    expect(await screen.findByText("Supported remote tasks")).toBeInTheDocument();
+    expect(await screen.findByText("/task low screenshot")).toBeInTheDocument();
+    expect(await screen.findByText("/task high codex-write <prompt>")).toBeInTheDocument();
     expect(await screen.findByText("Pairing не активен")).toBeInTheDocument();
     expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();

@@ -9,6 +9,7 @@ from aiogram.types import BufferedInputFile, Message
 from app.config import Settings, get_settings
 from app.delivery import run_delivery_poll_loop
 from app.delivery_client import DeliveryServerClient
+from app.handlers.help import get_help_text
 from app.handlers.messages import get_default_message
 from app.handlers.pair import resolve_pair_command
 from app.handlers.task import (
@@ -44,6 +45,10 @@ def create_dispatcher(
     @dispatcher.message(CommandStart())
     async def start_handler(message: Message) -> None:
         await message.answer(get_start_text())
+
+    @dispatcher.message(Command("help"))
+    async def help_handler(message: Message) -> None:
+        await message.answer(get_help_text())
 
     @dispatcher.message(Command("pair"))
     async def pair_handler(message: Message) -> None:

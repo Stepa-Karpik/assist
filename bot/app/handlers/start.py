@@ -1,2 +1,6 @@
 def get_start_text() -> str:
-    return "Karpik бот онлайн. Открой pairing на ПК, отправь /pair <code>, затем используй /task <risk> <intent>."
+    return (
+        "Karpik Р±РѕС‚ РѕРЅР»Р°Р№РЅ. РћС‚РєСЂРѕР№ pairing РЅР° РџРљ, "
+        "РѕС‚РїСЂР°РІСЊ /pair <code>, Р·Р°С‚РµРј РёСЃРїРѕР»СЊР·СѓР№ /task <risk> <intent>. "
+        "РЎРїРёСЃРѕРє РїРѕРґРґРµСЂР¶РёРІР°РµРјС‹С… РєРѕРјР°РЅРґ: /help."
+    )
