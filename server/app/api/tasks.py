@@ -207,6 +207,19 @@ def fail_task(
     return task
 
 
+@router.post("/{task_id}/retry", response_model=TaskRecord)
+def retry_task(task_id: str, request: Request) -> TaskRecord:
+    task = request.app.state.task_store.retry_task(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be retried",
+        )
+
+    return task
+
+
 @router.post("/{task_id}/block", response_model=TaskRecord)
 def block_task(
     task_id: str,

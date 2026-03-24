@@ -282,6 +282,12 @@ export function createSyncClient({
       });
     },
 
+    retryTask(taskId: string) {
+      return fetchImpl(`${baseUrl}/api/tasks/${taskId}/retry`, {
+        method: "POST"
+      });
+    },
+
     blockTask(taskId: string, errorText: string) {
       return fetchImpl(`${baseUrl}/api/tasks/${taskId}/block`, {
         method: "POST",

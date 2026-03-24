@@ -549,6 +549,15 @@ function registerIpcHandlers() {
     await localApprovalStore.reject(taskId);
     await refreshTaskSnapshot();
   });
+  ipcMain.handle("tasks:retry", async (_event, taskId: string) => {
+    const response = await syncClient.retryTask(taskId);
+
+    if (!response.ok) {
+      throw new Error(`Failed to retry task: ${response.status}`);
+    }
+
+    await refreshTaskSnapshot();
+  });
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
 

@@ -110,6 +110,25 @@ export function BlockedTasksPage() {
     }
   }
 
+  async function handleRetry(taskId: string) {
+    if (!window.karpik?.retryTask) {
+      setActionError("Task retry API is unavailable.");
+      return;
+    }
+
+    setActionError(null);
+    setBusyTaskId(taskId);
+
+    try {
+      await window.karpik.retryTask(taskId);
+      await refreshBlockedTasks();
+    } catch {
+      setActionError("Failed to retry the task.");
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
   return (
     <div className="page-shell">
       <p className="eyebrow">РќРµРІС‹РїРѕР»РЅРµРЅРЅРѕРµ</p>
@@ -168,6 +187,20 @@ export function BlockedTasksPage() {
                     </button>
                   </div>
                 </>
+              ) : null}
+              {task.status !== "awaiting_auth" && task.status !== "awaiting_local_approval" ? (
+                <div className="task-card-header">
+                  <button
+                    className="ghost-button"
+                    disabled={busyTaskId === task.task_id}
+                    onClick={() => {
+                      void handleRetry(task.task_id);
+                    }}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                </div>
               ) : null}
             </article>
           ))}

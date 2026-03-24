@@ -117,6 +117,46 @@ def test_desktop_can_fail_task_with_error_text() -> None:
     assert fail_response.json()["finished_at"] is not None
 
 
+def test_desktop_can_retry_failed_task() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/fail",
+        json={"error_text": "unsupported task intent"},
+    )
+
+    retry_response = client.post(f"/api/tasks/{task_id}/retry")
+    second_start_response = client.post(f"/api/tasks/{task_id}/start")
+
+    assert retry_response.status_code == 200
+    assert retry_response.json()["status"] == "queued"
+    assert retry_response.json()["result_text"] is None
+    assert retry_response.json()["error_text"] is None
+    assert retry_response.json()["started_at"] is None
+    assert retry_response.json()["finished_at"] is None
+    assert retry_response.json()["attempt_count"] == 1
+
+    assert second_start_response.status_code == 200
+    assert second_start_response.json()["status"] == "running"
+    assert second_start_response.json()["attempt_count"] == 2
+
+
+def test_desktop_cannot_retry_done_task() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={"result_text": "desktop-local is online"},
+    )
+
+    retry_response = client.post(f"/api/tasks/{task_id}/retry")
+
+    assert retry_response.status_code == 409
+    assert retry_response.json()["detail"] == "Task cannot be retried"
+
+
 def test_desktop_can_publish_local_approval_wait_state() -> None:
     task_id = create_low_risk_telegram_task()
 

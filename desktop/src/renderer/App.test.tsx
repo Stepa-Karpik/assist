@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -173,6 +173,7 @@ const getLocalApprovals = vi.fn<
 >(async () => []);
 const approveLocalApproval = vi.fn(async () => undefined);
 const rejectLocalApproval = vi.fn(async () => undefined);
+const retryTask = vi.fn(async () => undefined);
 const getActivityLog = vi.fn<() => Promise<ActivityLogEntry[]>>(async () => []);
 const getQuickAccessState = vi.fn<
   () => Promise<{
@@ -397,6 +398,7 @@ describe("App navigation", () => {
       openPairingSession,
       approveLocalApproval,
       rejectLocalApproval,
+      retryTask,
       readKnowledgeEntry,
       createDesktopChat,
       createLocalContinuationChat,
@@ -426,6 +428,7 @@ describe("App navigation", () => {
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
+    retryTask.mockClear();
     readKnowledgeEntry.mockClear();
     createDesktopChat.mockClear();
     createLocalContinuationChat.mockClear();
@@ -707,6 +710,46 @@ describe("App navigation", () => {
     expect(await screen.findByText("task-2")).toBeInTheDocument();
     expect(await screen.findByText("read docs/missing.txt")).toBeInTheDocument();
     expect(await screen.findByText("File not found.")).toBeInTheDocument();
+  });
+
+  it("retries a failed task from the blocked page", async () => {
+    getTaskSnapshot
+      .mockResolvedValueOnce([
+        {
+          task_id: "task-2",
+          intent: "read docs/missing.txt",
+          status: "failed",
+          result_text: null,
+          error_text: "File not found.",
+          chat_id: 5001,
+          telegram_user_id: 101
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          task_id: "task-2",
+          intent: "read docs/missing.txt",
+          status: "queued",
+          result_text: null,
+          error_text: null,
+          chat_id: 5001,
+          telegram_user_id: 101
+        }
+      ]);
+
+    render(<App />);
+
+    fireEvent.click(
+      screen
+        .getByRole("navigation", { name: "Primary navigation" })
+        .querySelectorAll("button")[2]!
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(retryTask).toHaveBeenCalledWith("task-2");
+    await waitFor(() => {
+      expect(screen.queryByText("task-2")).not.toBeInTheDocument();
+    });
   });
 
   it("shows local approval previews and allows approving them", async () => {

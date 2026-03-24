@@ -133,6 +133,25 @@ class InMemoryTaskStore:
         self._persist()
         return task
 
+    def retry_task(self, task_id: str) -> TaskRecord | None:
+        task = self.get_task(task_id)
+
+        if task is None or task.status not in {"failed", "blocked", "stalled"}:
+            return None
+
+        task.status = "queued"
+        task.started_at = None
+        task.finished_at = None
+        task.result_text = None
+        task.error_text = None
+        task.challenge_id = None
+        task.artifact_kind = None
+        task.artifact_mime_type = None
+        task.artifact_file_name = None
+        task.artifact_base64 = None
+        self._persist()
+        return task
+
     def await_local_approval(self, task_id: str, result_text: str) -> TaskRecord | None:
         task = self.get_task(task_id)
 

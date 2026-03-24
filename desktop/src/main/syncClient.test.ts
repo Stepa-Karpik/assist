@@ -87,6 +87,7 @@ describe("syncClient pairing api", () => {
       resultText: "desktop-local is online"
     });
     await client.failTask("task-2", "Unsupported task intent.");
+    await client.retryTask("task-2");
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
@@ -213,6 +214,14 @@ describe("syncClient pairing api", () => {
         body: JSON.stringify({
           error_text: "Unsupported task intent."
         })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      12,
+      "http://127.0.0.1:8000/api/tasks/task-2/retry",
+      expect.objectContaining({
+        method: "POST"
       })
     );
   });

@@ -170,6 +170,7 @@ declare global {
         relativePath: string;
       }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
+      retryTask: (taskId: string) => Promise<void>;
       sendLocalChatMessage: (payload: {
         chatId: string;
         text: string;
