@@ -10,6 +10,7 @@ class Settings:
     device_id: str = "desktop-local"
     pair_wait_seconds: float = 5.0
     auth_wait_seconds: float = 5.0
+    delivery_poll_seconds: float = 2.0
 
 
 def get_float_env(name: str, default: float) -> float:
@@ -32,4 +33,5 @@ def get_settings() -> Settings:
         device_id=getenv("KARPIK_DEVICE_ID", "desktop-local"),
         pair_wait_seconds=get_float_env("KARPIK_PAIR_WAIT_SECONDS", 5.0),
         auth_wait_seconds=get_float_env("KARPIK_AUTH_WAIT_SECONDS", 5.0),
+        delivery_poll_seconds=get_float_env("KARPIK_DELIVERY_POLL_SECONDS", 2.0),
     )

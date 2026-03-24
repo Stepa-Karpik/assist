@@ -1,10 +1,13 @@
 import asyncio
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from app.config import Settings, get_settings
+from app.delivery import run_delivery_poll_loop
+from app.delivery_client import DeliveryServerClient
 from app.handlers.messages import get_default_message
 from app.handlers.pair import resolve_pair_command
 from app.handlers.task import (
@@ -155,7 +158,25 @@ async def main() -> None:
 
     bot = Bot(token=settings.bot_token)
     dispatcher = create_dispatcher(settings=settings)
-    await dispatcher.start_polling(bot)
+    delivery_client = DeliveryServerClient(
+        server_url=settings.server_url,
+        device_id=settings.device_id,
+        wait_seconds=settings.auth_wait_seconds,
+    )
+    delivery_task = asyncio.create_task(
+        run_delivery_poll_loop(
+            client=delivery_client,
+            send_message=lambda chat_id, text: bot.send_message(chat_id, text),
+            poll_interval_seconds=settings.delivery_poll_seconds,
+        )
+    )
+
+    try:
+        await dispatcher.start_polling(bot)
+    finally:
+        delivery_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await delivery_task
 
 
 if __name__ == "__main__":
