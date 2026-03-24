@@ -30,6 +30,7 @@ Deploy the Karpik control plane independently from the Windows desktop app.
 
 - `GET /health` returns `200`
 - `GET /api/health` through nginx returns `200`
+- `GET /api/health` is a compatibility alias of `GET /health`
 - `https://<host>/desktop-updates/win32/x64/RELEASES` is reachable
 - if the `telegram` profile is enabled, bot can answer `/start`
 

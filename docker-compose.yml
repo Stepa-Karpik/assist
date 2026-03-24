@@ -56,7 +56,9 @@ services:
       KARPIK_DELIVERY_POLL_SECONDS: ${KARPIK_DELIVERY_POLL_SECONDS:-2}
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
     restart: unless-stopped
     depends_on:
       server:
@@ -64,7 +66,6 @@ services:
     ports:
       - "${KARPIK_HTTP_PORT:-8080}:80"
     volumes:
-      - ./infra/nginx/karpik.conf:/etc/nginx/conf.d/default.conf:ro
       - ${KARPIK_UPDATE_FEED_HOST_PATH:-./desktop/out/make/squirrel.windows/x64}:/usr/share/nginx/html/desktop-updates/win32/x64:ro
 
 volumes:
