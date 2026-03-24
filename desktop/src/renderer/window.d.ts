@@ -12,6 +12,10 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type CodexConfigState = {
+  workspaceRoot: string;
+};
+
 type TaskSnapshotItem = {
   task_id: string;
   intent: string;
@@ -35,10 +39,12 @@ declare global {
     karpik?: {
       view: string;
       getAuthConfigState: () => Promise<AuthConfigState>;
+      getCodexConfigState: () => Promise<CodexConfigState>;
       getPairingState: () => Promise<PairingState>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
       openPairingSession: () => Promise<PairingState>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
+      saveCodexConfig: (payload: { workspaceRoot?: string }) => Promise<CodexConfigState>;
     };
   }
 }

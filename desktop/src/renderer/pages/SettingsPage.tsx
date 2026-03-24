@@ -12,6 +12,10 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type CodexConfigState = {
+  workspaceRoot: string;
+};
+
 const emptyPairingState: PairingState = {
   code: null,
   expiresAt: null,
@@ -22,6 +26,10 @@ const emptyPairingState: PairingState = {
 const emptyAuthConfigState: AuthConfigState = {
   passwordConfigured: false,
   totpConfigured: false
+};
+
+const emptyCodexConfigState: CodexConfigState = {
+  workspaceRoot: ""
 };
 
 function formatExpiryHint(expiresAt: string | null): string {
@@ -45,11 +53,14 @@ function describeAuthStatus(isConfigured: boolean): string {
 export function SettingsPage() {
   const [pairingState, setPairingState] = useState<PairingState>(emptyPairingState);
   const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
+  const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
   const [password, setPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
   const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
+  const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,14 +68,17 @@ export function SettingsPage() {
 
     async function loadSettingsState() {
       try {
-        const [nextPairingState, nextAuthConfigState] = await Promise.all([
+        const [nextPairingState, nextAuthConfigState, nextCodexConfigState] = await Promise.all([
           window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
-          window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState)
+          window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState),
+          window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState)
         ]);
 
         if (isSubscribed) {
           setPairingState(nextPairingState);
           setAuthConfigState(nextAuthConfigState);
+          setCodexConfigState(nextCodexConfigState);
+          setWorkspaceRoot(nextCodexConfigState.workspaceRoot);
         }
       } catch {
         if (isSubscribed) {
@@ -124,6 +138,28 @@ export function SettingsPage() {
       setError("Не удалось сохранить auth-настройки.");
     } finally {
       setIsSavingAuthConfig(false);
+    }
+  }
+
+  async function handleSaveCodexConfig() {
+    if (!window.karpik?.saveCodexConfig) {
+      setError("Codex settings API недоступен в этом окружении.");
+      return;
+    }
+
+    setError(null);
+    setIsSavingCodexConfig(true);
+
+    try {
+      const nextState = await window.karpik.saveCodexConfig({
+        workspaceRoot
+      });
+      setCodexConfigState(nextState);
+      setWorkspaceRoot(nextState.workspaceRoot);
+    } catch {
+      setError("Не удалось сохранить настройки Codex.");
+    } finally {
+      setIsSavingCodexConfig(false);
     }
   }
 
@@ -195,6 +231,33 @@ export function SettingsPage() {
           type="button"
         >
           {isOpeningPairing ? "Открываем..." : "Открыть pairing"}
+        </button>
+      </section>
+
+      <section className="quick-card">
+        <p className="section-label">Local codex</p>
+        <p className="muted-text">
+          Workspace root: {codexConfigState.workspaceRoot || "не задан"}
+        </p>
+        <label className="section-label" htmlFor="settings-codex-workspace">
+          Codex workspace root
+        </label>
+        <input
+          className="quick-input"
+          id="settings-codex-workspace"
+          onChange={(event) => setWorkspaceRoot(event.target.value)}
+          type="text"
+          value={workspaceRoot}
+        />
+        <button
+          className="ghost-button"
+          disabled={isLoading || isSavingCodexConfig}
+          onClick={() => {
+            void handleSaveCodexConfig();
+          }}
+          type="button"
+        >
+          {isSavingCodexConfig ? "Saving..." : "Save codex settings"}
         </button>
       </section>
     </div>

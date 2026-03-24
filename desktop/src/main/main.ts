@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 
 import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
+import { type CodexConfigInput, CodexSettingsStore } from "./codexSettingsStore";
 import { getDataRoot } from "./dataRoot";
 import { PairingStore } from "./pairingStore";
 import {
@@ -25,6 +26,7 @@ let taskPollInterval: NodeJS.Timeout | null = null;
 let taskPollInFlight = false;
 let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
+let codexSettingsStore: CodexSettingsStore | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 const pairingStore = new PairingStore();
@@ -221,6 +223,7 @@ function registerIpcHandlers() {
   }
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
+  ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
       throw new Error("Auth store is not initialized");
@@ -234,6 +237,13 @@ function registerIpcHandlers() {
     }
 
     return state;
+  });
+  ipcMain.handle("codex:save-config", (_event, payload: CodexConfigInput) => {
+    if (codexSettingsStore === null) {
+      throw new Error("Codex settings store is not initialized");
+    }
+
+    return codexSettingsStore.saveConfig(payload);
   });
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
@@ -262,6 +272,10 @@ async function bootstrap() {
   const runtimeFolders = ensureRuntimeFolders(getDataRoot());
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
+  });
+  codexSettingsStore = new CodexSettingsStore({
+    settingsRoot: runtimeFolders.settings,
+    defaultWorkspaceRoot: runtimeFolders.userRoot
   });
   taskExecutor = createTaskExecutor({
     deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",

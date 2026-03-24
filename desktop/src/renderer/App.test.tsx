@@ -14,6 +14,14 @@ const saveAuthConfig = vi.fn(async () => ({
   totpConfigured: true
 }));
 
+const getCodexConfigState = vi.fn(async () => ({
+  workspaceRoot: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+}));
+
+const saveCodexConfig = vi.fn(async () => ({
+  workspaceRoot: "D:\\Projects\\assist"
+}));
+
 const getPairingState = vi.fn(async () => ({
   code: null,
   expiresAt: null,
@@ -35,20 +43,24 @@ describe("App navigation", () => {
     window.karpik = {
       view: "main",
       getAuthConfigState,
+      getCodexConfigState,
       getPairingState,
       getTaskSnapshot,
       openPairingSession,
-      saveAuthConfig
+      saveAuthConfig,
+      saveCodexConfig
     };
   });
 
   afterEach(() => {
     cleanup();
     getAuthConfigState.mockClear();
+    getCodexConfigState.mockClear();
     getPairingState.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
     saveAuthConfig.mockClear();
+    saveCodexConfig.mockClear();
   });
 
   it("renders all primary sections", () => {
@@ -63,7 +75,7 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
   });
 
-  it("shows pairing controls in settings", async () => {
+  it("shows pairing controls and codex settings in settings", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
@@ -71,10 +83,12 @@ describe("App navigation", () => {
     expect(await screen.findByRole("button", { name: "Открыть pairing" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Пароль для remote auth")).toBeInTheDocument();
     expect(await screen.findByLabelText("TOTP secret")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Codex workspace root")).toBeInTheDocument();
     expect(await screen.findByText("Pairing не активен")).toBeInTheDocument();
     expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();
     expect(getAuthConfigState).toHaveBeenCalledTimes(1);
+    expect(getCodexConfigState).toHaveBeenCalledTimes(1);
     expect(getPairingState).toHaveBeenCalledTimes(1);
   });
 
@@ -106,6 +120,21 @@ describe("App navigation", () => {
     });
     expect(await screen.findByText("Password: настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: настроен")).toBeInTheDocument();
+  });
+
+  it("saves codex workspace settings from the settings page", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    fireEvent.change(await screen.findByLabelText("Codex workspace root"), {
+      target: { value: "D:\\Projects\\assist" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save codex settings" }));
+
+    expect(saveCodexConfig).toHaveBeenCalledWith({
+      workspaceRoot: "D:\\Projects\\assist"
+    });
+    expect(await screen.findByDisplayValue("D:\\Projects\\assist")).toBeInTheDocument();
   });
 
   it("shows Telegram task snapshot items", async () => {
