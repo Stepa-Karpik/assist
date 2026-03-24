@@ -88,6 +88,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
             required_auth=required_auth,
         )
         challenge = challenge_store.create_challenge(task, step="confirm")
+        task_store.persist()
         return TaskIntakeResponse(
             status="awaiting_auth",
             task=task.model_copy(),
@@ -101,6 +102,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
         required_auth=required_auth,
     )
     challenge = challenge_store.create_challenge(task, step="password")
+    task_store.persist()
     return TaskIntakeResponse(
         status="awaiting_auth",
         task=task.model_copy(),

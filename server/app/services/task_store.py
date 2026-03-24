@@ -1,14 +1,18 @@
 from datetime import UTC, datetime
 
 from app.models.task import RequiredAuth, TaskCreateRequest, TaskRecord, TaskStatus
+from app.services.state_backend import JsonStateBackend
 
 
 class InMemoryTaskStore:
-    def __init__(self) -> None:
-        self.reset()
+    def __init__(self, state_backend: JsonStateBackend | None = None) -> None:
+        self._state_backend = state_backend
+        self._tasks: list[TaskRecord] = []
+        self._restore_state()
 
     def reset(self) -> None:
-        self._tasks: list[TaskRecord] = []
+        self._tasks = []
+        self._persist()
 
     def create_task(
         self,
@@ -30,6 +34,7 @@ class InMemoryTaskStore:
             challenge_id=challenge_id,
         )
         self._tasks.append(record)
+        self._persist()
         return record
 
     def get_task(self, task_id: str) -> TaskRecord | None:
@@ -52,6 +57,7 @@ class InMemoryTaskStore:
         if challenge_id is not None:
             task.challenge_id = challenge_id
 
+        self._persist()
         return task
 
     def list_tasks(
@@ -82,6 +88,7 @@ class InMemoryTaskStore:
         task.result_text = None
         task.error_text = None
         task.attempt_count += 1
+        self._persist()
         return task
 
     def complete_task(self, task_id: str, result_text: str) -> TaskRecord | None:
@@ -94,6 +101,7 @@ class InMemoryTaskStore:
         task.finished_at = datetime.now(UTC)
         task.result_text = result_text
         task.error_text = None
+        self._persist()
         return task
 
     def fail_task(self, task_id: str, error_text: str) -> TaskRecord | None:
@@ -106,4 +114,24 @@ class InMemoryTaskStore:
         task.finished_at = datetime.now(UTC)
         task.result_text = None
         task.error_text = error_text
+        self._persist()
         return task
+
+    def persist(self) -> None:
+        self._persist()
+
+    def _restore_state(self) -> None:
+        if self._state_backend is None:
+            return
+
+        raw_items = self._state_backend.read_section("tasks", [])
+        self._tasks = [TaskRecord.model_validate(item) for item in raw_items]
+
+    def _persist(self) -> None:
+        if self._state_backend is None:
+            return
+
+        self._state_backend.write_section(
+            "tasks",
+            [task.model_dump(mode="json") for task in self._tasks],
+        )

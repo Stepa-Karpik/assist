@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.services.challenge_store import InMemoryChallengeStore
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
+from app.services.state_backend import JsonStateBackend
 from app.services.task_store import InMemoryTaskStore
 
 
@@ -20,10 +21,11 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
     )
-    application.state.pairing_store = InMemoryPairingStore()
-    application.state.task_store = InMemoryTaskStore()
-    application.state.challenge_store = InMemoryChallengeStore()
-    application.state.delivery_store = InMemoryDeliveryStore()
+    state_backend = JsonStateBackend(settings.state_file)
+    application.state.pairing_store = InMemoryPairingStore(state_backend=state_backend)
+    application.state.task_store = InMemoryTaskStore(state_backend=state_backend)
+    application.state.challenge_store = InMemoryChallengeStore(state_backend=state_backend)
+    application.state.delivery_store = InMemoryDeliveryStore(state_backend=state_backend)
     application.include_router(health_router)
     application.include_router(device_router, prefix=settings.api_prefix)
     application.include_router(tasks_router, prefix=settings.api_prefix)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from threading import Event, Lock
+from typing import Callable
 
 from app.models.challenge import (
     AuthConfigStatus,
@@ -13,6 +14,7 @@ from app.models.challenge import (
     InputResolutionStatus,
 )
 from app.models.task import TaskRecord, TaskRisk
+from app.services.state_backend import JsonStateBackend
 from app.services.task_store import InMemoryTaskStore
 
 failure_limit = 3
@@ -26,19 +28,31 @@ def risk_rank(risk: TaskRisk) -> int:
 
 
 class InMemoryChallengeStore:
-    def __init__(self, now: callable | None = None) -> None:
+    def __init__(
+        self,
+        state_backend: JsonStateBackend | None = None,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._state_backend = state_backend
         self._now = now or (lambda: datetime.now(UTC))
         self._lock = Lock()
-        self.reset()
+        self._auth_configs: dict[str, AuthConfigStatus] = {}
+        self._challenges: dict[str, ChallengeRecord] = {}
+        self._auth_events: dict[str, AuthInputEvent] = {}
+        self._waiters: dict[str, Event] = {}
+        self._trust_windows: dict[tuple[str, int, int], tuple[datetime, TaskRisk]] = {}
+        self._lockouts: dict[tuple[str, int, int], datetime] = {}
+        self._restore_state()
 
     def reset(self) -> None:
         with self._lock:
-            self._auth_configs: dict[str, AuthConfigStatus] = {}
-            self._challenges: dict[str, ChallengeRecord] = {}
-            self._auth_events: dict[str, AuthInputEvent] = {}
-            self._waiters: dict[str, Event] = {}
-            self._trust_windows: dict[tuple[str, int, int], tuple[datetime, TaskRisk]] = {}
-            self._lockouts: dict[tuple[str, int, int], datetime] = {}
+            self._auth_configs = {}
+            self._challenges = {}
+            self._auth_events = {}
+            self._waiters = {}
+            self._trust_windows = {}
+            self._lockouts = {}
+            self._persist()
 
     def set_auth_config(self, payload: AuthConfigStatusRequest) -> AuthConfigStatus:
         with self._lock:
@@ -48,6 +62,7 @@ class InMemoryChallengeStore:
                 totp_configured=payload.totp_configured,
             )
             self._auth_configs[payload.device_id] = status
+            self._persist()
             return status
 
     def get_auth_config(self, device_id: str) -> AuthConfigStatus:
@@ -187,6 +202,7 @@ class InMemoryChallengeStore:
 
                     if task is not None:
                         task.status = "queued"
+                        task_store.persist()
                     event.task = task.model_copy() if task is not None else None
                     event.response_status = "task_queued"
                 elif event.step == "password":
@@ -264,11 +280,13 @@ class InMemoryChallengeStore:
                 challenge.status = "cancelled"
                 if task is not None:
                     task.status = "blocked"
+                    task_store.persist()
                 return "declined", task.model_copy() if task is not None else None
 
             challenge.status = "passed"
             if task is not None:
                 task.status = "queued"
+                task_store.persist()
             return "task_queued", task.model_copy() if task is not None else None
 
     def _get_active_challenge_unlocked(
@@ -290,3 +308,22 @@ class InMemoryChallengeStore:
                 return challenge
 
         return None
+
+    def _restore_state(self) -> None:
+        if self._state_backend is None:
+            return
+
+        raw_configs = self._state_backend.read_section("auth_configs", [])
+        self._auth_configs = {
+            status.device_id: status
+            for status in (AuthConfigStatus.model_validate(item) for item in raw_configs)
+        }
+
+    def _persist(self) -> None:
+        if self._state_backend is None:
+            return
+
+        self._state_backend.write_section(
+            "auth_configs",
+            [status.model_dump(mode="json") for status in self._auth_configs.values()],
+        )

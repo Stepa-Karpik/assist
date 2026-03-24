@@ -2,16 +2,20 @@ from threading import Lock
 
 from app.models.delivery import DeliveryAckResponse, DeliveryEvent
 from app.models.task import TaskRecord
+from app.services.state_backend import JsonStateBackend
 
 
 class InMemoryDeliveryStore:
-    def __init__(self) -> None:
+    def __init__(self, state_backend: JsonStateBackend | None = None) -> None:
+        self._state_backend = state_backend
         self._lock = Lock()
-        self.reset()
+        self._events: dict[str, DeliveryEvent] = {}
+        self._restore_state()
 
     def reset(self) -> None:
         with self._lock:
-            self._events: dict[str, DeliveryEvent] = {}
+            self._events = {}
+            self._persist()
 
     def create_for_task(self, task: TaskRecord) -> DeliveryEvent | None:
         if (
@@ -35,6 +39,7 @@ class InMemoryDeliveryStore:
 
         with self._lock:
             self._events[event.event_id] = event
+            self._persist()
 
         return event
 
@@ -54,4 +59,24 @@ class InMemoryDeliveryStore:
                 return None
 
             event.status = "delivered"
+            self._persist()
             return DeliveryAckResponse(event_id=event.event_id, status=event.status)
+
+    def _restore_state(self) -> None:
+        if self._state_backend is None:
+            return
+
+        raw_events = self._state_backend.read_section("delivery_outbox", [])
+        self._events = {
+            event.event_id: event
+            for event in (DeliveryEvent.model_validate(item) for item in raw_events)
+        }
+
+    def _persist(self) -> None:
+        if self._state_backend is None:
+            return
+
+        self._state_backend.write_section(
+            "delivery_outbox",
+            [event.model_dump(mode="json") for event in self._events.values()],
+        )
