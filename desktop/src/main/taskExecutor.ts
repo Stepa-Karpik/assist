@@ -1,7 +1,13 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { createCodexRunner, type CodexRunRequest } from "./codexRunner";
+import {
+  createCodexWritePreviewGenerator,
+  type CodexWritePreviewDraft,
+  type CodexWritePreviewResult
+} from "./codexWritePreview";
 
 type ExecutableTask = {
   task_id: string;
@@ -12,10 +18,18 @@ export type TaskExecutionResult =
   | {
       ok: true;
       resultText: string;
+      requiresLocalApproval?: false;
     }
   | {
       ok: false;
       errorText: string;
+      requiresLocalApproval?: false;
+    }
+  | {
+      ok: true;
+      requiresLocalApproval: true;
+      waitingText: string;
+      draft: CodexWritePreviewDraft;
     };
 
 type TaskExecutorOptions = {
@@ -23,6 +37,11 @@ type TaskExecutorOptions = {
   userRoot: string;
   getCodexWorkspaceRoot?: () => string;
   runCodex?: (request: CodexRunRequest) => Promise<string>;
+  generateCodexWritePreview?: (request: {
+    taskId: string;
+    prompt: string;
+    workspaceRoot: string;
+  }) => Promise<CodexWritePreviewResult>;
   maxResultLength?: number;
 };
 
@@ -48,11 +67,19 @@ function isSafeNoteName(value: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(value);
 }
 
+function buildLocalApprovalWaitingText(changedFiles: string[]): string {
+  return `Waiting for local review. Files: ${changedFiles.join(", ")}`;
+}
+
 export function createTaskExecutor({
   deviceId,
   userRoot,
   getCodexWorkspaceRoot,
   runCodex = createCodexRunner(),
+  generateCodexWritePreview = createCodexWritePreviewGenerator({
+    stateRoot: path.join(os.tmpdir(), "karpik-codex-previews"),
+    runCodex
+  }).generatePreview,
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
@@ -68,6 +95,67 @@ export function createTaskExecutor({
           ok: true,
           resultText: `${deviceId} is online`
         };
+      }
+
+      const codexWriteMatch = /^codex-write(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);
+
+      if (codexWriteMatch !== null) {
+        const prompt = codexWriteMatch[1]?.trim();
+
+        if (!prompt) {
+          return {
+            ok: false,
+            errorText: "Codex prompt is empty."
+          };
+        }
+
+        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot().trim());
+
+        try {
+          const workspaceStat = await fs.stat(workspaceRoot);
+
+          if (!workspaceStat.isDirectory()) {
+            return {
+              ok: false,
+              errorText: "Codex workspace does not exist."
+            };
+          }
+        } catch {
+          return {
+            ok: false,
+            errorText: "Codex workspace does not exist."
+          };
+        }
+
+        try {
+          const previewResult = await generateCodexWritePreview({
+            taskId: task.task_id,
+            prompt,
+            workspaceRoot
+          });
+
+          if (previewResult.kind === "no_changes") {
+            return {
+              ok: true,
+              resultText: trimResultText(previewResult.summaryText, maxResultLength)
+            };
+          }
+
+          return {
+            ok: true,
+            requiresLocalApproval: true,
+            waitingText: buildLocalApprovalWaitingText(previewResult.draft.changedFiles),
+            draft: previewResult.draft
+          };
+        } catch (error: unknown) {
+          return {
+            ok: false,
+            errorText:
+              error instanceof Error && error.message
+                ? error.message
+                : "Codex execution failed."
+          };
+        }
       }
 
       const codexMatch = /^codex(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);

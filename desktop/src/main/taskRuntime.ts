@@ -1,10 +1,13 @@
 import type { RemoteTaskRecord, TaskListResponse } from "./syncClient";
+import type { CodexWritePreviewDraft } from "./codexWritePreview";
 import type { TaskExecutionResult } from "./taskExecutor";
 
 type TaskSyncClient = {
   fetchTaskHistory: () => Promise<Response>;
   fetchQueuedTasks: () => Promise<Response>;
   startTask: (taskId: string) => Promise<Response>;
+  awaitLocalApproval: (taskId: string, resultText: string) => Promise<Response>;
+  blockTask: (taskId: string, errorText: string) => Promise<Response>;
   completeTask: (taskId: string, resultText: string) => Promise<Response>;
   failTask: (taskId: string, errorText: string) => Promise<Response>;
 };
@@ -14,6 +17,11 @@ type ExecuteTask = (task: RemoteTaskRecord) => Promise<TaskExecutionResult>;
 type TaskRuntimeOptions = {
   client: TaskSyncClient;
   executeTask: ExecuteTask;
+  persistLocalApproval?: (
+    task: RemoteTaskRecord,
+    draft: CodexWritePreviewDraft
+  ) => Promise<void>;
+  discardLocalApproval?: (draft: CodexWritePreviewDraft) => Promise<void>;
 };
 
 async function readTaskList(response: Response): Promise<RemoteTaskRecord[]> {
@@ -27,7 +35,9 @@ async function readTaskList(response: Response): Promise<RemoteTaskRecord[]> {
 
 export async function runTaskSyncCycle({
   client,
-  executeTask
+  executeTask,
+  persistLocalApproval,
+  discardLocalApproval
 }: TaskRuntimeOptions): Promise<RemoteTaskRecord[]> {
   const initialSnapshot = await readTaskList(await client.fetchTaskHistory());
   const queuedTasks = await readTaskList(await client.fetchQueuedTasks());
@@ -40,6 +50,33 @@ export async function runTaskSyncCycle({
     }
 
     const executionResult = await executeTask(task);
+
+    if (executionResult.ok && executionResult.requiresLocalApproval) {
+      const approvalResponse = await client.awaitLocalApproval(
+        task.task_id,
+        executionResult.waitingText
+      );
+
+      if (!approvalResponse.ok) {
+        if (discardLocalApproval !== undefined) {
+          await discardLocalApproval(executionResult.draft);
+        }
+        await client.failTask(task.task_id, "Failed to publish local approval state.");
+        continue;
+      }
+
+      if (persistLocalApproval !== undefined) {
+        try {
+          await persistLocalApproval(task, executionResult.draft);
+        } catch {
+          if (discardLocalApproval !== undefined) {
+            await discardLocalApproval(executionResult.draft);
+          }
+          await client.blockTask(task.task_id, "Failed to persist local approval preview.");
+        }
+      }
+      continue;
+    }
 
     if (executionResult.ok) {
       await client.completeTask(task.task_id, executionResult.resultText);

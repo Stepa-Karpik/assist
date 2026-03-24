@@ -6,9 +6,12 @@ contextBridge.exposeInMainWorld("karpik", {
   view,
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),
+  getLocalApprovals: () => ipcRenderer.invoke("tasks:get-local-approvals"),
   getPairingState: () => ipcRenderer.invoke("pairing:get-state"),
   getTaskSnapshot: () => ipcRenderer.invoke("tasks:get-snapshot"),
+  approveLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:approve-local-approval", taskId),
   openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
+  rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),
   saveCodexConfig: (payload: { workspaceRoot?: string }) =>

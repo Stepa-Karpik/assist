@@ -30,6 +30,20 @@ const getPairingState = vi.fn(async () => ({
 }));
 
 const getTaskSnapshot = vi.fn<() => Promise<TaskSnapshot>>(async () => []);
+const getLocalApprovals = vi.fn<
+  () => Promise<
+    Array<{
+      taskId: string;
+      intent: string;
+      summaryText: string;
+      previewText: string;
+      changedFiles: string[];
+      createdAt: string;
+    }>
+  >
+>(async () => []);
+const approveLocalApproval = vi.fn(async () => undefined);
+const rejectLocalApproval = vi.fn(async () => undefined);
 
 const openPairingSession = vi.fn(async () => ({
   code: "PAIR42",
@@ -44,9 +58,12 @@ describe("App navigation", () => {
       view: "main",
       getAuthConfigState,
       getCodexConfigState,
+      getLocalApprovals,
       getPairingState,
       getTaskSnapshot,
       openPairingSession,
+      approveLocalApproval,
+      rejectLocalApproval,
       saveAuthConfig,
       saveCodexConfig
     };
@@ -56,9 +73,12 @@ describe("App navigation", () => {
     cleanup();
     getAuthConfigState.mockClear();
     getCodexConfigState.mockClear();
+    getLocalApprovals.mockClear();
     getPairingState.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
+    approveLocalApproval.mockClear();
+    rejectLocalApproval.mockClear();
     saveAuthConfig.mockClear();
     saveCodexConfig.mockClear();
   });
@@ -179,5 +199,39 @@ describe("App navigation", () => {
     expect(await screen.findByText("task-2")).toBeInTheDocument();
     expect(await screen.findByText("read docs/missing.txt")).toBeInTheDocument();
     expect(await screen.findByText("File not found.")).toBeInTheDocument();
+  });
+
+  it("shows local approval previews and allows approving them", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-approval",
+        intent: "codex-write update README",
+        status: "awaiting_local_approval",
+        result_text: "Waiting for local review. Files: README.md",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
+    getLocalApprovals.mockResolvedValueOnce([
+      {
+        taskId: "task-approval",
+        intent: "codex-write update README",
+        summaryText: "Updated README",
+        previewText: "diff preview",
+        changedFiles: ["README.md"],
+        createdAt: "2026-03-24T12:00:00Z"
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Невыполненное" }));
+
+    expect(await screen.findByText("Updated README")).toBeInTheDocument();
+    expect(await screen.findByText("diff preview")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+
+    expect(approveLocalApproval).toHaveBeenCalledWith("task-approval");
   });
 });

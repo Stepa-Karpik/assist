@@ -6,6 +6,7 @@ import path from "node:path";
 export type CodexRunRequest = {
   prompt: string;
   workspaceRoot: string;
+  sandboxMode?: "read-only" | "workspace-write";
 };
 
 type CodexRunnerOptions = {
@@ -88,7 +89,11 @@ export function createCodexRunner({
   timeoutMs = 120_000,
   tempRoot = os.tmpdir()
 }: CodexRunnerOptions = {}) {
-  return async function runCodex({ prompt, workspaceRoot }: CodexRunRequest): Promise<string> {
+  return async function runCodex({
+    prompt,
+    workspaceRoot,
+    sandboxMode = "read-only"
+  }: CodexRunRequest): Promise<string> {
     const tempDirectory = await fs.mkdtemp(path.join(tempRoot, "karpik-codex-"));
     const outputPath = path.join(tempDirectory, "last-message.txt");
 
@@ -100,7 +105,7 @@ export function createCodexRunner({
           "--ephemeral",
           "--skip-git-repo-check",
           "--sandbox",
-          "read-only",
+          sandboxMode,
           "--full-auto",
           "-C",
           workspaceRoot,

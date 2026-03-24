@@ -54,6 +54,8 @@ describe("runTaskSyncCycle", () => {
       })
     );
     const failTask = vi.fn();
+    const awaitLocalApproval = vi.fn();
+    const blockTask = vi.fn();
     const executeTask = vi.fn(async () => ({
       ok: true as const,
       resultText: "desktop-local is online"
@@ -64,6 +66,8 @@ describe("runTaskSyncCycle", () => {
         fetchTaskHistory,
         fetchQueuedTasks,
         startTask,
+        awaitLocalApproval,
+        blockTask,
         completeTask,
         failTask
       },
@@ -80,6 +84,8 @@ describe("runTaskSyncCycle", () => {
     });
     expect(completeTask).toHaveBeenCalledWith("task-1", "desktop-local is online");
     expect(failTask).not.toHaveBeenCalled();
+    expect(awaitLocalApproval).not.toHaveBeenCalled();
+    expect(blockTask).not.toHaveBeenCalled();
     expect(snapshot[0].status).toBe("done");
   });
 
@@ -123,6 +129,8 @@ describe("runTaskSyncCycle", () => {
         status: "failed"
       })
     );
+    const awaitLocalApproval = vi.fn();
+    const blockTask = vi.fn();
     const executeTask = vi.fn(async () => ({
       ok: false as const,
       errorText: "File not found."
@@ -133,6 +141,8 @@ describe("runTaskSyncCycle", () => {
         fetchTaskHistory,
         fetchQueuedTasks,
         startTask,
+        awaitLocalApproval,
+        blockTask,
         completeTask,
         failTask
       },
@@ -142,6 +152,107 @@ describe("runTaskSyncCycle", () => {
     expect(startTask).toHaveBeenCalledWith("task-2");
     expect(completeTask).not.toHaveBeenCalled();
     expect(failTask).toHaveBeenCalledWith("task-2", "File not found.");
+    expect(awaitLocalApproval).not.toHaveBeenCalled();
+    expect(blockTask).not.toHaveBeenCalled();
     expect(snapshot[0].status).toBe("failed");
+  });
+
+  it("moves tasks into awaiting_local_approval and persists the preview draft", async () => {
+    const fetchTaskHistory = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [{ task_id: "task-3", intent: "codex-write update README", status: "queued" }]
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [
+            {
+              task_id: "task-3",
+              intent: "codex-write update README",
+              status: "awaiting_local_approval",
+              result_text: "Waiting for local review. Files: README.md"
+            }
+          ]
+        })
+      );
+    const fetchQueuedTasks = vi.fn(async () =>
+      jsonResponse({
+        items: [{ task_id: "task-3", intent: "codex-write update README", status: "queued" }]
+      })
+    );
+    const startTask = vi.fn(async () =>
+      jsonResponse({
+        task_id: "task-3",
+        intent: "codex-write update README",
+        status: "running"
+      })
+    );
+    const awaitLocalApproval = vi.fn(async () =>
+      jsonResponse({
+        task_id: "task-3",
+        intent: "codex-write update README",
+        status: "awaiting_local_approval"
+      })
+    );
+    const completeTask = vi.fn();
+    const failTask = vi.fn();
+    const blockTask = vi.fn();
+    const persistLocalApproval = vi.fn(async () => undefined);
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      requiresLocalApproval: true as const,
+      waitingText: "Waiting for local review. Files: README.md",
+      draft: {
+        taskId: "task-3",
+        workspaceRoot: "C:\\Workspace",
+        previewRoot: "C:\\Preview",
+        summaryText: "Updated README",
+        previewText: "diff preview",
+        changedFiles: ["README.md"],
+        changes: [
+          {
+            kind: "write" as const,
+            relativePath: "README.md",
+            originalHash: "hash-before"
+          }
+        ]
+      }
+    }));
+
+    const snapshot = await runTaskSyncCycle({
+      client: {
+        fetchTaskHistory,
+        fetchQueuedTasks,
+        startTask,
+        awaitLocalApproval,
+        completeTask,
+        failTask,
+        blockTask
+      },
+      executeTask,
+      persistLocalApproval
+    });
+
+    expect(awaitLocalApproval).toHaveBeenCalledWith(
+      "task-3",
+      "Waiting for local review. Files: README.md"
+    );
+    expect(persistLocalApproval).toHaveBeenCalledWith(
+      {
+        task_id: "task-3",
+        intent: "codex-write update README",
+        status: "queued"
+      },
+      expect.objectContaining({
+        taskId: "task-3",
+        changedFiles: ["README.md"]
+      })
+    );
+    expect(completeTask).not.toHaveBeenCalled();
+    expect(failTask).not.toHaveBeenCalled();
+    expect(blockTask).not.toHaveBeenCalled();
+    expect(snapshot[0].status).toBe("awaiting_local_approval");
   });
 });

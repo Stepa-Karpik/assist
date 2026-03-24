@@ -4,7 +4,9 @@ import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
 import { type CodexConfigInput, CodexSettingsStore } from "./codexSettingsStore";
+import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { getDataRoot } from "./dataRoot";
+import { LocalApprovalStore } from "./localApprovalStore";
 import { PairingStore } from "./pairingStore";
 import {
   type AuthEventListResponse,
@@ -27,6 +29,7 @@ let taskPollInFlight = false;
 let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
+let localApprovalStore: LocalApprovalStore | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 const pairingStore = new PairingStore();
@@ -135,11 +138,28 @@ async function pollTaskState() {
   try {
     taskSnapshot = await runTaskSyncCycle({
       client: syncClient,
-      executeTask: (task) => taskExecutor!.execute(task)
+      executeTask: (task) => taskExecutor!.execute(task),
+      persistLocalApproval: async (task, draft) => {
+        localApprovalStore?.saveDraft(task.intent, draft);
+      },
+      discardLocalApproval: async (draft) => {
+        await localApprovalStore?.discardDraft(draft);
+      }
     });
   } finally {
     taskPollInFlight = false;
   }
+}
+
+async function refreshTaskSnapshot() {
+  const response = await syncClient.fetchTaskHistory();
+
+  if (!response.ok) {
+    throw new Error(`Failed to refresh task snapshot: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { items: RemoteTaskRecord[] };
+  taskSnapshot = payload.items;
 }
 
 function ensureAuthPolling() {
@@ -224,6 +244,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
+  ipcMain.handle("tasks:get-local-approvals", () => localApprovalStore?.list() ?? []);
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
       throw new Error("Auth store is not initialized");
@@ -247,6 +268,34 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
+  ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
+    if (localApprovalStore === null) {
+      throw new Error("Local approval store is not initialized");
+    }
+
+    const result = await localApprovalStore.approve(taskId);
+    const response = await syncClient.completeTask(taskId, result.resultText);
+
+    if (!response.ok) {
+      throw new Error(`Failed to complete task after local approval: ${response.status}`);
+    }
+
+    await refreshTaskSnapshot();
+  });
+  ipcMain.handle("tasks:reject-local-approval", async (_event, taskId: string) => {
+    if (localApprovalStore === null) {
+      throw new Error("Local approval store is not initialized");
+    }
+
+    const response = await syncClient.blockTask(taskId, "Rejected locally.");
+
+    if (!response.ok) {
+      throw new Error(`Failed to block task after local rejection: ${response.status}`);
+    }
+
+    await localApprovalStore.reject(taskId);
+    await refreshTaskSnapshot();
+  });
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
 
@@ -273,6 +322,9 @@ async function bootstrap() {
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
   });
+  localApprovalStore = new LocalApprovalStore({
+    stateRoot: runtimeFolders.state
+  });
   codexSettingsStore = new CodexSettingsStore({
     settingsRoot: runtimeFolders.settings,
     defaultWorkspaceRoot: runtimeFolders.userRoot
@@ -280,7 +332,10 @@ async function bootstrap() {
   taskExecutor = createTaskExecutor({
     deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
     userRoot: runtimeFolders.userRoot,
-    getCodexWorkspaceRoot: () => codexSettingsStore?.getState().workspaceRoot ?? runtimeFolders.userRoot
+    getCodexWorkspaceRoot: () => codexSettingsStore?.getState().workspaceRoot ?? runtimeFolders.userRoot,
+    generateCodexWritePreview: createCodexWritePreviewGenerator({
+      stateRoot: runtimeFolders.state
+    }).generatePreview
   });
   registerIpcHandlers();
 

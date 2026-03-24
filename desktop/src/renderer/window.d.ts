@@ -34,15 +34,27 @@ type TaskSnapshotItem = {
   telegram_user_id?: number | null;
 };
 
+type LocalApprovalItem = {
+  taskId: string;
+  intent: string;
+  summaryText: string;
+  previewText: string;
+  changedFiles: string[];
+  createdAt: string;
+};
+
 declare global {
   interface Window {
     karpik?: {
       view: string;
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
+      getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getPairingState: () => Promise<PairingState>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
+      approveLocalApproval: (taskId: string) => Promise<void>;
       openPairingSession: () => Promise<PairingState>;
+      rejectLocalApproval: (taskId: string) => Promise<void>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveCodexConfig: (payload: { workspaceRoot?: string }) => Promise<CodexConfigState>;
     };

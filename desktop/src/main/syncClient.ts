@@ -212,6 +212,18 @@ export function createSyncClient({
       });
     },
 
+    awaitLocalApproval(taskId: string, resultText: string) {
+      return fetchImpl(`${baseUrl}/api/tasks/${taskId}/awaiting-local-approval`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          result_text: resultText
+        })
+      });
+    },
+
     completeTask(taskId: string, resultText: string) {
       return fetchImpl(`${baseUrl}/api/tasks/${taskId}/complete`, {
         method: "POST",
@@ -226,6 +238,18 @@ export function createSyncClient({
 
     failTask(taskId: string, errorText: string) {
       return fetchImpl(`${baseUrl}/api/tasks/${taskId}/fail`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          error_text: errorText
+        })
+      });
+    },
+
+    blockTask(taskId: string, errorText: string) {
+      return fetchImpl(`${baseUrl}/api/tasks/${taskId}/block`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

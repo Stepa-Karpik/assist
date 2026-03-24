@@ -228,6 +228,89 @@ describe("createTaskExecutor", () => {
     });
   });
 
+  it("routes codex-write tasks into local approval when preview changes exist", async () => {
+    const workspaceRoot = createUserRoot();
+    const generateCodexWritePreview = vi.fn(async () => ({
+      kind: "awaiting_local_approval" as const,
+      draft: {
+        taskId: "task-codex-write",
+        workspaceRoot,
+        previewRoot: path.join(workspaceRoot, ".preview"),
+        summaryText: "Updated README",
+        previewText: "diff preview",
+        changedFiles: ["README.md"],
+        changes: [
+          {
+            kind: "write" as const,
+            relativePath: "README.md",
+            originalHash: "hash-before"
+          }
+        ]
+      }
+    }));
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      generateCodexWritePreview
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-write",
+      intent: "codex-write update the readme"
+    });
+
+    expect(generateCodexWritePreview).toHaveBeenCalledWith({
+      taskId: "task-codex-write",
+      prompt: "update the readme",
+      workspaceRoot
+    });
+    expect(result).toEqual({
+      ok: true,
+      requiresLocalApproval: true,
+      waitingText: "Waiting for local review. Files: README.md",
+      draft: {
+        taskId: "task-codex-write",
+        workspaceRoot,
+        previewRoot: path.join(workspaceRoot, ".preview"),
+        summaryText: "Updated README",
+        previewText: "diff preview",
+        changedFiles: ["README.md"],
+        changes: [
+          {
+            kind: "write",
+            relativePath: "README.md",
+            originalHash: "hash-before"
+          }
+        ]
+      }
+    });
+  });
+
+  it("completes codex-write tasks immediately when preview contains no file changes", async () => {
+    const workspaceRoot = createUserRoot();
+    const generateCodexWritePreview = vi.fn(async () => ({
+      kind: "no_changes" as const,
+      summaryText: "No changes needed"
+    }));
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      generateCodexWritePreview
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-write-noop",
+      intent: "codex-write inspect the workspace"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "No changes needed"
+    });
+  });
+
   it("fails unsupported task intents explicitly", async () => {
     const executor = createTaskExecutor({
       deviceId: "desktop-local",
