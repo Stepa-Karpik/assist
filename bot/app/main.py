@@ -11,6 +11,7 @@ from app.handlers.task import (
     resolve_auth_command,
     resolve_confirm_command,
     resolve_decline_command,
+    resolve_status_command,
     resolve_task_command,
 )
 from app.handlers.start import get_start_text
@@ -111,6 +112,22 @@ def create_dispatcher(
 
         response = await asyncio.to_thread(
             resolve_decline_command,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
+        )
+
+        if response is not None:
+            await message.answer(response)
+
+    @dispatcher.message(Command("status"))
+    async def status_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            resolve_status_command,
             message.text or "",
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
