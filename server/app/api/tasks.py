@@ -10,6 +10,7 @@ from app.models.task import (
     TaskListResponse,
     TaskRisk,
 )
+from app.services.task_policy import apply_task_policy
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -39,6 +40,7 @@ def requires_desktop_auth_setup(payload: TaskCreateRequest, request: Request) ->
 
 @router.post("", response_model=TaskIntakeResponse, status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeResponse:
+    payload = apply_task_policy(payload)
     task_store = request.app.state.task_store
     pairing_store = request.app.state.pairing_store
     challenge_store = request.app.state.challenge_store
