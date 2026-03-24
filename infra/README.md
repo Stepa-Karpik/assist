@@ -2,10 +2,14 @@
 
 This folder contains deployment-related assets for `Karpik`.
 
-Expected contents over time:
+Included assets:
 
-- nginx config
-- environment examples
-- deployment notes
-- optional database/bootstrap scripts
+- `nginx/karpik.conf` - sample reverse proxy and desktop update feed routing
+- `desktop-updates/README.md` - expected layout for the Windows Squirrel feed
+- `env/desktop.env.example` - example desktop environment variables
 
+Current deployment split:
+
+- `/api/` is served by the FastAPI control plane
+- `/desktop-updates/win32/x64/` is a static directory with `RELEASES`,
+  `KarpikSetup.exe`, and `.nupkg` artifacts produced by `desktop/npm run make`

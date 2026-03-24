@@ -4,10 +4,10 @@
 
 The product is split into separate deployable areas:
 
-- `desktop/` - Electron app, installer, tray UI, and local execution plane
+- `desktop/` - Electron app, installer, tray UI, local chat UX, updater, and local execution plane
 - `server/` - FastAPI control plane
 - `bot/` - aiogram Telegram bot
-- `infra/` - deployment and reverse proxy assets
+- `infra/` - deployment, update feed, and reverse proxy assets
 - `docs/` - specifications, plans, contracts, and project documentation
 
 ## Important Rule
@@ -20,6 +20,18 @@ app data root for `Karpik`. Human-readable user data can be organized under
 
 ## Current Status
 
-This repository is in the bootstrap phase. The initial implementation plan lives
-under `docs/superpowers/plans/`.
+This repository is no longer in the bootstrap phase.
 
+Current state:
+
+- working Windows desktop runtime with tray UI, quick popup, local chats, and guarded `codex` execution
+- FastAPI control plane and Telegram bot wired end-to-end
+- pairing, auth challenge, task queue, screenshot delivery, and local approval flows
+- desktop updater support for installed Windows builds through a Squirrel feed
+
+Operational entry points:
+
+- desktop install: `docs/runbooks/desktop-install.md`
+- desktop release and update feed publication: `docs/runbooks/desktop-release.md`
+- local development: `docs/runbooks/local-dev.md`
+- server deployment: `docs/runbooks/server-deploy.md`
