@@ -1,5 +1,5 @@
 import started from "electron-squirrel-startup";
-import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, Notification, Tray } from "electron";
 
 import { ActivityLogStore } from "./activityLogStore";
 import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
@@ -25,6 +25,7 @@ import {
   createSyncClient
 } from "./syncClient";
 import { createTaskExecutor } from "./taskExecutor";
+import { buildTaskNotification } from "./taskNotifications";
 import { runTaskSyncCycle } from "./taskRuntime";
 import { createAppTray } from "./tray";
 import { createMainWindow, createQuickPopupWindow } from "./windows";
@@ -238,6 +239,17 @@ function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
         detail: buildTaskActivityDetail(task),
         taskId: task.task_id
       });
+
+      if (appPreferencesStore?.getState().notificationsEnabled) {
+        const notification = buildTaskNotification(task);
+
+        if (notification !== null) {
+          new Notification({
+            title: notification.title,
+            body: notification.body
+          }).show();
+        }
+      }
     }
   }
 

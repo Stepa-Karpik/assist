@@ -14,6 +14,7 @@ type AuthConfigState = {
 
 type AppPreferencesState = {
   launchAtLogin: boolean;
+  notificationsEnabled: boolean;
   startHiddenOnLaunch: boolean;
   closeToTrayOnClose: boolean;
 };
@@ -50,6 +51,7 @@ const emptyAuthConfigState: AuthConfigState = {
 
 const emptyAppPreferencesState: AppPreferencesState = {
   launchAtLogin: false,
+  notificationsEnabled: true,
   startHiddenOnLaunch: true,
   closeToTrayOnClose: true
 };
@@ -393,6 +395,20 @@ export function SettingsPage() {
             type="checkbox"
           />{" "}
           Launch at login
+        </label>
+        <label htmlFor="settings-desktop-notifications">
+          <input
+            checked={appPreferences.notificationsEnabled}
+            id="settings-desktop-notifications"
+            onChange={(event) =>
+              setAppPreferences((currentState) => ({
+                ...currentState,
+                notificationsEnabled: event.target.checked
+              }))
+            }
+            type="checkbox"
+          />{" "}
+          Desktop notifications
         </label>
         <label htmlFor="settings-start-hidden">
           <input

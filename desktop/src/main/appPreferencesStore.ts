@@ -3,6 +3,7 @@ import path from "node:path";
 
 export type AppPreferencesState = {
   launchAtLogin: boolean;
+  notificationsEnabled: boolean;
   startHiddenOnLaunch: boolean;
   closeToTrayOnClose: boolean;
 };
@@ -17,6 +18,7 @@ type LoginItemSettingsTarget = {
 
 const defaultState: AppPreferencesState = {
   launchAtLogin: false,
+  notificationsEnabled: true,
   startHiddenOnLaunch: true,
   closeToTrayOnClose: true
 };
@@ -63,6 +65,7 @@ export class AppPreferencesStore {
 
     return {
       launchAtLogin: raw.launchAtLogin ?? defaultState.launchAtLogin,
+      notificationsEnabled: raw.notificationsEnabled ?? defaultState.notificationsEnabled,
       startHiddenOnLaunch: raw.startHiddenOnLaunch ?? defaultState.startHiddenOnLaunch,
       closeToTrayOnClose: raw.closeToTrayOnClose ?? defaultState.closeToTrayOnClose
     };

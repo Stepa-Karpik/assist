@@ -66,6 +66,7 @@ type KnowledgeSection = {
 
 type AppPreferences = {
   launchAtLogin: boolean;
+  notificationsEnabled: boolean;
   startHiddenOnLaunch: boolean;
   closeToTrayOnClose: boolean;
 };
@@ -76,11 +77,13 @@ const getAuthConfigState = vi.fn(async () => ({
 }));
 const getAppPreferences = vi.fn<() => Promise<AppPreferences>>(async () => ({
   launchAtLogin: false,
+  notificationsEnabled: true,
   startHiddenOnLaunch: true,
   closeToTrayOnClose: true
 }));
 const saveAppPreferences = vi.fn(async () => ({
   launchAtLogin: true,
+  notificationsEnabled: false,
   startHiddenOnLaunch: false,
   closeToTrayOnClose: false
 }));
@@ -515,16 +518,19 @@ describe("App navigation", () => {
       screen.getByRole("navigation", { name: "Primary navigation" }).querySelectorAll("button")[6]!
     );
     fireEvent.click(await screen.findByLabelText("Launch at login"));
+    fireEvent.click(await screen.findByLabelText("Desktop notifications"));
     fireEvent.click(await screen.findByLabelText("Start hidden in tray"));
     fireEvent.click(await screen.findByLabelText("Close main window to tray"));
     fireEvent.click(await screen.findByRole("button", { name: "Save desktop behavior" }));
 
     expect(saveAppPreferences).toHaveBeenCalledWith({
       launchAtLogin: true,
+      notificationsEnabled: false,
       startHiddenOnLaunch: false,
       closeToTrayOnClose: false
     });
     expect(await screen.findByLabelText("Launch at login")).toBeChecked();
+    expect(await screen.findByLabelText("Desktop notifications")).not.toBeChecked();
     expect(await screen.findByLabelText("Start hidden in tray")).not.toBeChecked();
     expect(await screen.findByLabelText("Close main window to tray")).not.toBeChecked();
   });
@@ -731,6 +737,26 @@ describe("App navigation", () => {
       ...window.karpik!,
       view: "quick-popup"
     };
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-quick-1",
+        intent: "codex summarize repo",
+        status: "running",
+        result_text: null,
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      },
+      {
+        task_id: "task-quick-2",
+        intent: "codex-write update notes",
+        status: "awaiting_local_approval",
+        result_text: "Waiting for local review.",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
     getQuickAccessState.mockResolvedValueOnce({
       targetChat: {
         chatId: "local-chat-10",
@@ -744,12 +770,26 @@ describe("App navigation", () => {
         workspaceId: "assist-repo"
       },
       localChatCount: 1,
-      recentActivity: []
+      recentActivity: [
+        {
+          entryId: "activity-1",
+          kind: "remote_task",
+          status: "warning",
+          title: "Remote task task-quick-2",
+          detail: "codex-write update notes -> awaiting_local_approval",
+          chatId: null,
+          taskId: "task-quick-2",
+          createdAt: "2026-03-24T12:12:00.000Z"
+        }
+      ]
     });
 
     render(<App />);
 
     expect(await screen.findByText("Execution chat")).toBeInTheDocument();
+    expect(await screen.findByText("Approximate completion across active tasks: 80%")).toBeInTheDocument();
+    expect(await screen.findByText("Remote task task-quick-2")).toBeInTheDocument();
+    expect(await screen.findByText("codex-write update notes -> awaiting_local_approval")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Quick request"), {
       target: { value: "status" }
     });

@@ -5,14 +5,23 @@ import { BlockedTasksPage } from "./pages/BlockedTasksPage";
 import { ChatsPage } from "./pages/ChatsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LogsPage } from "./pages/LogsPage";
+import type { TaskSnapshot } from "./pages/taskSnapshot";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TelegramChatsPage } from "./pages/TelegramChatsPage";
 
-function ProgressBar() {
+type QuickProgressState = {
+  activeTaskCount: number;
+  awaitingApprovalCount: number;
+  blockedTaskCount: number;
+  percentage: number;
+  summaryText: string;
+};
+
+function ProgressBar({ percentage }: { percentage: number }) {
   return (
     <div className="progress-shell" aria-label="Global progress">
-      <div className="progress-fill" style={{ width: "28%" }} />
+      <div className="progress-fill" style={{ width: `${percentage}%` }} />
     </div>
   );
 }
@@ -27,22 +36,74 @@ const emptyQuickAccessState: NonNullable<QuickAccessState> = {
   recentActivity: []
 };
 
+const emptyTaskSnapshot: TaskSnapshot = [];
+
+function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState {
+  const activeTasks = taskSnapshot.filter((task) =>
+    ["queued", "awaiting_auth", "running", "awaiting_local_approval", "stalled"].includes(task.status)
+  );
+  const awaitingApprovalCount = taskSnapshot.filter(
+    (task) => task.status === "awaiting_local_approval"
+  ).length;
+  const blockedTaskCount = taskSnapshot.filter(
+    (task) => task.status === "blocked" || task.status === "failed"
+  ).length;
+
+  if (activeTasks.length === 0) {
+    return {
+      activeTaskCount: 0,
+      awaitingApprovalCount,
+      blockedTaskCount,
+      percentage: 100,
+      summaryText: "No active tasks right now."
+    };
+  }
+
+  const progressWeights: Record<TaskSnapshot[number]["status"], number> = {
+    queued: 10,
+    awaiting_auth: 25,
+    awaiting_local_approval: 90,
+    blocked: 100,
+    running: 70,
+    done: 100,
+    failed: 100,
+    stalled: 60
+  };
+  const averageProgress = Math.round(
+    activeTasks.reduce((total, task) => total + progressWeights[task.status], 0) / activeTasks.length
+  );
+
+  return {
+    activeTaskCount: activeTasks.length,
+    awaitingApprovalCount,
+    blockedTaskCount,
+    percentage: averageProgress,
+    summaryText: `Approximate completion across active tasks: ${averageProgress}%`
+  };
+}
+
 function QuickPopupView() {
   const [quickState, setQuickState] = useState<NonNullable<QuickAccessState>>(emptyQuickAccessState);
+  const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshot>(emptyTaskSnapshot);
   const [requestText, setRequestText] = useState("");
   const [responseText, setResponseText] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const quickProgress = buildQuickProgressState(taskSnapshot);
 
   useEffect(() => {
     let isSubscribed = true;
 
     async function loadQuickState() {
       try {
-        const nextState = await (window.karpik?.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
+        const [nextState, nextTaskSnapshot] = await Promise.all([
+          window.karpik?.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState),
+          window.karpik?.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
+        ]);
 
         if (isSubscribed && nextState !== null) {
           setQuickState(nextState);
+          setTaskSnapshot(nextTaskSnapshot);
         }
       } catch {
         if (isSubscribed) {
@@ -77,9 +138,13 @@ function QuickPopupView() {
       const result = await window.karpik.submitQuickRequest({
         text: normalizedRequest
       });
-      const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
+      const [nextState, nextTaskSnapshot] = await Promise.all([
+        window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState),
+        window.karpik.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
+      ]);
 
       setQuickState(nextState ?? emptyQuickAccessState);
+      setTaskSnapshot(nextTaskSnapshot);
       setResponseText(result.detail.messages.at(-1)?.text ?? null);
       setRequestText("");
     } catch {
@@ -103,8 +168,11 @@ function QuickPopupView() {
 
       <section className="quick-card">
         <p className="section-label">Current progress</p>
-        <ProgressBar />
-        <p className="muted-text">Approximate completion across running tasks: 28%</p>
+        <ProgressBar percentage={quickProgress.percentage} />
+        <p className="muted-text">{quickProgress.summaryText}</p>
+        <p className="muted-text">Active tasks: {quickProgress.activeTaskCount}</p>
+        <p className="muted-text">Needs review: {quickProgress.awaitingApprovalCount}</p>
+        <p className="muted-text">Blocked or failed: {quickProgress.blockedTaskCount}</p>
       </section>
 
       <section className="quick-card">
@@ -113,6 +181,23 @@ function QuickPopupView() {
           {quickState.targetChat?.title ?? "Новый локальный чат будет создан автоматически"}
         </p>
         <p className="muted-text">Local chats: {quickState.localChatCount}</p>
+      </section>
+
+      <section className="quick-card">
+        <p className="section-label">Recent activity</p>
+        {quickState.recentActivity.length === 0 ? (
+          <p className="muted-text">No recent runtime activity yet.</p>
+        ) : (
+          quickState.recentActivity.map((entry) => (
+            <article className="task-card" key={entry.entryId}>
+              <div className="task-card-header">
+                <strong>{entry.title}</strong>
+                <span>{entry.status}</span>
+              </div>
+              {entry.detail ? <p className="muted-text">{entry.detail}</p> : null}
+            </article>
+          ))
+        )}
       </section>
 
       <section className="quick-card">

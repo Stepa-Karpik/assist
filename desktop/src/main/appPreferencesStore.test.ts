@@ -30,6 +30,7 @@ describe("AppPreferencesStore", () => {
 
     expect(store.getState()).toEqual({
       launchAtLogin: false,
+      notificationsEnabled: true,
       startHiddenOnLaunch: true,
       closeToTrayOnClose: true
     });
@@ -43,6 +44,7 @@ describe("AppPreferencesStore", () => {
 
     store.save({
       launchAtLogin: true,
+      notificationsEnabled: false,
       startHiddenOnLaunch: false,
       closeToTrayOnClose: false
     });
@@ -53,6 +55,7 @@ describe("AppPreferencesStore", () => {
 
     expect(reloadedStore.getState()).toEqual({
       launchAtLogin: true,
+      notificationsEnabled: false,
       startHiddenOnLaunch: false,
       closeToTrayOnClose: false
     });
@@ -66,6 +69,7 @@ describe("AppPreferencesStore", () => {
 
     store.save({
       launchAtLogin: true,
+      notificationsEnabled: true,
       startHiddenOnLaunch: true,
       closeToTrayOnClose: true
     });

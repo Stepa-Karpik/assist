@@ -14,6 +14,7 @@ type AuthConfigState = {
 
 type AppPreferencesState = {
   launchAtLogin: boolean;
+  notificationsEnabled: boolean;
   startHiddenOnLaunch: boolean;
   closeToTrayOnClose: boolean;
 };
