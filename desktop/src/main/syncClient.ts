@@ -3,6 +3,14 @@ export type OnlineEventPayload = {
   status: "online";
 };
 
+export type DevicePresenceResponse = {
+  device_id: string;
+  status: "online";
+  last_seen_at: string;
+  is_online: boolean;
+  acknowledged: boolean;
+};
+
 export type PairingResult = "paired" | "invalid_code" | "ignored";
 export type AuthConfigState = {
   passwordConfigured: boolean;
@@ -213,6 +221,12 @@ export function createSyncClient({
         include_history: "true"
       });
       return fetchImpl(`${baseUrl}/api/tasks?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    fetchDevicePresence() {
+      return fetchImpl(`${baseUrl}/api/devices/${deviceId}`, {
         method: "GET"
       });
     },

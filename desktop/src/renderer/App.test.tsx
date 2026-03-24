@@ -41,6 +41,9 @@ type ActivityLogEntry = {
 type RuntimeStatus = {
   deviceId: string;
   serverUrl: string;
+  serverHeartbeatState: "online" | "offline";
+  serverHeartbeatReachable: boolean;
+  serverHeartbeatAt: string | null;
   pairingActive: boolean;
   trustedTelegramUserCount: number;
   passwordConfigured: boolean;
@@ -223,6 +226,9 @@ const submitQuickRequest = vi.fn(async (payload: { text: string }) => ({
 const getRuntimeStatus = vi.fn<() => Promise<RuntimeStatus>>(async () => ({
   deviceId: "desktop-local",
   serverUrl: "http://127.0.0.1:8000",
+  serverHeartbeatState: "online",
+  serverHeartbeatReachable: true,
+  serverHeartbeatAt: "2026-03-24T12:25:00.000Z",
   pairingActive: false,
   trustedTelegramUserCount: 1,
   passwordConfigured: true,
@@ -880,6 +886,8 @@ describe("App navigation", () => {
 
     expect(await screen.findByText("Device ID: desktop-local")).toBeInTheDocument();
     expect(await screen.findByText("Server URL: http://127.0.0.1:8000")).toBeInTheDocument();
+    expect(await screen.findByText("Server heartbeat: online")).toBeInTheDocument();
+    expect(await screen.findByText("Server reachable: yes")).toBeInTheDocument();
     expect(await screen.findByText("Last active chat: Execution chat")).toBeInTheDocument();
     expect(await screen.findByText("Default workspace: Assist")).toBeInTheDocument();
   });

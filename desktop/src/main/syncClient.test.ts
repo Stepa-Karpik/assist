@@ -81,6 +81,7 @@ describe("syncClient pairing api", () => {
       accepted: true
     });
     await client.fetchTaskHistory();
+    await client.fetchDevicePresence();
     await client.startTask("task-1");
     await client.completeTask("task-1", {
       resultText: "desktop-local is online"
@@ -173,6 +174,14 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       8,
+      "http://127.0.0.1:8000/api/devices/desktop-local",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      9,
       "http://127.0.0.1:8000/api/tasks/task-1/start",
       expect.objectContaining({
         method: "POST"
@@ -180,7 +189,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      9,
+      10,
       "http://127.0.0.1:8000/api/tasks/task-1/complete",
       expect.objectContaining({
         method: "POST",
@@ -194,7 +203,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      10,
+      11,
       "http://127.0.0.1:8000/api/tasks/task-2/fail",
       expect.objectContaining({
         method: "POST",

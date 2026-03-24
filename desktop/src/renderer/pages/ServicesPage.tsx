@@ -7,6 +7,9 @@ type RuntimeStatus = Awaited<
 const emptyRuntimeStatus: RuntimeStatus = {
   deviceId: "",
   serverUrl: "",
+  serverHeartbeatState: "offline",
+  serverHeartbeatReachable: false,
+  serverHeartbeatAt: null,
   pairingActive: false,
   trustedTelegramUserCount: 0,
   passwordConfigured: false,
@@ -84,6 +87,9 @@ export function ServicesPage() {
             </div>
             <p>Device ID: {status.deviceId}</p>
             <p>Server URL: {status.serverUrl}</p>
+            <p>Server heartbeat: {status.serverHeartbeatState}</p>
+            <p>Server reachable: {formatBoolean(status.serverHeartbeatReachable)}</p>
+            <p>Last server heartbeat: {status.serverHeartbeatAt ?? "none"}</p>
             <p>Pairing active: {formatBoolean(status.pairingActive)}</p>
             <p>Trusted Telegram users: {status.trustedTelegramUserCount}</p>
           </article>

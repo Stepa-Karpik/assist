@@ -11,6 +11,7 @@ import {
   CodexSettingsStore
 } from "./codexSettingsStore";
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
+import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { getDataRoot } from "./dataRoot";
 import { createKnowledgeStore } from "./knowledgeStore";
 import { LocalApprovalStore } from "./localApprovalStore";
@@ -20,6 +21,7 @@ import { PairingStore } from "./pairingStore";
 import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import {
   type AuthEventListResponse,
+  type DevicePresenceResponse,
   type PairingEventListResponse,
   type RemoteTaskRecord,
   createSyncClient
@@ -34,6 +36,7 @@ let mainWindow: BrowserWindow | null = null;
 let quickPopup: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let authPollInterval: NodeJS.Timeout | null = null;
+let deviceHeartbeatInterval: NodeJS.Timeout | null = null;
 let pairingPollInterval: NodeJS.Timeout | null = null;
 let taskPollInterval: NodeJS.Timeout | null = null;
 let taskPollInFlight = false;
@@ -53,6 +56,7 @@ let taskSnapshot: RemoteTaskRecord[] = [];
 let taskActivityInitialized = false;
 const pairingStore = new PairingStore();
 const authPollIntervalMs = 2_000;
+const deviceHeartbeatIntervalMs = 15_000;
 const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
 const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
@@ -61,6 +65,7 @@ const syncClient = createSyncClient({
   serverUrl,
   deviceId
 });
+const devicePresenceTracker = createDevicePresenceTracker();
 
 if (started) {
   app.quit();
@@ -79,6 +84,24 @@ async function syncAuthConfigState() {
 
   if (!response.ok) {
     logResponseError("Syncing auth config state", response);
+  }
+}
+
+async function syncDevicePresenceHeartbeat() {
+  try {
+    const response = await syncClient.announceOnline();
+
+    if (!response.ok) {
+      devicePresenceTracker.markFailure();
+      logResponseError("Announcing device online", response);
+      return;
+    }
+
+    const payload = (await response.json()) as DevicePresenceResponse;
+    devicePresenceTracker.markSuccess(payload);
+  } catch (error: unknown) {
+    devicePresenceTracker.markFailure();
+    throw error;
   }
 }
 
@@ -289,6 +312,22 @@ function ensurePairingPolling() {
   }, pairingPollIntervalMs);
 }
 
+function ensureDeviceHeartbeatPolling() {
+  if (deviceHeartbeatInterval !== null) {
+    return;
+  }
+
+  void syncDevicePresenceHeartbeat().catch((error: unknown) => {
+    console.error("Failed to sync device heartbeat", error);
+  });
+
+  deviceHeartbeatInterval = setInterval(() => {
+    void syncDevicePresenceHeartbeat().catch((error: unknown) => {
+      console.error("Failed to sync device heartbeat", error);
+    });
+  }, deviceHeartbeatIntervalMs);
+}
+
 function ensureTaskPolling() {
   if (taskPollInterval !== null) {
     return;
@@ -321,6 +360,15 @@ function stopTaskPolling() {
 
   clearInterval(taskPollInterval);
   taskPollInterval = null;
+}
+
+function stopDeviceHeartbeatPolling() {
+  if (deviceHeartbeatInterval === null) {
+    return;
+  }
+
+  clearInterval(deviceHeartbeatInterval);
+  deviceHeartbeatInterval = null;
 }
 
 function stopPairingPolling() {
@@ -359,10 +407,14 @@ function registerIpcHandlers() {
       codexConfigState?.workspaces.find(
         (workspace) => workspace.id === codexConfigState.defaultWorkspaceId
       ) ?? codexConfigState?.workspaces[0];
+    const devicePresence = devicePresenceTracker.getSnapshot();
 
     return {
       deviceId,
       serverUrl,
+      serverHeartbeatState: devicePresence.state,
+      serverHeartbeatReachable: devicePresence.reachable,
+      serverHeartbeatAt: devicePresence.lastSeenAt,
       pairingActive: pairingState.isActive,
       trustedTelegramUserCount: pairingState.trustedTelegramUserIds.length,
       passwordConfigured: authConfigState?.passwordConfigured ?? false,
@@ -605,12 +657,10 @@ async function bootstrap() {
     quickPopup
   });
   ensureAuthPolling();
+  ensureDeviceHeartbeatPolling();
   ensurePairingPolling();
   ensureTaskPolling();
 
-  void syncClient.announceOnline().catch((error: unknown) => {
-    console.error("Failed to announce device online", error);
-  });
   void syncAuthConfigState().catch((error: unknown) => {
     console.error("Failed to sync auth config state", error);
   });
@@ -636,6 +686,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   isAppQuitting = true;
   stopAuthPolling();
+  stopDeviceHeartbeatPolling();
   stopTaskPolling();
   stopPairingPolling();
 

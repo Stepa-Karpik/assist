@@ -101,6 +101,9 @@ type QuickAccessState = {
 type RuntimeStatus = {
   deviceId: string;
   serverUrl: string;
+  serverHeartbeatState: "online" | "offline";
+  serverHeartbeatReachable: boolean;
+  serverHeartbeatAt: string | null;
   pairingActive: boolean;
   trustedTelegramUserCount: number;
   passwordConfigured: boolean;
