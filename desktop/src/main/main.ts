@@ -11,6 +11,7 @@ import {
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { getDataRoot } from "./dataRoot";
 import { LocalApprovalStore } from "./localApprovalStore";
+import { LocalChatStore } from "./localChatStore";
 import { PairingStore } from "./pairingStore";
 import {
   type AuthEventListResponse,
@@ -34,6 +35,7 @@ let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
+let localChatStore: LocalChatStore | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 const pairingStore = new PairingStore();
@@ -248,6 +250,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
+  ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("tasks:get-local-approvals", () => localApprovalStore?.list() ?? []);
   ipcMain.handle("auth:save-config", async (_event, payload: AuthConfigInput) => {
     if (authStore === null) {
@@ -277,6 +280,33 @@ function registerIpcHandlers() {
 
     return codexSettingsStore.saveChatBinding(payload);
   });
+  ipcMain.handle(
+    "chats:create-desktop",
+    (_event, payload: { title?: string; workspaceId?: string | null } | undefined) => {
+      if (localChatStore === null) {
+        throw new Error("Local chat store is not initialized");
+      }
+
+      return localChatStore.createDesktopChat(payload);
+    }
+  );
+  ipcMain.handle(
+    "chats:create-continuation",
+    (
+      _event,
+      payload: {
+        telegramChatId: number;
+        title?: string;
+        workspaceId?: string | null;
+      }
+    ) => {
+      if (localChatStore === null) {
+        throw new Error("Local chat store is not initialized");
+      }
+
+      return localChatStore.createContinuationChat(payload);
+    }
+  );
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
@@ -334,6 +364,9 @@ async function bootstrap() {
     secretsRoot: runtimeFolders.secrets
   });
   localApprovalStore = new LocalApprovalStore({
+    stateRoot: runtimeFolders.state
+  });
+  localChatStore = new LocalChatStore({
     stateRoot: runtimeFolders.state
   });
   codexSettingsStore = new CodexSettingsStore({

@@ -51,6 +51,18 @@ type LocalApprovalItem = {
   createdAt: string;
 };
 
+type LocalChatItem = {
+  chatId: string;
+  source: "desktop_chat" | "local_continuation_chat";
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  referenceLabel: string | null;
+  telegramChatId: number | null;
+  workspaceId: string | null;
+};
+
 declare global {
   interface Window {
     karpik?: {
@@ -58,9 +70,19 @@ declare global {
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
+      getLocalChats: () => Promise<LocalChatItem[]>;
       getPairingState: () => Promise<PairingState>;
       getTaskSnapshot: () => Promise<TaskSnapshotItem[]>;
       approveLocalApproval: (taskId: string) => Promise<void>;
+      createDesktopChat: (payload?: {
+        title?: string;
+        workspaceId?: string | null;
+      }) => Promise<LocalChatItem>;
+      createLocalContinuationChat: (payload: {
+        telegramChatId: number;
+        title?: string;
+        workspaceId?: string | null;
+      }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;

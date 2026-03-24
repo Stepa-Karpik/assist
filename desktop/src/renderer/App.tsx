@@ -73,7 +73,13 @@ function MainWindowView() {
       />
       <section className="content-panel">
         {activeSection === "chats" && <ChatsPage />}
-        {activeSection === "telegram" && <TelegramChatsPage />}
+        {activeSection === "telegram" && (
+          <TelegramChatsPage
+            onContinueToLocalChats={() => {
+              setActiveSection("chats");
+            }}
+          />
+        )}
         {activeSection === "blocked" && <BlockedTasksPage />}
         {activeSection === "knowledge" && <KnowledgePage />}
         {activeSection === "logs" && <LogsPage />}

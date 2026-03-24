@@ -4,6 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { TaskSnapshot } from "./pages/taskSnapshot";
 
+type LocalChatItem = {
+  chatId: string;
+  source: "desktop_chat" | "local_continuation_chat";
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  referenceLabel: string | null;
+  telegramChatId: number | null;
+  workspaceId: string | null;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -99,18 +111,62 @@ const openPairingSession = vi.fn(async () => ({
   trustedTelegramUserIds: []
 }));
 
+let localChatsState: LocalChatItem[] = [];
+
+const getLocalChats = vi.fn(async () => localChatsState);
+const createDesktopChat = vi.fn(async () => {
+  const nextChat: LocalChatItem = {
+    chatId: "local-chat-1",
+    source: "desktop_chat",
+    title: "Новый локальный чат",
+    createdAt: "2026-03-24T12:00:00.000Z",
+    updatedAt: "2026-03-24T12:00:00.000Z",
+    messageCount: 0,
+    referenceLabel: null,
+    telegramChatId: null,
+    workspaceId: null
+  };
+  localChatsState = [nextChat];
+  return nextChat;
+});
+const createLocalContinuationChat = vi.fn(
+  async (payload: {
+    telegramChatId: number;
+    title?: string;
+    workspaceId?: string | null;
+  }) => {
+    const nextChat: LocalChatItem = {
+      chatId: "local-chat-2",
+      source: "local_continuation_chat",
+      title: payload.title ?? `Telegram ${payload.telegramChatId}`,
+      createdAt: "2026-03-24T12:05:00.000Z",
+      updatedAt: "2026-03-24T12:05:00.000Z",
+      messageCount: 0,
+      referenceLabel: `Ссылается на Telegram chat ${payload.telegramChatId}`,
+      telegramChatId: payload.telegramChatId,
+      workspaceId: payload.workspaceId ?? null
+    };
+    localChatsState = [nextChat, ...localChatsState];
+    return nextChat;
+  }
+);
+
 describe("App navigation", () => {
   beforeEach(() => {
+    localChatsState = [];
     window.karpik = {
       view: "main",
       getAuthConfigState,
       getCodexConfigState,
       getLocalApprovals,
+      getLocalChats,
       getPairingState,
       getTaskSnapshot,
       openPairingSession,
       approveLocalApproval,
       rejectLocalApproval,
+      createDesktopChat,
+      createLocalContinuationChat,
       saveAuthConfig,
       saveChatWorkspaceBinding,
       saveCodexConfig
@@ -122,11 +178,14 @@ describe("App navigation", () => {
     getAuthConfigState.mockClear();
     getCodexConfigState.mockClear();
     getLocalApprovals.mockClear();
+    getLocalChats.mockClear();
     getPairingState.mockClear();
     getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
+    createDesktopChat.mockClear();
+    createLocalContinuationChat.mockClear();
     saveAuthConfig.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
@@ -142,6 +201,17 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Логи" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сервисы" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
+  });
+
+  it("shows local chat empty state and lets the user create a desktop chat", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Локальных чатов пока нет.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Новый локальный чат" }));
+
+    expect(createDesktopChat).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Новый локальный чат")).toBeInTheDocument();
+    expect(await screen.findByText("desktop_chat")).toBeInTheDocument();
   });
 
   it("shows pairing controls and workspace registry settings", async () => {
@@ -275,6 +345,33 @@ describe("App navigation", () => {
       chatId: 5001,
       workspaceId: "default-workspace"
     });
+  });
+
+  it("continues a Telegram chat into local chats", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-continue",
+        intent: "codex summarize repo",
+        status: "done",
+        result_text: "done",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить чат" }));
+
+    expect(createLocalContinuationChat).toHaveBeenCalledWith({
+      telegramChatId: 5001,
+      title: "Telegram 5001",
+      workspaceId: "assist-repo"
+    });
+    expect(await screen.findByText("Telegram 5001")).toBeInTheDocument();
+    expect(await screen.findByText("Ссылается на Telegram chat 5001")).toBeInTheDocument();
   });
 
   it("shows blocked and failed tasks in the blocked page", async () => {

@@ -50,7 +50,11 @@ function groupTasksByChat(tasks: TaskSnapshotItem[]): Array<{
     }));
 }
 
-export function TelegramChatsPage() {
+type TelegramChatsPageProps = {
+  onContinueToLocalChats?: () => void;
+};
+
+export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageProps) {
   const [tasks, setTasks] = useState<TaskSnapshotItem[]>([]);
   const [codexConfigState, setCodexConfigState] =
     useState<CodexConfigState>(emptyCodexConfigState);
@@ -150,6 +154,34 @@ export function TelegramChatsPage() {
     }
   }
 
+  async function handleContinueChat(chatId: number) {
+    if (!window.karpik?.createLocalContinuationChat) {
+      setError("Local continuation API недоступен в этом окружении.");
+      return;
+    }
+
+    const workspaceId =
+      selectedWorkspaceIds[String(chatId)] ||
+      codexConfigState.chatBindings[String(chatId)] ||
+      codexConfigState.defaultWorkspaceId;
+
+    setError(null);
+    setBusyChatId(chatId);
+
+    try {
+      await window.karpik.createLocalContinuationChat({
+        telegramChatId: chatId,
+        title: `Telegram ${chatId}`,
+        workspaceId
+      });
+      onContinueToLocalChats?.();
+    } catch {
+      setError("Не удалось создать локальный continuation chat.");
+    } finally {
+      setBusyChatId(null);
+    }
+  }
+
   function renderWorkspaceOptions(workspaces: CodexWorkspace[]) {
     return workspaces.map((workspace) => (
       <option key={workspace.id} value={workspace.id}>
@@ -208,18 +240,30 @@ export function TelegramChatsPage() {
               >
                 {renderWorkspaceOptions(codexConfigState.workspaces)}
               </select>
-              <button
-                className="ghost-button"
-                disabled={busyChatId === chatGroup.chatId}
-                onClick={() => {
-                  void handleSaveChatWorkspace(chatGroup.chatId);
-                }}
-                type="button"
-              >
-                {busyChatId === chatGroup.chatId
-                  ? "Saving..."
-                  : "Save chat workspace"}
-              </button>
+              <div className="task-card-header">
+                <button
+                  className="ghost-button"
+                  disabled={busyChatId === chatGroup.chatId}
+                  onClick={() => {
+                    void handleSaveChatWorkspace(chatGroup.chatId);
+                  }}
+                  type="button"
+                >
+                  {busyChatId === chatGroup.chatId
+                    ? "Saving..."
+                    : "Save chat workspace"}
+                </button>
+                <button
+                  className="ghost-button"
+                  disabled={busyChatId === chatGroup.chatId}
+                  onClick={() => {
+                    void handleContinueChat(chatGroup.chatId);
+                  }}
+                  type="button"
+                >
+                  Продолжить чат
+                </button>
+              </div>
 
               <div className="task-list">
                 {chatGroup.tasks.map((task) => (
