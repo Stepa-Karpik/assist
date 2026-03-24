@@ -165,6 +165,34 @@ describe("createTaskExecutor", () => {
     });
   });
 
+  it("routes Telegram codex tasks through the chat-bound workspace", async () => {
+    const defaultWorkspaceRoot = createUserRoot();
+    const boundWorkspaceRoot = createUserRoot();
+    const runCodex = vi.fn(async () => "Codex summary");
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      resolveCodexWorkspace: (task) =>
+        task.chat_id === 5001 ? boundWorkspaceRoot : defaultWorkspaceRoot,
+      runCodex
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-bound",
+      intent: "codex summarize the latest notes",
+      chat_id: 5001
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Codex summary"
+    });
+    expect(runCodex).toHaveBeenCalledWith({
+      prompt: "summarize the latest notes",
+      workspaceRoot: boundWorkspaceRoot
+    });
+  });
+
   it("rejects empty codex prompts", async () => {
     const runCodex = vi.fn(async () => "unused");
     const executor = createTaskExecutor({

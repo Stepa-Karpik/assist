@@ -12,8 +12,16 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type CodexWorkspace = {
+  id: string;
+  name: string;
+  rootPath: string;
+};
+
 type CodexConfigState = {
-  workspaceRoot: string;
+  workspaces: CodexWorkspace[];
+  defaultWorkspaceId: string;
+  chatBindings: Record<string, string>;
 };
 
 type TaskSnapshotItem = {
@@ -56,7 +64,14 @@ declare global {
       openPairingSession: () => Promise<PairingState>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
-      saveCodexConfig: (payload: { workspaceRoot?: string }) => Promise<CodexConfigState>;
+      saveChatWorkspaceBinding: (payload: {
+        chatId: number;
+        workspaceId: string;
+      }) => Promise<CodexConfigState>;
+      saveCodexConfig: (payload: {
+        workspaces?: Array<Partial<CodexWorkspace>>;
+        defaultWorkspaceId?: string;
+      }) => Promise<CodexConfigState>;
     };
   }
 }

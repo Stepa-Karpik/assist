@@ -3,7 +3,11 @@ import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 
 import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
-import { type CodexConfigInput, CodexSettingsStore } from "./codexSettingsStore";
+import {
+  type CodexChatBindingInput,
+  type CodexConfigInput,
+  CodexSettingsStore
+} from "./codexSettingsStore";
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { getDataRoot } from "./dataRoot";
 import { LocalApprovalStore } from "./localApprovalStore";
@@ -266,6 +270,13 @@ function registerIpcHandlers() {
 
     return codexSettingsStore.saveConfig(payload);
   });
+  ipcMain.handle("codex:save-chat-binding", (_event, payload: CodexChatBindingInput) => {
+    if (codexSettingsStore === null) {
+      throw new Error("Codex settings store is not initialized");
+    }
+
+    return codexSettingsStore.saveChatBinding(payload);
+  });
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
@@ -332,7 +343,9 @@ async function bootstrap() {
   taskExecutor = createTaskExecutor({
     deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
     userRoot: runtimeFolders.userRoot,
-    getCodexWorkspaceRoot: () => codexSettingsStore?.getState().workspaceRoot ?? runtimeFolders.userRoot,
+    resolveCodexWorkspace: (task) =>
+      codexSettingsStore?.getWorkspaceForChat(task.chat_id).rootPath ??
+      runtimeFolders.userRoot,
     generateCodexWritePreview: createCodexWritePreviewGenerator({
       stateRoot: runtimeFolders.state
     }).generatePreview

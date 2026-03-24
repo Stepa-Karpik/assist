@@ -23,18 +23,53 @@ afterEach(() => {
 });
 
 describe("CodexSettingsStore", () => {
-  it("returns the default workspace when no config exists", () => {
+  it("returns a bootstrapped default workspace when no config exists", () => {
     const store = new CodexSettingsStore({
       settingsRoot: createSettingsRoot(),
       defaultWorkspaceRoot: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
     });
 
     expect(store.getState()).toEqual({
-      workspaceRoot: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+        }
+      ],
+      defaultWorkspaceId: "default-workspace",
+      chatBindings: {}
     });
   });
 
-  it("persists and reloads the configured workspace path", () => {
+  it("migrates the legacy single-root config into the new workspace registry", () => {
+    const settingsRoot = createSettingsRoot();
+    fs.writeFileSync(
+      path.join(settingsRoot, "codex.json"),
+      JSON.stringify({
+        workspaceRoot: "D:\\Projects\\assist"
+      })
+    );
+
+    const store = new CodexSettingsStore({
+      settingsRoot,
+      defaultWorkspaceRoot: "C:\\default"
+    });
+
+    expect(store.getState()).toEqual({
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "default-workspace",
+      chatBindings: {}
+    });
+  });
+
+  it("persists multiple workspaces and chat bindings", () => {
     const settingsRoot = createSettingsRoot();
     const firstStore = new CodexSettingsStore({
       settingsRoot,
@@ -42,7 +77,23 @@ describe("CodexSettingsStore", () => {
     });
 
     const saved = firstStore.saveConfig({
-      workspaceRoot: "D:\\Projects\\assist"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\default"
+        },
+        {
+          id: "assist-repo",
+          name: "Assist",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "assist-repo"
+    });
+    firstStore.saveChatBinding({
+      chatId: 5001,
+      workspaceId: "assist-repo"
     });
     const secondStore = new CodexSettingsStore({
       settingsRoot,
@@ -50,25 +101,99 @@ describe("CodexSettingsStore", () => {
     });
 
     expect(saved).toEqual({
-      workspaceRoot: "D:\\Projects\\assist"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\default"
+        },
+        {
+          id: "assist-repo",
+          name: "Assist",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "assist-repo",
+      chatBindings: {}
     });
     expect(secondStore.getState()).toEqual({
-      workspaceRoot: "D:\\Projects\\assist"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\default"
+        },
+        {
+          id: "assist-repo",
+          name: "Assist",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "assist-repo",
+      chatBindings: {
+        "5001": "assist-repo"
+      }
     });
   });
 
-  it("falls back to the default workspace when saving a blank value", () => {
+  it("drops invalid chat bindings when the target workspace is removed", () => {
     const store = new CodexSettingsStore({
       settingsRoot: createSettingsRoot(),
       defaultWorkspaceRoot: "C:\\default"
     });
+    store.saveConfig({
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\default"
+        },
+        {
+          id: "assist-repo",
+          name: "Assist",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "default-workspace"
+    });
+    store.saveChatBinding({
+      chatId: 5001,
+      workspaceId: "assist-repo"
+    });
+
+    expect(store.getWorkspaceForChat(5001)).toEqual({
+      id: "assist-repo",
+      name: "Assist",
+      rootPath: "D:\\Projects\\assist"
+    });
 
     expect(
       store.saveConfig({
-        workspaceRoot: "   "
+        workspaces: [
+          {
+            id: "default-workspace",
+            name: "Default",
+            rootPath: "C:\\default"
+          }
+        ],
+        defaultWorkspaceId: "default-workspace"
       })
     ).toEqual({
-      workspaceRoot: "C:\\default"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\default"
+        }
+      ],
+      defaultWorkspaceId: "default-workspace",
+      chatBindings: {}
+    });
+
+    expect(store.getWorkspaceForChat(5001)).toEqual({
+      id: "default-workspace",
+      name: "Default",
+      rootPath: "C:\\default"
     });
   });
 });

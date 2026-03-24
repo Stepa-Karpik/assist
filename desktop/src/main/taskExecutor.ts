@@ -12,6 +12,7 @@ import {
 type ExecutableTask = {
   task_id: string;
   intent: string;
+  chat_id?: number | null;
 };
 
 export type TaskExecutionResult =
@@ -36,6 +37,7 @@ type TaskExecutorOptions = {
   deviceId: string;
   userRoot: string;
   getCodexWorkspaceRoot?: () => string;
+  resolveCodexWorkspace?: (task: ExecutableTask) => string;
   runCodex?: (request: CodexRunRequest) => Promise<string>;
   generateCodexWritePreview?: (request: {
     taskId: string;
@@ -75,6 +77,7 @@ export function createTaskExecutor({
   deviceId,
   userRoot,
   getCodexWorkspaceRoot,
+  resolveCodexWorkspace,
   runCodex = createCodexRunner(),
   generateCodexWritePreview = createCodexWritePreviewGenerator({
     stateRoot: path.join(os.tmpdir(), "karpik-codex-previews"),
@@ -83,7 +86,9 @@ export function createTaskExecutor({
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
-  const resolveCodexWorkspaceRoot = getCodexWorkspaceRoot ?? (() => normalizedUserRoot);
+  const resolveCodexWorkspaceRoot =
+    resolveCodexWorkspace ??
+    (() => getCodexWorkspaceRoot?.() ?? normalizedUserRoot);
   const notesRoot = path.join(normalizedUserRoot, "docs", "notes");
 
   return {
@@ -109,7 +114,7 @@ export function createTaskExecutor({
           };
         }
 
-        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot().trim());
+        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot(task).trim());
 
         try {
           const workspaceStat = await fs.stat(workspaceRoot);
@@ -170,7 +175,7 @@ export function createTaskExecutor({
           };
         }
 
-        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot().trim());
+        const workspaceRoot = path.resolve(resolveCodexWorkspaceRoot(task).trim());
 
         try {
           const workspaceStat = await fs.stat(workspaceRoot);

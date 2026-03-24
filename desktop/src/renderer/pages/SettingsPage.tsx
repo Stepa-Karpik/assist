@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type PairingState = {
   code: string | null;
@@ -12,8 +12,22 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type CodexWorkspace = {
+  id: string;
+  name: string;
+  rootPath: string;
+};
+
 type CodexConfigState = {
-  workspaceRoot: string;
+  workspaces: CodexWorkspace[];
+  defaultWorkspaceId: string;
+  chatBindings: Record<string, string>;
+};
+
+type WorkspaceDraft = {
+  id: string;
+  name: string;
+  rootPath: string;
 };
 
 const emptyPairingState: PairingState = {
@@ -29,7 +43,9 @@ const emptyAuthConfigState: AuthConfigState = {
 };
 
 const emptyCodexConfigState: CodexConfigState = {
-  workspaceRoot: ""
+  workspaces: [],
+  defaultWorkspaceId: "",
+  chatBindings: {}
 };
 
 function formatExpiryHint(expiresAt: string | null): string {
@@ -50,18 +66,87 @@ function describeAuthStatus(isConfigured: boolean): string {
   return isConfigured ? "настроен" : "не настроен";
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function createWorkspaceId(
+  name: string,
+  rootPath: string,
+  usedIds: Set<string>
+): string {
+  const baseId = slugify(name) || slugify(rootPath) || "workspace";
+  let candidate = baseId;
+  let suffix = 2;
+
+  while (usedIds.has(candidate)) {
+    candidate = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
+function buildWorkspaceDrafts(configState: CodexConfigState): WorkspaceDraft[] {
+  return configState.workspaces.map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    rootPath: workspace.rootPath
+  }));
+}
+
+function buildWorkspacePayload(workspaceDrafts: WorkspaceDraft[]): CodexWorkspace[] {
+  const usedIds = new Set<string>();
+
+  return workspaceDrafts.flatMap((workspaceDraft, index) => {
+    const name = workspaceDraft.name.trim();
+    const rootPath = workspaceDraft.rootPath.trim();
+
+    if (!name && !rootPath) {
+      return [];
+    }
+
+    if (!rootPath) {
+      return [];
+    }
+
+    const requestedId = workspaceDraft.id.trim();
+    const id =
+      requestedId && !usedIds.has(requestedId)
+        ? requestedId
+        : createWorkspaceId(name || `workspace-${index + 1}`, rootPath, usedIds);
+    const normalizedWorkspace = {
+      id,
+      name: name || `Workspace ${index + 1}`,
+      rootPath
+    };
+
+    usedIds.add(id);
+    return [normalizedWorkspace];
+  });
+}
+
 export function SettingsPage() {
   const [pairingState, setPairingState] = useState<PairingState>(emptyPairingState);
   const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
   const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
   const [password, setPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
-  const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<WorkspaceDraft[]>([]);
+  const [selectedDefaultWorkspaceId, setSelectedDefaultWorkspaceId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
   const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
   const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const workspaceOptions = useMemo(
+    () => buildWorkspacePayload(workspaceDrafts),
+    [workspaceDrafts]
+  );
 
   useEffect(() => {
     let isSubscribed = true;
@@ -78,7 +163,8 @@ export function SettingsPage() {
           setPairingState(nextPairingState);
           setAuthConfigState(nextAuthConfigState);
           setCodexConfigState(nextCodexConfigState);
-          setWorkspaceRoot(nextCodexConfigState.workspaceRoot);
+          setWorkspaceDrafts(buildWorkspaceDrafts(nextCodexConfigState));
+          setSelectedDefaultWorkspaceId(nextCodexConfigState.defaultWorkspaceId);
         }
       } catch {
         if (isSubscribed) {
@@ -147,15 +233,30 @@ export function SettingsPage() {
       return;
     }
 
+    const workspaces = buildWorkspacePayload(workspaceDrafts);
+
+    if (workspaces.length === 0) {
+      setError("Нужен хотя бы один workspace с именем и путём.");
+      return;
+    }
+
+    const defaultWorkspaceId = workspaces.some(
+      (workspace) => workspace.id === selectedDefaultWorkspaceId
+    )
+      ? selectedDefaultWorkspaceId
+      : workspaces[0].id;
+
     setError(null);
     setIsSavingCodexConfig(true);
 
     try {
       const nextState = await window.karpik.saveCodexConfig({
-        workspaceRoot
+        workspaces,
+        defaultWorkspaceId
       });
       setCodexConfigState(nextState);
-      setWorkspaceRoot(nextState.workspaceRoot);
+      setWorkspaceDrafts(buildWorkspaceDrafts(nextState));
+      setSelectedDefaultWorkspaceId(nextState.defaultWorkspaceId);
     } catch {
       setError("Не удалось сохранить настройки Codex.");
     } finally {
@@ -163,14 +264,42 @@ export function SettingsPage() {
     }
   }
 
-  const pairingStatus = isLoading ? "Загрузка pairing-состояния..." : "Pairing не активен";
+  function handleWorkspaceDraftChange(
+    index: number,
+    field: "name" | "rootPath",
+    value: string
+  ) {
+    setWorkspaceDrafts((currentDrafts) =>
+      currentDrafts.map((draft, draftIndex) =>
+        draftIndex === index ? { ...draft, [field]: value } : draft
+      )
+    );
+  }
+
+  function handleAddWorkspace() {
+    setWorkspaceDrafts((currentDrafts) => [
+      ...currentDrafts,
+      {
+        id: "",
+        name: "",
+        rootPath: ""
+      }
+    ]);
+  }
+
+  const pairingStatus = isLoading
+    ? "Загрузка pairing-состояния..."
+    : pairingState.isActive
+      ? "Pairing активен"
+      : "Pairing не активен";
 
   return (
     <div className="page-shell">
       <p className="eyebrow">Настройки</p>
       <h2>Локальные настройки устройства</h2>
       <p className="muted-text">
-        Здесь управляются pairing-код, доверенные Telegram ID и локальная политика доступа.
+        Здесь управляются pairing-код, доверенные Telegram ID и локальная политика
+        доступа.
       </p>
 
       <section className="quick-card">
@@ -237,28 +366,77 @@ export function SettingsPage() {
       <section className="quick-card">
         <p className="section-label">Local codex</p>
         <p className="muted-text">
-          Workspace root: {codexConfigState.workspaceRoot || "не задан"}
+          Workspaces: {codexConfigState.workspaces.length || workspaceOptions.length}
         </p>
-        <label className="section-label" htmlFor="settings-codex-workspace">
-          Codex workspace root
+        {workspaceDrafts.map((workspaceDraft, index) => (
+          <div className="task-card" key={`${workspaceDraft.id || "draft"}-${index}`}>
+            <label
+              className="section-label"
+              htmlFor={`settings-workspace-name-${index + 1}`}
+            >
+              Workspace name {index + 1}
+            </label>
+            <input
+              className="quick-input"
+              id={`settings-workspace-name-${index + 1}`}
+              onChange={(event) =>
+                handleWorkspaceDraftChange(index, "name", event.target.value)
+              }
+              type="text"
+              value={workspaceDraft.name}
+            />
+            <label
+              className="section-label"
+              htmlFor={`settings-workspace-path-${index + 1}`}
+            >
+              Workspace path {index + 1}
+            </label>
+            <input
+              className="quick-input"
+              id={`settings-workspace-path-${index + 1}`}
+              onChange={(event) =>
+                handleWorkspaceDraftChange(index, "rootPath", event.target.value)
+              }
+              type="text"
+              value={workspaceDraft.rootPath}
+            />
+          </div>
+        ))}
+        <label className="section-label" htmlFor="settings-default-workspace">
+          Default workspace
         </label>
-        <input
+        <select
           className="quick-input"
-          id="settings-codex-workspace"
-          onChange={(event) => setWorkspaceRoot(event.target.value)}
-          type="text"
-          value={workspaceRoot}
-        />
-        <button
-          className="ghost-button"
-          disabled={isLoading || isSavingCodexConfig}
-          onClick={() => {
-            void handleSaveCodexConfig();
-          }}
-          type="button"
+          id="settings-default-workspace"
+          onChange={(event) => setSelectedDefaultWorkspaceId(event.target.value)}
+          value={selectedDefaultWorkspaceId}
         >
-          {isSavingCodexConfig ? "Saving..." : "Save codex settings"}
-        </button>
+          {workspaceOptions.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name} ({workspace.id})
+            </option>
+          ))}
+        </select>
+        <div className="task-card-header">
+          <button
+            className="ghost-button"
+            disabled={isLoading}
+            onClick={handleAddWorkspace}
+            type="button"
+          >
+            Add workspace
+          </button>
+          <button
+            className="ghost-button"
+            disabled={isLoading || isSavingCodexConfig}
+            onClick={() => {
+              void handleSaveCodexConfig();
+            }}
+            type="button"
+          >
+            {isSavingCodexConfig ? "Saving..." : "Save workspaces"}
+          </button>
+        </div>
       </section>
     </div>
   );

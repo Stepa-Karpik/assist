@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld("karpik", {
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),
-  saveCodexConfig: (payload: { workspaceRoot?: string }) =>
-    ipcRenderer.invoke("codex:save-config", payload)
+  saveChatWorkspaceBinding: (payload: { chatId: number; workspaceId: string }) =>
+    ipcRenderer.invoke("codex:save-chat-binding", payload),
+  saveCodexConfig: (payload: {
+    workspaces?: Array<{ id?: string; name?: string; rootPath?: string }>;
+    defaultWorkspaceId?: string;
+  }) => ipcRenderer.invoke("codex:save-config", payload)
 });

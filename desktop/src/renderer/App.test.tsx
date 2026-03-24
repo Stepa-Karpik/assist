@@ -15,11 +15,58 @@ const saveAuthConfig = vi.fn(async () => ({
 }));
 
 const getCodexConfigState = vi.fn(async () => ({
-  workspaceRoot: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+  workspaces: [
+    {
+      id: "default-workspace",
+      name: "Default",
+      rootPath: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+    },
+    {
+      id: "assist-repo",
+      name: "Assist",
+      rootPath: "D:\\Projects\\assist"
+    }
+  ],
+  defaultWorkspaceId: "default-workspace",
+  chatBindings: {
+    "5001": "assist-repo"
+  }
 }));
 
 const saveCodexConfig = vi.fn(async () => ({
-  workspaceRoot: "D:\\Projects\\assist"
+  workspaces: [
+    {
+      id: "default-workspace",
+      name: "Default",
+      rootPath: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+    },
+    {
+      id: "assist-repo",
+      name: "Assist",
+      rootPath: "D:\\Projects\\assist"
+    }
+  ],
+  defaultWorkspaceId: "assist-repo",
+  chatBindings: {}
+}));
+
+const saveChatWorkspaceBinding = vi.fn(async () => ({
+  workspaces: [
+    {
+      id: "default-workspace",
+      name: "Default",
+      rootPath: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+    },
+    {
+      id: "assist-repo",
+      name: "Assist",
+      rootPath: "D:\\Projects\\assist"
+    }
+  ],
+  defaultWorkspaceId: "default-workspace",
+  chatBindings: {
+    "5001": "default-workspace"
+  }
 }));
 
 const getPairingState = vi.fn(async () => ({
@@ -65,6 +112,7 @@ describe("App navigation", () => {
       approveLocalApproval,
       rejectLocalApproval,
       saveAuthConfig,
+      saveChatWorkspaceBinding,
       saveCodexConfig
     };
   });
@@ -80,6 +128,7 @@ describe("App navigation", () => {
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
     saveAuthConfig.mockClear();
+    saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
   });
 
@@ -95,7 +144,7 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
   });
 
-  it("shows pairing controls and codex settings in settings", async () => {
+  it("shows pairing controls and workspace registry settings", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
@@ -103,7 +152,9 @@ describe("App navigation", () => {
     expect(await screen.findByRole("button", { name: "Открыть pairing" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Пароль для remote auth")).toBeInTheDocument();
     expect(await screen.findByLabelText("TOTP secret")).toBeInTheDocument();
-    expect(await screen.findByLabelText("Codex workspace root")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Workspace name 1")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Workspace path 2")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Default workspace")).toBeInTheDocument();
     expect(await screen.findByText("Pairing не активен")).toBeInTheDocument();
     expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();
@@ -142,22 +193,41 @@ describe("App navigation", () => {
     expect(await screen.findByText("TOTP: настроен")).toBeInTheDocument();
   });
 
-  it("saves codex workspace settings from the settings page", async () => {
+  it("saves multiple codex workspace settings from the settings page", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
-    fireEvent.change(await screen.findByLabelText("Codex workspace root"), {
+    fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+    fireEvent.change(await screen.findByLabelText("Workspace name 2"), {
+      target: { value: "Assist" }
+    });
+    fireEvent.change(await screen.findByLabelText("Workspace path 2"), {
       target: { value: "D:\\Projects\\assist" }
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Save codex settings" }));
+    fireEvent.change(await screen.findByLabelText("Default workspace"), {
+      target: { value: "assist-repo" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save workspaces" }));
 
     expect(saveCodexConfig).toHaveBeenCalledWith({
-      workspaceRoot: "D:\\Projects\\assist"
+      workspaces: [
+        {
+          id: "default-workspace",
+          name: "Default",
+          rootPath: "C:\\Users\\TBG\\AppData\\Roaming\\Karpik\\docs\\user"
+        },
+        {
+          id: "assist-repo",
+          name: "Assist",
+          rootPath: "D:\\Projects\\assist"
+        }
+      ],
+      defaultWorkspaceId: "assist-repo"
     });
     expect(await screen.findByDisplayValue("D:\\Projects\\assist")).toBeInTheDocument();
   });
 
-  it("shows Telegram task snapshot items", async () => {
+  it("shows Telegram task snapshot items and workspace selector", async () => {
     getTaskSnapshot.mockResolvedValueOnce([
       {
         task_id: "task-1",
@@ -177,6 +247,34 @@ describe("App navigation", () => {
     expect(await screen.findByText("task-1")).toBeInTheDocument();
     expect(await screen.findByText("status")).toBeInTheDocument();
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Workspace for chat 5001")).toBeInTheDocument();
+  });
+
+  it("saves a Telegram chat workspace binding", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-bound",
+        intent: "codex summarize repo",
+        status: "done",
+        result_text: "done",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
+    fireEvent.change(await screen.findByLabelText("Workspace for chat 5001"), {
+      target: { value: "default-workspace" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save chat workspace" }));
+
+    expect(saveChatWorkspaceBinding).toHaveBeenCalledWith({
+      chatId: 5001,
+      workspaceId: "default-workspace"
+    });
   });
 
   it("shows blocked and failed tasks in the blocked page", async () => {
