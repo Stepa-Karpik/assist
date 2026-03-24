@@ -6,11 +6,11 @@ from app.models.pairing import (
     PairAttemptResolutionRequest,
     PairingSession,
 )
-from app.services.state_backend import JsonStateBackend
+from app.services.state_backend import StateBackend
 
 
 class InMemoryPairingStore:
-    def __init__(self, state_backend: JsonStateBackend | None = None) -> None:
+    def __init__(self, state_backend: StateBackend | None = None) -> None:
         self._state_backend = state_backend
         self._lock = Lock()
         self._sessions: dict[str, PairingSession] = {}
@@ -30,6 +30,7 @@ class InMemoryPairingStore:
     def open_session(self, session: PairingSession) -> PairingSession:
         with self._lock:
             self._sessions[session.device_id] = session
+            self._persist()
             return session
 
     def close_session(self, device_id: str) -> PairingSession | None:
@@ -40,6 +41,7 @@ class InMemoryPairingStore:
                 return None
 
             session.status = "cancelled"
+            self._persist()
             return session
 
     def create_pair_attempt(self, event: PairAttemptEvent) -> PairAttemptEvent | None:
@@ -52,6 +54,7 @@ class InMemoryPairingStore:
             session.attempt_count += 1
             self._events[event.event_id] = event
             self._waiters[event.event_id] = Event()
+            self._persist()
             return event
 
     def list_pending_events(self, device_id: str) -> list[PairAttemptEvent]:
@@ -81,7 +84,8 @@ class InMemoryPairingStore:
                 session = self._sessions.get(event.device_id)
                 if session is not None:
                     session.status = "consumed"
-                self._persist()
+
+            self._persist()
 
             waiter = self._waiters.get(event_id)
             if waiter is not None:
@@ -115,6 +119,16 @@ class InMemoryPairingStore:
             return
 
         raw_users = self._state_backend.read_section("trusted_users", {})
+        raw_sessions = self._state_backend.read_section("pairing_sessions", [])
+        raw_events = self._state_backend.read_section("pairing_events", [])
+        self._sessions = {
+            session.device_id: session
+            for session in (PairingSession.model_validate(item) for item in raw_sessions)
+        }
+        self._events = {
+            event.event_id: event
+            for event in (PairAttemptEvent.model_validate(item) for item in raw_events)
+        }
         self._trusted_users = {
             device_id: {int(user_id) for user_id in user_ids}
             for device_id, user_ids in raw_users.items()
@@ -130,4 +144,12 @@ class InMemoryPairingStore:
                 device_id: sorted(user_ids)
                 for device_id, user_ids in self._trusted_users.items()
             },
+        )
+        self._state_backend.write_section(
+            "pairing_sessions",
+            [session.model_dump(mode="json") for session in self._sessions.values()],
+        )
+        self._state_backend.write_section(
+            "pairing_events",
+            [event.model_dump(mode="json") for event in self._events.values()],
         )

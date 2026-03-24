@@ -7,11 +7,11 @@ from app.models.task import (
     TaskRecord,
     TaskStatus,
 )
-from app.services.state_backend import JsonStateBackend
+from app.services.state_backend import StateBackend
 
 
 class InMemoryTaskStore:
-    def __init__(self, state_backend: JsonStateBackend | None = None) -> None:
+    def __init__(self, state_backend: StateBackend | None = None) -> None:
         self._state_backend = state_backend
         self._tasks: list[TaskRecord] = []
         self._restore_state()

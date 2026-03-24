@@ -14,7 +14,7 @@ from app.models.challenge import (
     InputResolutionStatus,
 )
 from app.models.task import TaskRecord, TaskRisk
-from app.services.state_backend import JsonStateBackend
+from app.services.state_backend import StateBackend
 from app.services.task_store import InMemoryTaskStore
 
 failure_limit = 3
@@ -30,7 +30,7 @@ def risk_rank(risk: TaskRisk) -> int:
 class InMemoryChallengeStore:
     def __init__(
         self,
-        state_backend: JsonStateBackend | None = None,
+        state_backend: StateBackend | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._state_backend = state_backend
@@ -130,6 +130,7 @@ class InMemoryChallengeStore:
             )
             self._challenges[challenge.challenge_id] = challenge
             task.challenge_id = challenge.challenge_id
+            self._persist()
             return challenge
 
     def get_active_challenge(
@@ -165,6 +166,7 @@ class InMemoryChallengeStore:
             )
             self._auth_events[event.event_id] = event
             self._waiters[event.event_id] = Event()
+            self._persist()
             return event
 
     def resolve_auth_event(
@@ -239,6 +241,7 @@ class InMemoryChallengeStore:
             if waiter is not None:
                 waiter.set()
 
+            self._persist()
             return event.model_copy()
 
     def wait_for_event_resolution(
@@ -281,12 +284,14 @@ class InMemoryChallengeStore:
                 if task is not None:
                     task.status = "blocked"
                     task_store.persist()
+                self._persist()
                 return "declined", task.model_copy() if task is not None else None
 
             challenge.status = "passed"
             if task is not None:
                 task.status = "queued"
                 task_store.persist()
+            self._persist()
             return "task_queued", task.model_copy() if task is not None else None
 
     def _get_active_challenge_unlocked(
@@ -314,9 +319,47 @@ class InMemoryChallengeStore:
             return
 
         raw_configs = self._state_backend.read_section("auth_configs", [])
+        raw_challenges = self._state_backend.read_section("challenge_records", [])
+        raw_events = self._state_backend.read_section("auth_events", [])
+        raw_trust_windows = self._state_backend.read_section("trust_windows", [])
+        raw_lockouts = self._state_backend.read_section("lockouts", [])
         self._auth_configs = {
             status.device_id: status
             for status in (AuthConfigStatus.model_validate(item) for item in raw_configs)
+        }
+        self._challenges = {
+            challenge.challenge_id: challenge
+            for challenge in (
+                ChallengeRecord.model_validate(item) for item in raw_challenges
+            )
+        }
+        self._auth_events = {
+            event.event_id: event
+            for event in (AuthInputEvent.model_validate(item) for item in raw_events)
+        }
+        self._trust_windows = {
+            (item["device_id"], int(item["telegram_user_id"]), int(item["chat_id"])): (
+                datetime.fromisoformat(item["expires_at"]),
+                item["risk"],
+            )
+            for item in raw_trust_windows
+            if isinstance(item, dict)
+            and isinstance(item.get("device_id"), str)
+            and isinstance(item.get("telegram_user_id"), int | str)
+            and isinstance(item.get("chat_id"), int | str)
+            and isinstance(item.get("expires_at"), str)
+            and isinstance(item.get("risk"), str)
+        }
+        self._lockouts = {
+            (item["device_id"], int(item["telegram_user_id"]), int(item["chat_id"])): datetime.fromisoformat(
+                item["expires_at"]
+            )
+            for item in raw_lockouts
+            if isinstance(item, dict)
+            and isinstance(item.get("device_id"), str)
+            and isinstance(item.get("telegram_user_id"), int | str)
+            and isinstance(item.get("chat_id"), int | str)
+            and isinstance(item.get("expires_at"), str)
         }
 
     def _persist(self) -> None:
@@ -326,4 +369,37 @@ class InMemoryChallengeStore:
         self._state_backend.write_section(
             "auth_configs",
             [status.model_dump(mode="json") for status in self._auth_configs.values()],
+        )
+        self._state_backend.write_section(
+            "challenge_records",
+            [challenge.model_dump(mode="json") for challenge in self._challenges.values()],
+        )
+        self._state_backend.write_section(
+            "auth_events",
+            [event.model_dump(mode="json") for event in self._auth_events.values()],
+        )
+        self._state_backend.write_section(
+            "trust_windows",
+            [
+                {
+                    "device_id": device_id,
+                    "telegram_user_id": telegram_user_id,
+                    "chat_id": chat_id,
+                    "expires_at": expires_at.isoformat(),
+                    "risk": risk,
+                }
+                for (device_id, telegram_user_id, chat_id), (expires_at, risk) in self._trust_windows.items()
+            ],
+        )
+        self._state_backend.write_section(
+            "lockouts",
+            [
+                {
+                    "device_id": device_id,
+                    "telegram_user_id": telegram_user_id,
+                    "chat_id": chat_id,
+                    "expires_at": expires_at.isoformat(),
+                }
+                for (device_id, telegram_user_id, chat_id), expires_at in self._lockouts.items()
+            ],
         )

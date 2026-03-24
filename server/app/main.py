@@ -12,7 +12,7 @@ from app.services.challenge_store import InMemoryChallengeStore
 from app.services.device_presence_store import InMemoryDevicePresenceStore
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
-from app.services.state_backend import JsonStateBackend
+from app.services.state_backend import create_state_backend
 from app.services.task_store import InMemoryTaskStore
 
 
@@ -22,7 +22,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
     )
-    state_backend = JsonStateBackend(settings.state_file)
+    state_backend = create_state_backend(settings)
     application.state.device_presence_store = InMemoryDevicePresenceStore(
         state_backend=state_backend
     )

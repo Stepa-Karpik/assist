@@ -9,6 +9,8 @@ class Settings:
     environment: str = "development"
     api_prefix: str = "/api"
     state_file: Path = Path(__file__).resolve().parents[1] / ".tmp" / "runtime-state.json"
+    database_url: str | None = None
+    database_connect_timeout: int = 5
 
 
 def get_settings() -> Settings:
@@ -22,4 +24,6 @@ def get_settings() -> Settings:
                 str(Path(__file__).resolve().parents[1] / ".tmp" / "runtime-state.json"),
             )
         ),
+        database_url=getenv("KARPIK_DATABASE_URL"),
+        database_connect_timeout=int(getenv("KARPIK_DATABASE_CONNECT_TIMEOUT", "5")),
     )

@@ -12,3 +12,11 @@ Responsibilities:
 
 This folder is deployable independently to the server environment.
 
+Primary deployment path:
+
+- local/dev fallback: run the app directly with JSON durability
+- production/default server path: `docker compose up -d --build`
+
+In Docker deployment the server uses PostgreSQL-backed state via
+`KARPIK_DATABASE_URL`.
+

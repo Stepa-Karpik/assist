@@ -5,14 +5,14 @@ from threading import Lock
 from typing import Callable
 
 from app.models.device import DevicePresenceRecord
-from app.services.state_backend import JsonStateBackend
+from app.services.state_backend import StateBackend
 
 
 class InMemoryDevicePresenceStore:
     def __init__(
         self,
         *,
-        state_backend: JsonStateBackend | None = None,
+        state_backend: StateBackend | None = None,
         now: Callable[[], datetime] | None = None,
         offline_timeout: timedelta = timedelta(seconds=30),
     ) -> None:

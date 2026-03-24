@@ -5,9 +5,20 @@ import json
 import time
 from pathlib import Path
 from threading import Lock
-from typing import TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from app.config import Settings
 
 SectionValue = TypeVar("SectionValue")
+
+
+class StateBackend(Protocol):
+    def read_section(self, name: str, default: SectionValue) -> SectionValue: ...
+
+    def write_section(self, name: str, value: object) -> None: ...
 
 
 class JsonStateBackend:
@@ -65,3 +76,121 @@ class JsonStateBackend:
 
         if last_error is not None:
             raise last_error
+
+
+class PostgresStateBackend:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        connect: "Callable[..., object] | None" = None,
+        connect_timeout: int = 5,
+        connect_retries: int = 15,
+        retry_sleep_seconds: float = 1.0,
+    ) -> None:
+        self._database_url = database_url
+        self._connect = connect or _import_psycopg_connect()
+        self._connect_timeout = connect_timeout
+        self._connect_retries = connect_retries
+        self._retry_sleep_seconds = retry_sleep_seconds
+        self._lock = Lock()
+        self._ensure_schema()
+
+    def read_section(self, name: str, default: SectionValue) -> SectionValue:
+        with self._lock:
+            with self._open_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT payload
+                        FROM karpik_state_sections
+                        WHERE section_name = %s
+                        """,
+                        (name,),
+                    )
+                    row = cursor.fetchone()
+
+            if row is None:
+                return copy.deepcopy(default)
+
+            payload = row[0]
+
+            if isinstance(payload, str):
+                value = json.loads(payload)
+            else:
+                value = payload
+
+            return copy.deepcopy(value)
+
+    def write_section(self, name: str, value: object) -> None:
+        with self._lock:
+            payload = json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+            with self._open_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO karpik_state_sections (section_name, payload, updated_at)
+                        VALUES (%s, %s::jsonb, NOW())
+                        ON CONFLICT (section_name)
+                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+                        """,
+                        (name, payload),
+                    )
+
+    def _ensure_schema(self) -> None:
+        last_error: Exception | None = None
+
+        for attempt in range(self._connect_retries):
+            try:
+                with self._open_connection() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS karpik_state_sections (
+                              section_name text PRIMARY KEY,
+                              payload jsonb NOT NULL,
+                              updated_at timestamptz NOT NULL DEFAULT NOW()
+                            )
+                            """
+                        )
+                return
+            except Exception as error:  # pragma: no cover - exact DB errors vary by driver/runtime
+                last_error = error
+
+                if attempt == self._connect_retries - 1:
+                    raise
+
+                time.sleep(self._retry_sleep_seconds)
+
+        if last_error is not None:
+            raise last_error
+
+    def _open_connection(self):
+        return self._connect(
+            self._database_url,
+            autocommit=True,
+            connect_timeout=self._connect_timeout,
+        )
+
+
+def create_state_backend(
+    settings: "Settings", *, connect: "Callable[..., object] | None" = None
+) -> StateBackend:
+    if settings.database_url:
+        return PostgresStateBackend(
+            settings.database_url,
+            connect=connect,
+            connect_timeout=settings.database_connect_timeout,
+        )
+
+    return JsonStateBackend(settings.state_file)
+
+
+def _import_psycopg_connect():
+    try:
+        from psycopg import connect
+    except ImportError as error:  # pragma: no cover - exercised only in misconfigured runtime
+        raise RuntimeError("psycopg is required for PostgreSQL-backed server state") from error
+
+    return connect
