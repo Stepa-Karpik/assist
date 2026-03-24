@@ -5,6 +5,7 @@ const view = new URLSearchParams(window.location.search).get("view") ?? "main";
 contextBridge.exposeInMainWorld("karpik", {
   view,
   getActivityLog: () => ipcRenderer.invoke("activity-log:get"),
+  getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
@@ -35,6 +36,11 @@ contextBridge.exposeInMainWorld("karpik", {
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),
+  saveAppPreferences: (payload: {
+    launchAtLogin?: boolean;
+    startHiddenOnLaunch?: boolean;
+    closeToTrayOnClose?: boolean;
+  }) => ipcRenderer.invoke("app-preferences:save", payload),
   saveChatWorkspaceBinding: (payload: { chatId: number; workspaceId: string }) =>
     ipcRenderer.invoke("codex:save-chat-binding", payload),
   saveCodexConfig: (payload: {

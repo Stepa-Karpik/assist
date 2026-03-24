@@ -25,7 +25,7 @@ function loadRenderer(browserWindow: BrowserWindow, query?: Record<string, strin
   );
 }
 
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow({ startHidden = false }: { startHidden?: boolean } = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -40,7 +40,9 @@ export function createMainWindow(): BrowserWindow {
   });
 
   window.once("ready-to-show", () => {
-    window.show();
+    if (!startHidden) {
+      window.show();
+    }
   });
 
   loadRenderer(window);

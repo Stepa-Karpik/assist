@@ -12,6 +12,12 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type AppPreferencesState = {
+  launchAtLogin: boolean;
+  startHiddenOnLaunch: boolean;
+  closeToTrayOnClose: boolean;
+};
+
 type CodexWorkspace = {
   id: string;
   name: string;
@@ -40,6 +46,12 @@ const emptyPairingState: PairingState = {
 const emptyAuthConfigState: AuthConfigState = {
   passwordConfigured: false,
   totpConfigured: false
+};
+
+const emptyAppPreferencesState: AppPreferencesState = {
+  launchAtLogin: false,
+  startHiddenOnLaunch: true,
+  closeToTrayOnClose: true
 };
 
 const emptyCodexConfigState: CodexConfigState = {
@@ -132,6 +144,7 @@ function buildWorkspacePayload(workspaceDrafts: WorkspaceDraft[]): CodexWorkspac
 export function SettingsPage() {
   const [pairingState, setPairingState] = useState<PairingState>(emptyPairingState);
   const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
+  const [appPreferences, setAppPreferences] = useState<AppPreferencesState>(emptyAppPreferencesState);
   const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
   const [password, setPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
@@ -140,6 +153,7 @@ export function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
   const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
+  const [isSavingAppPreferences, setIsSavingAppPreferences] = useState(false);
   const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,15 +167,22 @@ export function SettingsPage() {
 
     async function loadSettingsState() {
       try {
-        const [nextPairingState, nextAuthConfigState, nextCodexConfigState] = await Promise.all([
+        const [
+          nextPairingState,
+          nextAuthConfigState,
+          nextAppPreferences,
+          nextCodexConfigState
+        ] = await Promise.all([
           window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
           window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState),
+          window.karpik?.getAppPreferences?.() ?? Promise.resolve(emptyAppPreferencesState),
           window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState)
         ]);
 
         if (isSubscribed) {
           setPairingState(nextPairingState);
           setAuthConfigState(nextAuthConfigState);
+          setAppPreferences(nextAppPreferences);
           setCodexConfigState(nextCodexConfigState);
           setWorkspaceDrafts(buildWorkspaceDrafts(nextCodexConfigState));
           setSelectedDefaultWorkspaceId(nextCodexConfigState.defaultWorkspaceId);
@@ -224,6 +245,25 @@ export function SettingsPage() {
       setError("Не удалось сохранить auth-настройки.");
     } finally {
       setIsSavingAuthConfig(false);
+    }
+  }
+
+  async function handleSaveAppPreferences() {
+    if (!window.karpik?.saveAppPreferences) {
+      setError("Desktop preferences API недоступен в этом окружении.");
+      return;
+    }
+
+    setError(null);
+    setIsSavingAppPreferences(true);
+
+    try {
+      const nextState = await window.karpik.saveAppPreferences(appPreferences);
+      setAppPreferences(nextState);
+    } catch {
+      setError("Не удалось сохранить настройки desktop behavior.");
+    } finally {
+      setIsSavingAppPreferences(false);
     }
   }
 
@@ -335,6 +375,62 @@ export function SettingsPage() {
           type="button"
         >
           {isSavingAuthConfig ? "Сохраняем..." : "Сохранить auth-настройки"}
+        </button>
+      </section>
+
+      <section className="quick-card">
+        <p className="section-label">Desktop behavior</p>
+        <label htmlFor="settings-launch-at-login">
+          <input
+            checked={appPreferences.launchAtLogin}
+            id="settings-launch-at-login"
+            onChange={(event) =>
+              setAppPreferences((currentState) => ({
+                ...currentState,
+                launchAtLogin: event.target.checked
+              }))
+            }
+            type="checkbox"
+          />{" "}
+          Launch at login
+        </label>
+        <label htmlFor="settings-start-hidden">
+          <input
+            checked={appPreferences.startHiddenOnLaunch}
+            id="settings-start-hidden"
+            onChange={(event) =>
+              setAppPreferences((currentState) => ({
+                ...currentState,
+                startHiddenOnLaunch: event.target.checked
+              }))
+            }
+            type="checkbox"
+          />{" "}
+          Start hidden in tray
+        </label>
+        <label htmlFor="settings-close-to-tray">
+          <input
+            checked={appPreferences.closeToTrayOnClose}
+            id="settings-close-to-tray"
+            onChange={(event) =>
+              setAppPreferences((currentState) => ({
+                ...currentState,
+                closeToTrayOnClose: event.target.checked
+              }))
+            }
+            type="checkbox"
+          />{" "}
+          Close main window to tray
+        </label>
+        <button
+          className="ghost-button"
+          disabled={isLoading || isSavingAppPreferences}
+          onClick={() => {
+            void handleSaveAppPreferences();
+          }}
+          type="button"
+        >
+          {isSavingAppPreferences ? "Saving..." : "Save desktop behavior"}
         </button>
       </section>
 

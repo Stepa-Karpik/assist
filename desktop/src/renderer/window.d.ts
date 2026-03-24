@@ -12,6 +12,12 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type AppPreferencesState = {
+  launchAtLogin: boolean;
+  startHiddenOnLaunch: boolean;
+  closeToTrayOnClose: boolean;
+};
+
 type CodexWorkspace = {
   id: string;
   name: string;
@@ -132,6 +138,7 @@ declare global {
     karpik?: {
       view: string;
       getActivityLog: () => Promise<ActivityLogEntry[]>;
+      getAppPreferences: () => Promise<AppPreferencesState>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
       getKnowledgeState: () => Promise<KnowledgeSection[]>;
@@ -169,6 +176,7 @@ declare global {
         detail: LocalChatDetail;
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
+      saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
       saveChatWorkspaceBinding: (payload: {
         chatId: number;
         workspaceId: string;

@@ -2,6 +2,7 @@ import started from "electron-squirrel-startup";
 import { app, BrowserWindow, ipcMain, nativeTheme, Tray } from "electron";
 
 import { ActivityLogStore } from "./activityLogStore";
+import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
 import { type AuthConfigInput, AuthStore } from "./authStore";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
 import {
@@ -35,7 +36,9 @@ let authPollInterval: NodeJS.Timeout | null = null;
 let pairingPollInterval: NodeJS.Timeout | null = null;
 let taskPollInterval: NodeJS.Timeout | null = null;
 let taskPollInFlight = false;
+let isAppQuitting = false;
 let ipcHandlersRegistered = false;
+let appPreferencesStore: AppPreferencesStore | null = null;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
@@ -323,6 +326,7 @@ function registerIpcHandlers() {
   }
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
+  ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
   ipcMain.handle("activity-log:get", () => activityLogStore?.list() ?? []);
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
@@ -376,6 +380,18 @@ function registerIpcHandlers() {
 
     return state;
   });
+  ipcMain.handle(
+    "app-preferences:save",
+    (_event, payload: Partial<AppPreferencesState>) => {
+      if (appPreferencesStore === null) {
+        throw new Error("App preferences store is not initialized");
+      }
+
+      const state = appPreferencesStore.save(payload);
+      appPreferencesStore.applyLoginItemSettings(app);
+      return state;
+    }
+  );
   ipcMain.handle("codex:save-config", (_event, payload: CodexConfigInput) => {
     if (codexSettingsStore === null) {
       throw new Error("Codex settings store is not initialized");
@@ -492,6 +508,10 @@ function registerIpcHandlers() {
 async function bootstrap() {
   nativeTheme.themeSource = "system";
   const runtimeFolders = ensureRuntimeFolders(getDataRoot());
+  appPreferencesStore = new AppPreferencesStore({
+    settingsRoot: runtimeFolders.settings
+  });
+  appPreferencesStore.applyLoginItemSettings(app);
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
   });
@@ -553,8 +573,21 @@ async function bootstrap() {
   });
   registerIpcHandlers();
 
-  mainWindow = createMainWindow();
+  const startHidden = process.argv.includes("--start-hidden");
+  mainWindow = createMainWindow({
+    startHidden
+  });
   quickPopup = createQuickPopupWindow(mainWindow);
+  mainWindow.on("close", (event) => {
+    if (
+      !isAppQuitting &&
+      appPreferencesStore?.getState().closeToTrayOnClose
+    ) {
+      event.preventDefault();
+      quickPopup?.hide();
+      mainWindow?.hide();
+    }
+  });
   tray = createAppTray({
     mainWindow,
     quickPopup
@@ -589,6 +622,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  isAppQuitting = true;
   stopAuthPolling();
   stopTaskPolling();
   stopPairingPolling();

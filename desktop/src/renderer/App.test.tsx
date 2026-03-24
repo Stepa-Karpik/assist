@@ -64,9 +64,25 @@ type KnowledgeSection = {
   }>;
 };
 
+type AppPreferences = {
+  launchAtLogin: boolean;
+  startHiddenOnLaunch: boolean;
+  closeToTrayOnClose: boolean;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
+}));
+const getAppPreferences = vi.fn<() => Promise<AppPreferences>>(async () => ({
+  launchAtLogin: false,
+  startHiddenOnLaunch: true,
+  closeToTrayOnClose: true
+}));
+const saveAppPreferences = vi.fn(async () => ({
+  launchAtLogin: true,
+  startHiddenOnLaunch: false,
+  closeToTrayOnClose: false
 }));
 
 const saveAuthConfig = vi.fn(async () => ({
@@ -356,6 +372,7 @@ describe("App navigation", () => {
     window.karpik = {
       view: "main",
       getActivityLog,
+      getAppPreferences,
       getAuthConfigState,
       getCodexConfigState,
       getKnowledgeState,
@@ -375,6 +392,7 @@ describe("App navigation", () => {
       submitQuickRequest,
       sendLocalChatMessage,
       saveAuthConfig,
+      saveAppPreferences,
       saveChatWorkspaceBinding,
       saveCodexConfig
     };
@@ -383,6 +401,7 @@ describe("App navigation", () => {
   afterEach(() => {
     cleanup();
     getActivityLog.mockClear();
+    getAppPreferences.mockClear();
     getAuthConfigState.mockClear();
     getCodexConfigState.mockClear();
     getKnowledgeState.mockClear();
@@ -402,6 +421,7 @@ describe("App navigation", () => {
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
+    saveAppPreferences.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
   });
@@ -475,6 +495,7 @@ describe("App navigation", () => {
     expect(await screen.findByRole("button", { name: "Открыть pairing" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Пароль для remote auth")).toBeInTheDocument();
     expect(await screen.findByLabelText("TOTP secret")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Launch at login")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace name 1")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace path 2")).toBeInTheDocument();
     expect(await screen.findByLabelText("Default workspace")).toBeInTheDocument();
@@ -482,8 +503,30 @@ describe("App navigation", () => {
     expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();
     expect(getAuthConfigState).toHaveBeenCalledTimes(1);
+    expect(getAppPreferences).toHaveBeenCalledTimes(1);
     expect(getCodexConfigState).toHaveBeenCalledTimes(1);
     expect(getPairingState).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves desktop operator preferences from the settings page", async () => {
+    render(<App />);
+
+    fireEvent.click(
+      screen.getByRole("navigation", { name: "Primary navigation" }).querySelectorAll("button")[6]!
+    );
+    fireEvent.click(await screen.findByLabelText("Launch at login"));
+    fireEvent.click(await screen.findByLabelText("Start hidden in tray"));
+    fireEvent.click(await screen.findByLabelText("Close main window to tray"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save desktop behavior" }));
+
+    expect(saveAppPreferences).toHaveBeenCalledWith({
+      launchAtLogin: true,
+      startHiddenOnLaunch: false,
+      closeToTrayOnClose: false
+    });
+    expect(await screen.findByLabelText("Launch at login")).toBeChecked();
+    expect(await screen.findByLabelText("Start hidden in tray")).not.toBeChecked();
+    expect(await screen.findByLabelText("Close main window to tray")).not.toBeChecked();
   });
 
   it("refreshes the visible pairing code after opening a session", async () => {
