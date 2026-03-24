@@ -8,8 +8,11 @@ import { PairingStore } from "./pairingStore";
 import {
   type AuthEventListResponse,
   type PairingEventListResponse,
+  type RemoteTaskRecord,
   createSyncClient
 } from "./syncClient";
+import { createTaskExecutor } from "./taskExecutor";
+import { runTaskSyncCycle } from "./taskRuntime";
 import { createAppTray } from "./tray";
 import { createMainWindow, createQuickPopupWindow } from "./windows";
 
@@ -18,11 +21,16 @@ let quickPopup: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let authPollInterval: NodeJS.Timeout | null = null;
 let pairingPollInterval: NodeJS.Timeout | null = null;
+let taskPollInterval: NodeJS.Timeout | null = null;
+let taskPollInFlight = false;
 let ipcHandlersRegistered = false;
 let authStore: AuthStore | null = null;
+let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
+let taskSnapshot: RemoteTaskRecord[] = [];
 const pairingStore = new PairingStore();
 const authPollIntervalMs = 2_000;
 const pairingPollIntervalMs = 2_000;
+const taskPollIntervalMs = 2_000;
 const syncClient = createSyncClient({
   serverUrl: process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000",
   deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local"
@@ -115,6 +123,23 @@ async function pollPairingEvents() {
   }
 }
 
+async function pollTaskState() {
+  if (taskExecutor === null || taskPollInFlight) {
+    return;
+  }
+
+  taskPollInFlight = true;
+
+  try {
+    taskSnapshot = await runTaskSyncCycle({
+      client: syncClient,
+      executeTask: (task) => taskExecutor!.execute(task)
+    });
+  } finally {
+    taskPollInFlight = false;
+  }
+}
+
 function ensureAuthPolling() {
   if (authPollInterval !== null) {
     return;
@@ -147,6 +172,22 @@ function ensurePairingPolling() {
   }, pairingPollIntervalMs);
 }
 
+function ensureTaskPolling() {
+  if (taskPollInterval !== null) {
+    return;
+  }
+
+  void pollTaskState().catch((error: unknown) => {
+    console.error("Failed to poll task state", error);
+  });
+
+  taskPollInterval = setInterval(() => {
+    void pollTaskState().catch((error: unknown) => {
+      console.error("Failed to poll task state", error);
+    });
+  }, taskPollIntervalMs);
+}
+
 function stopAuthPolling() {
   if (authPollInterval === null) {
     return;
@@ -154,6 +195,15 @@ function stopAuthPolling() {
 
   clearInterval(authPollInterval);
   authPollInterval = null;
+}
+
+function stopTaskPolling() {
+  if (taskPollInterval === null) {
+    return;
+  }
+
+  clearInterval(taskPollInterval);
+  taskPollInterval = null;
 }
 
 function stopPairingPolling() {
@@ -186,6 +236,7 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("pairing:get-state", () => pairingStore.getState());
+  ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
 
@@ -212,6 +263,10 @@ async function bootstrap() {
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets
   });
+  taskExecutor = createTaskExecutor({
+    deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
+    userRoot: runtimeFolders.userRoot
+  });
   registerIpcHandlers();
 
   mainWindow = createMainWindow();
@@ -222,6 +277,7 @@ async function bootstrap() {
   });
   ensureAuthPolling();
   ensurePairingPolling();
+  ensureTaskPolling();
 
   void syncClient.announceOnline().catch((error: unknown) => {
     console.error("Failed to announce device online", error);
@@ -250,6 +306,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopAuthPolling();
+  stopTaskPolling();
   stopPairingPolling();
 
   if (pairingStore.getState().isActive) {

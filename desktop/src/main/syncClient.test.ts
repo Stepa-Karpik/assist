@@ -80,6 +80,10 @@ describe("syncClient pairing api", () => {
     await client.resolveAuthEvent("auth-1", {
       accepted: true
     });
+    await client.fetchTaskHistory();
+    await client.startTask("task-1");
+    await client.completeTask("task-1", "desktop-local is online");
+    await client.failTask("task-2", "Unsupported task intent.");
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
@@ -153,6 +157,50 @@ describe("syncClient pairing api", () => {
         },
         body: JSON.stringify({
           accepted: true
+        })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      7,
+      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      8,
+      "http://127.0.0.1:8000/api/tasks/task-1/start",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      9,
+      "http://127.0.0.1:8000/api/tasks/task-1/complete",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          result_text: "desktop-local is online"
+        })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      10,
+      "http://127.0.0.1:8000/api/tasks/task-2/fail",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          error_text: "Unsupported task intent."
         })
       })
     );

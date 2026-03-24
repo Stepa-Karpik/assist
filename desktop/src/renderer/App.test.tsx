@@ -20,6 +20,8 @@ const getPairingState = vi.fn(async () => ({
   trustedTelegramUserIds: []
 }));
 
+const getTaskSnapshot = vi.fn(async () => []);
+
 const openPairingSession = vi.fn(async () => ({
   code: "PAIR42",
   expiresAt: "2026-03-24T00:05:00.000Z",
@@ -33,6 +35,7 @@ describe("App navigation", () => {
       view: "main",
       getAuthConfigState,
       getPairingState,
+      getTaskSnapshot,
       openPairingSession,
       saveAuthConfig
     };
@@ -42,6 +45,7 @@ describe("App navigation", () => {
     cleanup();
     getAuthConfigState.mockClear();
     getPairingState.mockClear();
+    getTaskSnapshot.mockClear();
     openPairingSession.mockClear();
     saveAuthConfig.mockClear();
   });
