@@ -94,7 +94,7 @@ class InMemoryTaskStore:
     def complete_task(self, task_id: str, result_text: str) -> TaskRecord | None:
         task = self.get_task(task_id)
 
-        if task is None or task.status != "running":
+        if task is None or task.status not in {"running", "awaiting_local_approval"}:
             return None
 
         task.status = "done"
@@ -107,10 +107,36 @@ class InMemoryTaskStore:
     def fail_task(self, task_id: str, error_text: str) -> TaskRecord | None:
         task = self.get_task(task_id)
 
-        if task is None or task.status != "running":
+        if task is None or task.status not in {"running", "awaiting_local_approval"}:
             return None
 
         task.status = "failed"
+        task.finished_at = datetime.now(UTC)
+        task.result_text = None
+        task.error_text = error_text
+        self._persist()
+        return task
+
+    def await_local_approval(self, task_id: str, result_text: str) -> TaskRecord | None:
+        task = self.get_task(task_id)
+
+        if task is None or task.status != "running":
+            return None
+
+        task.status = "awaiting_local_approval"
+        task.result_text = result_text
+        task.error_text = None
+        task.finished_at = None
+        self._persist()
+        return task
+
+    def block_task(self, task_id: str, error_text: str) -> TaskRecord | None:
+        task = self.get_task(task_id)
+
+        if task is None or task.status not in {"running", "awaiting_local_approval"}:
+            return None
+
+        task.status = "blocked"
         task.finished_at = datetime.now(UTC)
         task.result_text = None
         task.error_text = error_text

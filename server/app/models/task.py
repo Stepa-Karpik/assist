@@ -66,5 +66,13 @@ class TaskCompleteRequest(BaseModel):
     result_text: str
 
 
+class TaskAwaitingLocalApprovalRequest(BaseModel):
+    result_text: str
+
+
 class TaskFailRequest(BaseModel):
+    error_text: str
+
+
+class TaskBlockRequest(BaseModel):
     error_text: str

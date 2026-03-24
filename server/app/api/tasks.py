@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.models.task import (
     RequiredAuth,
+    TaskAwaitingLocalApprovalRequest,
+    TaskBlockRequest,
     TaskCompleteRequest,
     TaskCreateRequest,
     TaskFailRequest,
@@ -150,6 +152,23 @@ def start_task(task_id: str, request: Request) -> TaskRecord:
     return task
 
 
+@router.post("/{task_id}/awaiting-local-approval", response_model=TaskRecord)
+def await_local_approval(
+    task_id: str,
+    payload: TaskAwaitingLocalApprovalRequest,
+    request: Request,
+) -> TaskRecord:
+    task = request.app.state.task_store.await_local_approval(task_id, payload.result_text)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot wait for local approval",
+        )
+
+    return task
+
+
 @router.post("/{task_id}/complete", response_model=TaskRecord)
 def complete_task(
     task_id: str,
@@ -180,6 +199,24 @@ def fail_task(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Task cannot be failed",
+        )
+
+    request.app.state.delivery_store.create_for_task(task)
+    return task
+
+
+@router.post("/{task_id}/block", response_model=TaskRecord)
+def block_task(
+    task_id: str,
+    payload: TaskBlockRequest,
+    request: Request,
+) -> TaskRecord:
+    task = request.app.state.task_store.block_task(task_id, payload.error_text)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be blocked",
         )
 
     request.app.state.delivery_store.create_for_task(task)

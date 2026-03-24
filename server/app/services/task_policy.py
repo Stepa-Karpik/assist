@@ -25,7 +25,12 @@ def get_minimum_risk(intent: str) -> TaskRisk:
 
 def is_force_high_intent(intent: str) -> bool:
     normalized = intent.strip().lower()
-    return normalized == "codex" or normalized.startswith("codex ")
+    return (
+        normalized == "codex"
+        or normalized.startswith("codex ")
+        or normalized == "codex-write"
+        or normalized.startswith("codex-write ")
+    )
 
 
 def apply_task_policy(payload: TaskCreateRequest) -> TaskCreateRequest:

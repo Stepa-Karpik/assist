@@ -117,6 +117,60 @@ def test_desktop_can_fail_task_with_error_text() -> None:
     assert fail_response.json()["finished_at"] is not None
 
 
+def test_desktop_can_publish_local_approval_wait_state() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    approval_response = client.post(
+        f"/api/tasks/{task_id}/awaiting-local-approval",
+        json={"result_text": "Waiting for local review. Files: README.md"},
+    )
+
+    assert approval_response.status_code == 200
+    assert approval_response.json()["status"] == "awaiting_local_approval"
+    assert approval_response.json()["result_text"] == "Waiting for local review. Files: README.md"
+    assert approval_response.json()["error_text"] is None
+
+
+def test_task_can_complete_after_local_approval() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/awaiting-local-approval",
+        json={"result_text": "Waiting for local review. Files: README.md"},
+    )
+    complete_response = client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={"result_text": "Applied locally. Updated README.md"},
+    )
+
+    assert complete_response.status_code == 200
+    assert complete_response.json()["status"] == "done"
+    assert complete_response.json()["result_text"] == "Applied locally. Updated README.md"
+    assert complete_response.json()["finished_at"] is not None
+
+
+def test_task_can_be_blocked_after_local_reject() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/awaiting-local-approval",
+        json={"result_text": "Waiting for local review. Files: README.md"},
+    )
+    block_response = client.post(
+        f"/api/tasks/{task_id}/block",
+        json={"error_text": "Rejected locally."},
+    )
+
+    assert block_response.status_code == 200
+    assert block_response.json()["status"] == "blocked"
+    assert block_response.json()["result_text"] is None
+    assert block_response.json()["error_text"] == "Rejected locally."
+    assert block_response.json()["finished_at"] is not None
+
+
 def test_task_history_returns_recent_items_and_chat_filtered_view() -> None:
     first_task_id = create_low_risk_telegram_task(chat_id=5001)
     second_task_id = create_low_risk_telegram_task(chat_id=6001)
