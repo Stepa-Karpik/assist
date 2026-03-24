@@ -640,6 +640,31 @@ describe("App navigation", () => {
     expect(await screen.findByLabelText("Workspace for chat 5001")).toBeInTheDocument();
   });
 
+  it("renders screenshot artifacts in Telegram task cards", async () => {
+    getTaskSnapshot.mockResolvedValueOnce([
+      {
+        task_id: "task-shot",
+        intent: "screenshot",
+        status: "done",
+        result_text: "Screenshot captured.",
+        error_text: null,
+        chat_id: 5001,
+        telegram_user_id: 101,
+        artifactKind: "image_base64",
+        artifactMimeType: "image/png",
+        artifactFileName: "desktop-remote.png",
+        artifactBase64: "aGVsbG8="
+      }
+    ]);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
+
+    const image = await screen.findByRole("img", { name: "desktop-remote.png" });
+    expect(image).toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
+  });
+
   it("saves a Telegram chat workspace binding", async () => {
     getTaskSnapshot.mockResolvedValueOnce([
       {

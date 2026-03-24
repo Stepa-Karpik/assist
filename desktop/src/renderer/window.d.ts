@@ -45,6 +45,10 @@ type TaskSnapshotItem = {
     | "stalled";
   result_text?: string | null;
   error_text?: string | null;
+  artifactKind?: "image_base64";
+  artifactMimeType?: string | null;
+  artifactFileName?: string | null;
+  artifactBase64?: string | null;
   chat_id?: number | null;
   telegram_user_id?: number | null;
 };

@@ -29,3 +29,15 @@ export function formatTaskStatus(status: TaskSnapshotItem["status"]): string {
       return status;
   }
 }
+
+export function buildTaskArtifactDataUrl(task: TaskSnapshotItem): string | null {
+  if (
+    task.artifactKind !== "image_base64" ||
+    !task.artifactMimeType ||
+    !task.artifactBase64
+  ) {
+    return null;
+  }
+
+  return `data:${task.artifactMimeType};base64,${task.artifactBase64}`;
+}

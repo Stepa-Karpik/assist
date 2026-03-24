@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  buildTaskArtifactDataUrl,
   formatTaskStatus,
   loadTaskSnapshot,
   type TaskSnapshotItem
@@ -156,6 +157,17 @@ export function BlockedTasksPage() {
               <p>{task.intent}</p>
               {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
               {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
+              {buildTaskArtifactDataUrl(task) !== null ? (
+                <figure>
+                  <img
+                    alt={task.artifactFileName ?? "remote-task-artifact"}
+                    src={buildTaskArtifactDataUrl(task) ?? undefined}
+                  />
+                  {task.artifactFileName ? (
+                    <figcaption className="muted-text">{task.artifactFileName}</figcaption>
+                  ) : null}
+                </figure>
+              ) : null}
               {task.status === "awaiting_local_approval" &&
               localApprovals[task.task_id] !== undefined ? (
                 <>
