@@ -6,12 +6,16 @@ import App from "./App";
 describe("desktop renderer feedback", () => {
   const getTaskSnapshot = vi.fn();
   const saveAuthConfig = vi.fn();
+  const createTotpEnrollment = vi.fn();
+  const confirmTotpEnrollment = vi.fn();
   const saveCodexConfig = vi.fn();
   const saveChatWorkspaceBinding = vi.fn();
 
   beforeEach(() => {
     getTaskSnapshot.mockReset();
     saveAuthConfig.mockReset();
+    createTotpEnrollment.mockReset();
+    confirmTotpEnrollment.mockReset();
     saveCodexConfig.mockReset();
     saveChatWorkspaceBinding.mockReset();
 
@@ -28,6 +32,18 @@ describe("desktop renderer feedback", () => {
     ]);
     saveAuthConfig.mockResolvedValue({
       passwordConfigured: true,
+      totpConfigured: true
+    });
+    createTotpEnrollment.mockResolvedValue({
+      secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      otpAuthUri:
+        "otpauth://totp/Karpik:stepa-desktop?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Karpik&algorithm=SHA1&digits=6&period=30",
+      qrDataUrl: "data:image/png;base64,ZmFrZS1xci1kYXRh",
+      issuer: "Karpik",
+      accountName: "stepa-desktop"
+    });
+    confirmTotpEnrollment.mockResolvedValue({
+      passwordConfigured: false,
       totpConfigured: true
     });
     saveCodexConfig.mockResolvedValue({
@@ -68,6 +84,8 @@ describe("desktop renderer feedback", () => {
         passwordConfigured: false,
         totpConfigured: false
       })),
+      createTotpEnrollment,
+      confirmTotpEnrollment,
       getCodexConfigState: vi.fn(async () => ({
         workspaces: [
           {
@@ -116,7 +134,7 @@ describe("desktop renderer feedback", () => {
       })),
       getTaskSnapshot,
       getUpdateState: vi.fn(async () => ({
-        currentVersion: "0.1.1",
+        currentVersion: "0.1.2",
         feedUrl: null,
         isSupported: false,
         phase: "disabled" as const,
@@ -126,7 +144,7 @@ describe("desktop renderer feedback", () => {
       })),
       approveLocalApproval: vi.fn(async () => undefined),
       checkForUpdates: vi.fn(async () => ({
-        currentVersion: "0.1.1",
+        currentVersion: "0.1.2",
         feedUrl: null,
         isSupported: false,
         phase: "disabled" as const,
@@ -215,12 +233,33 @@ describe("desktop renderer feedback", () => {
     fireEvent.change(await screen.findByLabelText("Пароль для remote auth"), {
       target: { value: "secret-password" }
     });
-    fireEvent.change(await screen.findByLabelText("TOTP secret"), {
+    fireEvent.change(await screen.findByLabelText("TOTP secret вручную (fallback)"), {
       target: { value: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" }
     });
     fireEvent.click(await screen.findByRole("button", { name: "Сохранить auth-настройки" }));
 
     expect(await screen.findByText("Auth settings saved locally.")).toBeInTheDocument();
+  });
+
+  it("supports qr-based totp enrollment before saving the secret", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Создать QR для TOTP" }));
+
+    expect(await screen.findByAltText("TOTP QR code")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,ZmFrZS1xci1kYXRh"
+    );
+    expect(await screen.findByDisplayValue("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")).toBeInTheDocument();
+
+    fireEvent.change(await screen.findByLabelText("Код из аутентификатора"), {
+      target: { value: "287082" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Подтвердить TOTP" }));
+
+    expect(confirmTotpEnrollment).toHaveBeenCalledWith({ code: "287082" });
+    expect(await screen.findByText("TOTP confirmed and saved locally.")).toBeInTheDocument();
   });
 
   it("shows a visible success message after saving workspaces", async () => {

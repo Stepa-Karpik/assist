@@ -33,7 +33,7 @@ def test_render_delivery_text_for_done_task() -> None:
 
     text = render_delivery_text(event)
 
-    assert "task-1" in text
+    assert text.startswith("Готово: task-1")
     assert "status" in text
     assert "desktop-local is online" in text
 
@@ -55,7 +55,7 @@ def test_render_delivery_text_for_failed_task() -> None:
 
     text = render_delivery_text(event)
 
-    assert "task-2" in text
+    assert text.startswith("Ошибка: task-2")
     assert "read docs/missing.txt" in text
     assert "File not found." in text
 
@@ -143,3 +143,36 @@ def test_delivery_cycle_sends_photo_for_image_artifacts() -> None:
 
     assert sent_photos == [(5001, render_delivery_text(event), event)]
     assert client.ack_calls == ["evt-5"]
+
+
+def test_delivery_cycle_sends_document_for_file_artifacts() -> None:
+    event = DeliveryEvent(
+        event_id="evt-6",
+        device_id="desktop-local",
+        task_id="task-6",
+        chat_id=5001,
+        telegram_user_id=101,
+        kind="task_done",
+        intent="send-file desktop::hack.pptx",
+        result_text="Prepared file: hack.pptx",
+        error_text=None,
+        status="pending",
+        created_at="2026-03-24T12:00:00Z",
+        artifact_kind="file_base64",
+        artifact_mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        artifact_file_name="hack.pptx",
+        artifact_base64="c2xpZGVz",
+    )
+    client = FakeDeliveryClient(events=[event])
+    sent_documents: list[tuple[int, str, DeliveryEvent]] = []
+
+    def send_message(_chat_id: int, _text: str) -> None:
+        raise AssertionError("text sender should not be used for file artifacts")
+
+    def send_document(chat_id: int, caption: str, delivery_event: DeliveryEvent) -> None:
+        sent_documents.append((chat_id, caption, delivery_event))
+
+    deliver_outbox_cycle(client=client, send_message=send_message, send_document=send_document)
+
+    assert sent_documents == [(5001, render_delivery_text(event), event)]
+    assert client.ack_calls == ["evt-6"]

@@ -35,59 +35,35 @@ class FakeTaskClient:
         self.decision_result = decision_result or TaskWorkflowResult(status="ignored")
         self.task_status_result = task_status_result or TaskStatusResult(found=False)
         self.latest_task_result = latest_task_result or TaskStatusResult(found=False)
-        self.task_calls: list[dict[str, object]] = []
-        self.auth_calls: list[dict[str, object]] = []
-        self.decision_calls: list[dict[str, object]] = []
-        self.status_calls: list[dict[str, object]] = []
-        self.latest_status_calls: list[dict[str, object]] = []
 
     def create_task(
         self, telegram_user_id: int, chat_id: int, risk: str, intent: str
     ) -> TaskWorkflowResult:
-        self.task_calls.append(
-            {
-                "telegram_user_id": telegram_user_id,
-                "chat_id": chat_id,
-                "risk": risk,
-                "intent": intent,
-            }
-        )
+        del telegram_user_id, chat_id, risk, intent
         return self.task_result
 
     def submit_auth_input(
         self, telegram_user_id: int, chat_id: int, value: str
     ) -> TaskWorkflowResult:
-        self.auth_calls.append(
-            {
-                "telegram_user_id": telegram_user_id,
-                "chat_id": chat_id,
-                "value": value,
-            }
-        )
+        del telegram_user_id, chat_id, value
         return self.auth_result
 
     def submit_decision(
         self, telegram_user_id: int, chat_id: int, decision: str
     ) -> TaskWorkflowResult:
-        self.decision_calls.append(
-            {
-                "telegram_user_id": telegram_user_id,
-                "chat_id": chat_id,
-                "decision": decision,
-            }
-        )
+        del telegram_user_id, chat_id, decision
         return self.decision_result
 
     def fetch_task(self, task_id: str) -> TaskStatusResult:
-        self.status_calls.append({"task_id": task_id})
+        del task_id
         return self.task_status_result
 
     def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
-        self.latest_status_calls.append({"chat_id": chat_id})
+        del chat_id
         return self.latest_task_result
 
 
-def test_untrusted_task_stays_silent():
+def test_untrusted_task_stays_silent() -> None:
     task_client = FakeTaskClient(task_result=TaskWorkflowResult(status="ignored"))
 
     response = resolve_task_command(
@@ -100,7 +76,7 @@ def test_untrusted_task_stays_silent():
     assert response is None
 
 
-def test_low_risk_task_queues_immediately():
+def test_low_risk_task_queues_immediately() -> None:
     task_client = FakeTaskClient(
         task_result=TaskWorkflowResult(status="queued", task_id="task-1")
     )
@@ -115,7 +91,7 @@ def test_low_risk_task_queues_immediately():
     assert response == get_queued_task_text("task-1")
 
 
-def test_low_risk_task_reports_offline_queue_state():
+def test_low_risk_task_reports_offline_queue_state() -> None:
     task_client = FakeTaskClient(
         task_result=TaskWorkflowResult(
             status="queued",
@@ -134,7 +110,7 @@ def test_low_risk_task_reports_offline_queue_state():
     assert response == "Задача task-1 поставлена в очередь. ПК сейчас офлайн."
 
 
-def test_medium_risk_task_prompts_for_password():
+def test_medium_risk_task_prompts_for_password() -> None:
     task_client = FakeTaskClient(
         task_result=TaskWorkflowResult(status="awaiting_auth", challenge_step="password")
     )
@@ -149,7 +125,7 @@ def test_medium_risk_task_prompts_for_password():
     assert response == get_auth_password_prompt_text()
 
 
-def test_auth_command_transitions_to_totp_and_confirm():
+def test_auth_command_transitions_to_totp_and_confirm() -> None:
     totp_client = FakeTaskClient(auth_result=TaskWorkflowResult(status="totp_required"))
     confirm_client = FakeTaskClient(
         auth_result=TaskWorkflowResult(status="confirm_required")
@@ -168,11 +144,11 @@ def test_auth_command_transitions_to_totp_and_confirm():
         task_client=confirm_client,
     )
 
-    assert totp_response == "Пароль принят. Введите код TOTP командой /auth <код>."
+    assert totp_response == "Пароль принят. Введите код из приложения-аутентификатора."
     assert confirm_response == get_confirm_prompt_text()
 
 
-def test_confirm_queues_the_task():
+def test_confirm_queues_the_task() -> None:
     task_client = FakeTaskClient(
         decision_result=TaskWorkflowResult(status="task_queued", task_id="task-7")
     )
@@ -187,7 +163,7 @@ def test_confirm_queues_the_task():
     assert response == get_queued_task_text("task-7")
 
 
-def test_decline_cancels_the_task():
+def test_decline_cancels_the_task() -> None:
     task_client = FakeTaskClient(decision_result=TaskWorkflowResult(status="declined"))
 
     response = resolve_decline_command(
@@ -200,11 +176,11 @@ def test_decline_cancels_the_task():
     assert response == get_decline_text()
 
 
-def test_lockout_and_setup_required_are_reported():
+def test_lockout_and_setup_required_are_reported() -> None:
     locked_client = FakeTaskClient(auth_result=TaskWorkflowResult(status="locked"))
     setup_client = FakeTaskClient(
         task_result=TaskWorkflowResult(
-            status="setup_required", message="Настрой пароль и TOTP в GUI Karpik на ПК."
+            status="setup_required", message="Сначала настрой пароль и TOTP в GUI Karpik на ПК."
         )
     )
 
@@ -225,7 +201,7 @@ def test_lockout_and_setup_required_are_reported():
     assert setup_response == get_setup_required_text()
 
 
-def test_invalid_password_is_reported():
+def test_invalid_password_is_reported() -> None:
     task_client = FakeTaskClient(
         auth_result=TaskWorkflowResult(status="invalid_password")
     )
@@ -241,7 +217,7 @@ def test_invalid_password_is_reported():
     assert get_auth_success_text() == "Авторизация пройдена. Задача поставлена в очередь."
 
 
-def test_status_command_returns_done_and_running_task_states():
+def test_status_command_returns_done_and_running_task_states() -> None:
     done_client = FakeTaskClient(
         task_status_result=TaskStatusResult(
             found=True,

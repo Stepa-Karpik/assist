@@ -33,7 +33,7 @@ class SupportsTaskWorkflow(Protocol):
 def parse_task_command(text: str) -> tuple[str, str] | None:
     match = TASK_COMMAND_PATTERN.fullmatch(text.strip())
 
-    if not match:
+    if match is None:
         return None
 
     return match.group(1), match.group(2)
@@ -41,17 +41,13 @@ def parse_task_command(text: str) -> tuple[str, str] | None:
 
 def parse_auth_command(text: str) -> str | None:
     match = AUTH_COMMAND_PATTERN.fullmatch(text.strip())
-
-    if not match:
-        return None
-
-    return match.group(1)
+    return match.group(1) if match is not None else None
 
 
 def parse_status_command(text: str) -> str | None:
     match = STATUS_COMMAND_PATTERN.fullmatch(text.strip())
 
-    if not match:
+    if match is None:
         return None
 
     task_id = match.group(1)
@@ -72,11 +68,11 @@ def get_running_task_text(task_id: str) -> str:
 
 
 def get_done_task_text(task_id: str, result_text: str) -> str:
-    return f"Задача {task_id} завершена: {result_text}"
+    return f"Готово: {task_id}\n{result_text}"
 
 
 def get_failed_task_text(task_id: str, error_text: str) -> str:
-    return f"Задача {task_id} завершилась с ошибкой: {error_text}"
+    return f"Ошибка: {task_id}\n{error_text}"
 
 
 def get_task_not_found_text() -> str:
@@ -93,11 +89,11 @@ def get_auth_success_text(*, device_online: bool | None = None) -> str:
 
 
 def get_auth_password_prompt_text() -> str:
-    return "Введите пароль командой /auth <пароль>."
+    return "Введите пароль следующим сообщением."
 
 
 def get_confirm_prompt_text() -> str:
-    return "Код TOTP принят. Подтверди задачу командой /confirm или отклони /decline."
+    return "Код TOTP принят. Подтвердить выполнение задачи?"
 
 
 def get_invalid_password_text() -> str:
@@ -117,7 +113,7 @@ def get_decline_text() -> str:
 
 
 def get_setup_required_text() -> str:
-    return "Настрой пароль и TOTP в GUI Karpik на ПК."
+    return "Сначала настрой пароль и TOTP в GUI Karpik на ПК."
 
 
 def map_task_workflow_response(result: TaskWorkflowResult) -> str | None:
@@ -144,13 +140,13 @@ def map_task_workflow_response(result: TaskWorkflowResult) -> str | None:
 
 def map_auth_workflow_response(result: TaskWorkflowResult) -> str | None:
     if result.status == "task_queued" and result.task_id is not None:
-        return get_queued_task_text(result.task_id)
+        return get_queued_task_text(result.task_id, device_online=result.device_online)
 
     if result.status == "task_queued":
-        return get_auth_success_text()
+        return get_auth_success_text(device_online=result.device_online)
 
     if result.status == "totp_required":
-        return "Пароль принят. Введите код TOTP командой /auth <код>."
+        return "Пароль принят. Введите код из приложения-аутентификатора."
 
     if result.status == "confirm_required":
         return get_confirm_prompt_text()
@@ -163,6 +159,9 @@ def map_auth_workflow_response(result: TaskWorkflowResult) -> str | None:
 
     if result.status == "locked":
         return get_locked_text()
+
+    if result.status == "declined":
+        return get_decline_text()
 
     return None
 
@@ -208,7 +207,7 @@ def resolve_task_command(
     parsed = parse_task_command(text)
 
     if parsed is None:
-        return "Используй /task <low|medium|high> <intent>."
+        return "Используйте /task <low|medium|high> <intent>."
 
     risk, intent = parsed
     result = task_client.create_task(telegram_user_id, chat_id, risk, intent)
@@ -225,7 +224,7 @@ def resolve_auth_command(
     value = parse_auth_command(text)
 
     if value is None:
-        return "Используй /auth <значение>."
+        return "Используйте /auth <значение>."
 
     result = task_client.submit_auth_input(telegram_user_id, chat_id, value)
     return map_auth_workflow_response(result)
@@ -239,7 +238,7 @@ def resolve_confirm_command(
     task_client: SupportsTaskWorkflow,
 ) -> str | None:
     if not CONFIRM_COMMAND_PATTERN.fullmatch(text.strip()):
-        return "Используй /confirm."
+        return "Используйте /confirm."
 
     result = task_client.submit_decision(telegram_user_id, chat_id, "confirm")
     return map_auth_workflow_response(result)
@@ -253,14 +252,10 @@ def resolve_decline_command(
     task_client: SupportsTaskWorkflow,
 ) -> str | None:
     if not DECLINE_COMMAND_PATTERN.fullmatch(text.strip()):
-        return "Используй /decline."
+        return "Используйте /decline."
 
     result = task_client.submit_decision(telegram_user_id, chat_id, "decline")
-
-    if result.status == "declined":
-        return get_decline_text()
-
-    return None
+    return map_auth_workflow_response(result)
 
 
 def resolve_status_command(
@@ -275,7 +270,7 @@ def resolve_status_command(
     parsed = parse_status_command(text)
 
     if parsed is None:
-        return "Используй /status [task_id]."
+        return "Используйте /status [task_id]."
 
     if parsed == "":
         return map_task_status_response(task_client.fetch_latest_task(chat_id))

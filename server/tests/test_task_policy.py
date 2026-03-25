@@ -197,14 +197,34 @@ def test_codex_write_intent_always_escalates_to_high_risk() -> None:
     assert response.json()["challenge_step"] == "password"
 
 
-def test_screenshot_intent_always_escalates_to_high_risk() -> None:
+def test_screenshot_intent_stays_low_risk() -> None:
+    trust_telegram_user()
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "screenshot screen-1",
+            "source": "telegram",
+            "risk": "low",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "queued"
+    assert response.json()["task"]["risk"] == "low"
+
+
+def test_send_file_escalates_to_medium_and_requires_password() -> None:
     trust_telegram_user()
     client.post(
         "/api/auth/config/status",
         json={
             "device_id": "desktop-local",
             "password_configured": True,
-            "totp_configured": True,
+            "totp_configured": False,
         },
     )
 
@@ -212,7 +232,7 @@ def test_screenshot_intent_always_escalates_to_high_risk() -> None:
         "/api/tasks",
         json={
             "device_id": "desktop-local",
-            "intent": "screenshot",
+            "intent": "send-file desktop::hack.pptx",
             "source": "telegram",
             "risk": "low",
             "telegram_user_id": 101,
@@ -222,9 +242,8 @@ def test_screenshot_intent_always_escalates_to_high_risk() -> None:
 
     assert response.status_code == 201
     assert response.json()["status"] == "awaiting_auth"
-    assert response.json()["task"]["risk"] == "high"
-    assert response.json()["task"]["required_auth"] == "password_and_totp"
-    assert response.json()["challenge_step"] == "password"
+    assert response.json()["task"]["risk"] == "medium"
+    assert response.json()["task"]["required_auth"] == "password"
 
 
 def test_escalated_risk_still_requires_auth_setup() -> None:

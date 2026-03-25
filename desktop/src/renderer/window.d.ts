@@ -12,6 +12,14 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type TotpEnrollment = {
+  secret: string;
+  otpAuthUri: string;
+  qrDataUrl: string;
+  issuer: string;
+  accountName: string;
+};
+
 type AppPreferencesState = {
   launchAtLogin: boolean;
   notificationsEnabled: boolean;
@@ -45,7 +53,7 @@ type TaskSnapshotItem = {
     | "stalled";
   result_text?: string | null;
   error_text?: string | null;
-  artifactKind?: "image_base64";
+  artifactKind?: "image_base64" | "file_base64";
   artifactMimeType?: string | null;
   artifactFileName?: string | null;
   artifactBase64?: string | null;
@@ -90,7 +98,7 @@ type LocalChatMessageItem = {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
-  artifactKind?: "image_base64";
+  artifactKind?: "image_base64" | "file_base64";
   artifactMimeType?: string | null;
   artifactFileName?: string | null;
   artifactBase64?: string | null;
@@ -163,6 +171,8 @@ declare global {
       getActivityLog: () => Promise<ActivityLogEntry[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
       getAuthConfigState: () => Promise<AuthConfigState>;
+      createTotpEnrollment: () => Promise<TotpEnrollment>;
+      confirmTotpEnrollment: (payload: { code: string }) => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
       getKnowledgeState: () => Promise<KnowledgeSection[]>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;

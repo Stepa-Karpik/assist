@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 DeliveryKind = Literal["task_done", "task_failed"]
 DeliveryStatus = Literal["pending", "delivered"]
-DeliveryArtifactKind = Literal["image_base64"]
+DeliveryArtifactKind = Literal["image_base64", "file_base64"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +70,7 @@ def parse_delivery_event(value: object) -> DeliveryEvent | None:
     artifact_file_name = value.get("artifact_file_name")
     artifact_base64 = value.get("artifact_base64")
 
-    if artifact_kind is not None and artifact_kind != "image_base64":
+    if artifact_kind is not None and artifact_kind not in {"image_base64", "file_base64"}:
         return None
 
     return DeliveryEvent(

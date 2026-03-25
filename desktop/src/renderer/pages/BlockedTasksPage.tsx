@@ -132,16 +132,16 @@ export function BlockedTasksPage() {
 
   return (
     <div className="page-shell">
-      <p className="eyebrow">РќРµРІС‹РїРѕР»РЅРµРЅРЅРѕРµ</p>
+      <p className="eyebrow">Невыполненное</p>
       <h2>Blocked and Local-Approval Tasks</h2>
       <p className="muted-text">
-        Р—РґРµСЃСЊ СЃРѕР±СЂР°РЅС‹ Р·Р°РґР°С‡Рё, РєРѕС‚РѕСЂС‹Рµ РѕСЃС‚Р°РЅРѕРІРёР»РёСЃСЊ РЅР° auth, Р±С‹Р»Рё Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅС‹ РёР»Рё Р·Р°РІРµСЂС€РёР»РёСЃСЊ РѕС€РёР±РєРѕР№.
+        Здесь собраны задачи, которые остановились на auth, были заблокированы или завершились ошибкой.
       </p>
 
-      {isLoading ? <p className="muted-text">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РґР°С‡Рё, С‚СЂРµР±СѓСЋС‰РёРµ РІРЅРёРјР°РЅРёСЏ...</p> : null}
+      {isLoading ? <p className="muted-text">Загружаем задачи, требующие внимания...</p> : null}
 
       {!isLoading && tasks.length === 0 ? (
-        <p className="muted-text">РЎРµР№С‡Р°СЃ РЅРµС‚ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹С… РёР»Рё С‚СЂРµР±СѓСЋС‰РёС… РІРЅРёРјР°РЅРёСЏ Р·Р°РґР°С‡.</p>
+        <p className="muted-text">Сейчас нет заблокированных или требующих внимания задач.</p>
       ) : null}
 
       {actionError !== null ? <p className="task-error">{actionError}</p> : null}

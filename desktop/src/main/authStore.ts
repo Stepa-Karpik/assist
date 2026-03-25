@@ -6,6 +6,9 @@ type AuthStoreOptions = {
   secretsRoot: string;
   now?: () => Date;
   saltFactory?: () => Buffer;
+  secretFactory?: () => Buffer;
+  totpIssuer?: string;
+  totpAccountName?: string;
 };
 
 export type AuthConfigInput = {
@@ -26,9 +29,19 @@ export type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+export type TotpEnrollment = {
+  secret: string;
+  otpAuthUri: string;
+  issuer: string;
+  accountName: string;
+};
+
+type PendingTotpEnrollment = TotpEnrollment;
+
 const totpDigits = 6;
 const totpStepSeconds = 30;
 const totpWindowOffsets = [-1, 0, 1];
+const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 function normalizeOptionalSecret(value: string | undefined): string | undefined {
   const trimmedValue = value?.trim();
@@ -39,13 +52,29 @@ function derivePasswordHash(password: string, salt: Buffer): string {
   return crypto.scryptSync(password, salt, 64).toString("hex");
 }
 
+function encodeBase32(value: Buffer): string {
+  let bits = "";
+
+  for (const byte of value) {
+    bits += byte.toString(2).padStart(8, "0");
+  }
+
+  let output = "";
+
+  for (let index = 0; index < bits.length; index += 5) {
+    const chunk = bits.slice(index, index + 5).padEnd(5, "0");
+    output += base32Alphabet[Number.parseInt(chunk, 2)];
+  }
+
+  return output;
+}
+
 function decodeBase32(secret: string): Buffer {
   const normalized = secret.toUpperCase().replace(/=+$/u, "");
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = "";
 
   for (const character of normalized) {
-    const index = alphabet.indexOf(character);
+    const index = base32Alphabet.indexOf(character);
 
     if (index === -1) {
       throw new Error("Invalid TOTP secret");
@@ -76,6 +105,34 @@ function generateTotp(secret: string, unixTimeMs: number): string {
   return code.toString().padStart(totpDigits, "0");
 }
 
+function validateTotpForSecret(secret: string, value: string, unixTimeMs: number): boolean {
+  return totpWindowOffsets.some((offset) => {
+    const candidateCode = generateTotp(secret, unixTimeMs + offset * totpStepSeconds * 1000);
+    return candidateCode === value;
+  });
+}
+
+function buildOtpAuthUri({
+  issuer,
+  accountName,
+  secret
+}: {
+  issuer: string;
+  accountName: string;
+  secret: string;
+}): string {
+  const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(accountName)}`;
+  const query = new URLSearchParams({
+    secret,
+    issuer,
+    algorithm: "SHA1",
+    digits: String(totpDigits),
+    period: String(totpStepSeconds)
+  });
+
+  return `otpauth://totp/${label}?${query.toString()}`;
+}
+
 export class AuthStore {
   private readonly filePath: string;
 
@@ -83,16 +140,30 @@ export class AuthStore {
 
   private readonly saltFactory: () => Buffer;
 
+  private readonly secretFactory: () => Buffer;
+
+  private readonly totpIssuer: string;
+
+  private readonly totpAccountName: string;
+
   private config: PersistedAuthConfig;
+
+  private pendingTotpEnrollment: PendingTotpEnrollment | null = null;
 
   constructor({
     secretsRoot,
     now = () => new Date(),
-    saltFactory = () => crypto.randomBytes(16)
+    saltFactory = () => crypto.randomBytes(16),
+    secretFactory = () => crypto.randomBytes(20),
+    totpIssuer = "Karpik",
+    totpAccountName = "desktop-local"
   }: AuthStoreOptions) {
     this.filePath = path.join(secretsRoot, "auth.json");
     this.now = now;
     this.saltFactory = saltFactory;
+    this.secretFactory = secretFactory;
+    this.totpIssuer = totpIssuer;
+    this.totpAccountName = totpAccountName;
     this.config = this.loadConfig();
   }
 
@@ -132,6 +203,8 @@ export class AuthStore {
         decodeBase32(normalizedTotpSecret);
         nextConfig.totpSecret = normalizedTotpSecret;
       }
+
+      this.pendingTotpEnrollment = null;
     }
 
     this.config = nextConfig;
@@ -163,10 +236,42 @@ export class AuthStore {
       return false;
     }
 
-    const now = this.now().getTime();
-    return totpWindowOffsets.some((offset) => {
-      const candidateCode = generateTotp(totpSecret, now + offset * totpStepSeconds * 1000);
-      return candidateCode === value;
+    return validateTotpForSecret(totpSecret, value, this.now().getTime());
+  }
+
+  createTotpEnrollment(): TotpEnrollment {
+    const secret = encodeBase32(this.secretFactory());
+    decodeBase32(secret);
+
+    const enrollment = {
+      secret,
+      issuer: this.totpIssuer,
+      accountName: this.totpAccountName,
+      otpAuthUri: buildOtpAuthUri({
+        issuer: this.totpIssuer,
+        accountName: this.totpAccountName,
+        secret
+      })
+    };
+
+    this.pendingTotpEnrollment = enrollment;
+    return enrollment;
+  }
+
+  confirmTotpEnrollment(value: string): AuthConfigState {
+    const pendingEnrollment = this.pendingTotpEnrollment;
+
+    if (pendingEnrollment === null) {
+      throw new Error("No pending TOTP enrollment");
+    }
+
+    if (!validateTotpForSecret(pendingEnrollment.secret, value.trim(), this.now().getTime())) {
+      throw new Error("Invalid TOTP code");
+    }
+
+    this.pendingTotpEnrollment = null;
+    return this.saveConfig({
+      totpSecret: pendingEnrollment.secret
     });
   }
 

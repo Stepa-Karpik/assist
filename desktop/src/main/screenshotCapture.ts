@@ -4,12 +4,14 @@ export type CapturedScreenshot = {
   contentBase64: string;
 };
 
+export type ScreenshotTarget = "screen-1" | "screen-2";
+
 function buildTimestamp(): string {
   return new Date().toISOString().replaceAll(":", "-");
 }
 
 export function createScreenshotCapture(deviceId: string) {
-  return async (): Promise<CapturedScreenshot> => {
+  return async (target: ScreenshotTarget = "screen-1"): Promise<CapturedScreenshot> => {
     const { desktopCapturer } = await import("electron");
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
@@ -18,7 +20,8 @@ export function createScreenshotCapture(deviceId: string) {
         height: 1080
       }
     });
-    const source = sources[0];
+    const sourceIndex = target === "screen-2" ? 1 : 0;
+    const source = sources[sourceIndex] ?? sources[0];
 
     if (source === undefined || source.thumbnail.isEmpty()) {
       throw new Error("Unable to capture screenshot.");

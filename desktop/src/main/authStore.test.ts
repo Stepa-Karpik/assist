@@ -88,4 +88,54 @@ describe("AuthStore", () => {
       totpConfigured: true
     });
   });
+
+  it("keeps a generated totp enrollment pending until a valid code confirms it", () => {
+    const secretsRoot = createSecretsRoot();
+    cleanupPaths.push(secretsRoot);
+    const store = new AuthStore({
+      secretsRoot,
+      now: () => new Date("1970-01-01T00:00:59.000Z"),
+      secretFactory: () => Buffer.from("12345678901234567890", "utf8"),
+      totpAccountName: "stepa-desktop"
+    });
+
+    const enrollment = store.createTotpEnrollment();
+
+    expect(enrollment.secret).toBe("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+    expect(enrollment.otpAuthUri).toBe(
+      "otpauth://totp/Karpik:stepa-desktop?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Karpik&algorithm=SHA1&digits=6&period=30"
+    );
+    expect(store.getConfigState()).toEqual({
+      passwordConfigured: false,
+      totpConfigured: false
+    });
+    expect(fs.existsSync(path.join(secretsRoot, "auth.json"))).toBe(false);
+
+    const state = store.confirmTotpEnrollment("287082");
+
+    expect(state).toEqual({
+      passwordConfigured: false,
+      totpConfigured: true
+    });
+    expect(store.validateTotp("287082")).toBe(true);
+  });
+
+  it("rejects an invalid code for the pending totp enrollment", () => {
+    const secretsRoot = createSecretsRoot();
+    cleanupPaths.push(secretsRoot);
+    const store = new AuthStore({
+      secretsRoot,
+      now: () => new Date("1970-01-01T00:00:59.000Z"),
+      secretFactory: () => Buffer.from("12345678901234567890", "utf8")
+    });
+
+    store.createTotpEnrollment();
+
+    expect(() => store.confirmTotpEnrollment("000000")).toThrowError("Invalid TOTP code");
+    expect(store.getConfigState()).toEqual({
+      passwordConfigured: false,
+      totpConfigured: false
+    });
+    expect(fs.existsSync(path.join(secretsRoot, "auth.json"))).toBe(false);
+  });
 });

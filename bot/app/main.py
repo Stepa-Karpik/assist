@@ -4,24 +4,47 @@ from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app.config import Settings, get_settings
+from app.conversation import (
+    BotConversationStore,
+    BotReply,
+    process_callback_query,
+    process_manual_auth_input,
+    process_manual_decision,
+    process_manual_task_command,
+    process_text_message,
+)
 from app.delivery import run_delivery_poll_loop
 from app.delivery_client import DeliveryServerClient
 from app.handlers.help import get_help_text
-from app.handlers.messages import get_default_message
 from app.handlers.pair import resolve_pair_command
-from app.handlers.task import (
-    resolve_auth_command,
-    resolve_confirm_command,
-    resolve_decline_command,
-    resolve_status_command,
-    resolve_task_command,
-)
 from app.handlers.start import get_start_text
+from app.handlers.task import parse_auth_command, parse_status_command, parse_task_command, resolve_status_command
+from app.intent_resolver import DeepSeekIntentResolver, RuleBasedIntentResolver
 from app.pairing_client import PairingServerClient
 from app.task_client import TaskServerClient
+
+
+def to_inline_keyboard(reply: BotReply) -> InlineKeyboardMarkup | None:
+    if len(reply.buttons) == 0:
+        return None
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=button.text, callback_data=button.callback_data)
+                for button in reply.buttons
+            ]
+        ]
+    )
 
 
 def create_dispatcher(
@@ -40,6 +63,16 @@ def create_dispatcher(
         device_id=resolved_settings.device_id,
         wait_seconds=resolved_settings.auth_wait_seconds,
     )
+    resolved_intent_resolver = (
+        DeepSeekIntentResolver(
+            api_key=resolved_settings.deepseek_api_key,
+            fallback_resolver=RuleBasedIntentResolver(),
+            model=resolved_settings.deepseek_model,
+        )
+        if resolved_settings.deepseek_api_key
+        else RuleBasedIntentResolver()
+    )
+    conversation_store = BotConversationStore()
     dispatcher = Dispatcher()
 
     @dispatcher.message(CommandStart())
@@ -71,32 +104,48 @@ def create_dispatcher(
         if message.from_user is None:
             return
 
+        parsed = parse_task_command(message.text or "")
+
+        if parsed is None:
+            await message.answer("Используйте /task <low|medium|high> <intent>.")
+            return
+
+        risk, intent = parsed
         response = await asyncio.to_thread(
-            resolve_task_command,
-            message.text or "",
+            process_manual_task_command,
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
+            risk=risk,
+            intent=intent,
             task_client=resolved_task_client,
+            store=conversation_store,
         )
 
         if response is not None:
-            await message.answer(response)
+            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
 
     @dispatcher.message(Command("auth"))
     async def auth_handler(message: Message) -> None:
         if message.from_user is None:
             return
 
+        value = parse_auth_command(message.text or "")
+
+        if value is None:
+            await message.answer("Используйте /auth <значение>.")
+            return
+
         response = await asyncio.to_thread(
-            resolve_auth_command,
-            message.text or "",
+            process_manual_auth_input,
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
+            value=value,
             task_client=resolved_task_client,
+            store=conversation_store,
         )
 
         if response is not None:
-            await message.answer(response)
+            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
 
     @dispatcher.message(Command("confirm"))
     async def confirm_handler(message: Message) -> None:
@@ -104,15 +153,16 @@ def create_dispatcher(
             return
 
         response = await asyncio.to_thread(
-            resolve_confirm_command,
-            message.text or "",
+            process_manual_decision,
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
+            decision="confirm",
             task_client=resolved_task_client,
+            store=conversation_store,
         )
 
         if response is not None:
-            await message.answer(response)
+            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
 
     @dispatcher.message(Command("decline"))
     async def decline_handler(message: Message) -> None:
@@ -120,19 +170,24 @@ def create_dispatcher(
             return
 
         response = await asyncio.to_thread(
-            resolve_decline_command,
-            message.text or "",
+            process_manual_decision,
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
+            decision="decline",
             task_client=resolved_task_client,
+            store=conversation_store,
         )
 
         if response is not None:
-            await message.answer(response)
+            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
 
     @dispatcher.message(Command("status"))
     async def status_handler(message: Message) -> None:
         if message.from_user is None:
+            return
+
+        if parse_status_command(message.text or "") is None:
+            await message.answer("Используйте /status [task_id].")
             return
 
         response = await asyncio.to_thread(
@@ -146,12 +201,44 @@ def create_dispatcher(
         if response is not None:
             await message.answer(response)
 
-    @dispatcher.message()
-    async def message_handler(message: Message) -> None:
-        response = get_default_message()
+    @dispatcher.callback_query()
+    async def callback_handler(callback: CallbackQuery) -> None:
+        if callback.from_user is None or callback.message is None or callback.data is None:
+            return
+
+        response = await asyncio.to_thread(
+            process_callback_query,
+            callback.data,
+            telegram_user_id=callback.from_user.id,
+            chat_id=callback.message.chat.id,
+            task_client=resolved_task_client,
+            store=conversation_store,
+        )
+        await callback.answer()
 
         if response is not None:
-            await message.answer(response)
+            await callback.message.answer(
+                response.text or "",
+                reply_markup=to_inline_keyboard(response),
+            )
+
+    @dispatcher.message()
+    async def message_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        response = await asyncio.to_thread(
+            process_text_message,
+            message.text or "",
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            task_client=resolved_task_client,
+            store=conversation_store,
+            resolver=resolved_intent_resolver,
+        )
+
+        if response is not None:
+            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
 
     return dispatcher
 
@@ -178,6 +265,14 @@ async def main() -> None:
                 BufferedInputFile(
                     base64.b64decode(event.artifact_base64 or ""),
                     filename=event.artifact_file_name or "artifact.png",
+                ),
+                caption=caption,
+            ),
+            send_document=lambda chat_id, caption, event: bot.send_document(
+                chat_id,
+                BufferedInputFile(
+                    base64.b64decode(event.artifact_base64 or ""),
+                    filename=event.artifact_file_name or "artifact.bin",
                 ),
                 caption=caption,
             ),

@@ -1,5 +1,6 @@
 import started from "electron-squirrel-startup";
 import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, Notification, Tray } from "electron";
+import QRCode from "qrcode";
 
 import { ActivityLogStore } from "./activityLogStore";
 import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
@@ -261,7 +262,7 @@ function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
             resultText: task.result_text,
             errorText: task.error_text,
             artifact:
-              task.artifact_kind === "image_base64" &&
+              (task.artifact_kind === "image_base64" || task.artifact_kind === "file_base64") &&
               task.artifact_mime_type !== null &&
               task.artifact_mime_type !== undefined &&
               task.artifact_file_name !== null &&
@@ -424,6 +425,36 @@ function registerIpcHandlers() {
   }
 
   ipcMain.handle("auth:get-config-state", () => authStore?.getConfigState());
+  ipcMain.handle("auth:create-totp-enrollment", async () => {
+    if (authStore === null) {
+      throw new Error("Auth store is not initialized");
+    }
+
+    const enrollment = authStore.createTotpEnrollment();
+    const qrDataUrl = await QRCode.toDataURL(enrollment.otpAuthUri, {
+      margin: 1,
+      width: 256
+    });
+
+    return {
+      ...enrollment,
+      qrDataUrl
+    };
+  });
+  ipcMain.handle("auth:confirm-totp-enrollment", async (_event, payload: { code: string }) => {
+    if (authStore === null) {
+      throw new Error("Auth store is not initialized");
+    }
+
+    const state = authStore.confirmTotpEnrollment(payload.code);
+    const response = await syncClient.announceAuthConfigState(state);
+
+    if (!response.ok) {
+      throw new Error(`Failed to sync auth config state: ${response.status}`);
+    }
+
+    return state;
+  });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
   ipcMain.handle("activity-log:get", () => activityLogStore?.list() ?? []);
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
@@ -639,7 +670,8 @@ async function bootstrap() {
   });
   appPreferencesStore.applyLoginItemSettings(app);
   authStore = new AuthStore({
-    secretsRoot: runtimeFolders.secrets
+    secretsRoot: runtimeFolders.secrets,
+    totpAccountName: deviceId
   });
   knowledgeStore = createKnowledgeStore({
     runtimeRoot: runtimeFolders.root

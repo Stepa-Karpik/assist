@@ -15,9 +15,9 @@ class SupportsDeliveryClient(Protocol):
 
 
 def render_delivery_text(event: DeliveryEvent) -> str:
-    title = "Р“РѕС‚РѕРІРѕ" if event.kind == "task_done" else "РћС€РёР±РєР°"
+    title = "Готово" if event.kind == "task_done" else "Ошибка"
     details = event.result_text if event.kind == "task_done" else event.error_text
-    resolved_details = details or ("Р“РѕС‚РѕРІРѕ." if event.kind == "task_done" else "Р‘РµР· РґРµС‚Р°Р»РµР№.")
+    resolved_details = details or ("Готово." if event.kind == "task_done" else "Без деталей.")
     return f"{title}: {event.task_id}\n{event.intent}\n\n{resolved_details}"
 
 
@@ -30,11 +30,20 @@ def has_image_artifact(event: DeliveryEvent) -> bool:
     )
 
 
+def has_file_artifact(event: DeliveryEvent) -> bool:
+    return (
+        event.artifact_kind == "file_base64"
+        and isinstance(event.artifact_file_name, str)
+        and isinstance(event.artifact_base64, str)
+    )
+
+
 def deliver_outbox_cycle(
     *,
     client: SupportsDeliveryClient,
     send_message: Callable[[int, str], None],
     send_photo: Callable[[int, str, DeliveryEvent], None] | None = None,
+    send_document: Callable[[int, str, DeliveryEvent], None] | None = None,
 ) -> None:
     for event in client.fetch_pending_events():
         text = render_delivery_text(event)
@@ -42,6 +51,8 @@ def deliver_outbox_cycle(
         try:
             if has_image_artifact(event) and send_photo is not None:
                 send_photo(event.chat_id, text, event)
+            elif has_file_artifact(event) and send_document is not None:
+                send_document(event.chat_id, text, event)
             else:
                 send_message(event.chat_id, text)
         except Exception:
@@ -56,6 +67,8 @@ async def run_delivery_poll_loop(
     send_message: Callable[[int, str], asyncio.Future[None] | asyncio.Task[None] | object],
     send_photo: Callable[[int, str, DeliveryEvent], asyncio.Future[None] | asyncio.Task[None] | object]
     | None = None,
+    send_document: Callable[[int, str, DeliveryEvent], asyncio.Future[None] | asyncio.Task[None] | object]
+    | None = None,
     poll_interval_seconds: float,
 ) -> None:
     while True:
@@ -67,6 +80,8 @@ async def run_delivery_poll_loop(
 
                 if has_image_artifact(event) and send_photo is not None:
                     await send_photo(event.chat_id, text, event)
+                elif has_file_artifact(event) and send_document is not None:
+                    await send_document(event.chat_id, text, event)
                 else:
                     await send_message(event.chat_id, text)
             except Exception:

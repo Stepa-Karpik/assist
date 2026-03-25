@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 TaskSource = Literal["desktop", "telegram"]
 TaskRisk = Literal["low", "medium", "high"]
 RequiredAuth = Literal["none", "password", "password_and_totp", "local_only"]
-TaskArtifactKind = Literal["image_base64"]
+TaskArtifactKind = Literal["image_base64", "file_base64"]
 TaskStatus = Literal[
     "queued",
     "awaiting_auth",

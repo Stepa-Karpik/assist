@@ -392,7 +392,37 @@ describe("createTaskExecutor", () => {
         contentBase64: "c2NyZWVuc2hvdA=="
       }
     });
-    expect(captureScreenshot).toHaveBeenCalledTimes(1);
+    expect(captureScreenshot).toHaveBeenCalledWith("screen-1");
+  });
+
+  it("captures the requested secondary screen", async () => {
+    const captureScreenshot = vi.fn(async () => ({
+      mimeType: "image/png",
+      fileName: "desktop-local-screen-2.png",
+      contentBase64: "c2NyZWVuc2hvdDI="
+    }));
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      captureScreenshot
+    });
+
+    const result = await executor.execute({
+      task_id: "task-4b",
+      intent: "screenshot screen-2"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Screenshot captured.",
+      artifact: {
+        kind: "image_base64",
+        mimeType: "image/png",
+        fileName: "desktop-local-screen-2.png",
+        contentBase64: "c2NyZWVuc2hvdDI="
+      }
+    });
+    expect(captureScreenshot).toHaveBeenCalledWith("screen-2");
   });
 
   it("fails unsupported task intents explicitly", async () => {

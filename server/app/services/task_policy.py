@@ -21,7 +21,13 @@ def get_minimum_risk(intent: str) -> TaskRisk:
         return "medium"
 
     if normalized == "screenshot" or normalized.startswith("screenshot "):
-        return "high"
+        return "low"
+
+    if normalized.startswith("send-file "):
+        return "medium"
+
+    if normalized == "list desktop" or normalized.startswith("list desktop"):
+        return "medium"
 
     return "high"
 

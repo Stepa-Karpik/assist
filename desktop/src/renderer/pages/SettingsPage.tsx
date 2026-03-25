@@ -12,6 +12,14 @@ type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+type TotpEnrollment = {
+  secret: string;
+  otpAuthUri: string;
+  qrDataUrl: string;
+  issuer: string;
+  accountName: string;
+};
+
 type AppPreferencesState = {
   launchAtLogin: boolean;
   notificationsEnabled: boolean;
@@ -165,11 +173,15 @@ export function SettingsPage() {
   const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
   const [password, setPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [pendingTotpEnrollment, setPendingTotpEnrollment] = useState<TotpEnrollment | null>(null);
+  const [totpCode, setTotpCode] = useState("");
   const [workspaceDrafts, setWorkspaceDrafts] = useState<WorkspaceDraft[]>([]);
   const [selectedDefaultWorkspaceId, setSelectedDefaultWorkspaceId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
   const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
+  const [isCreatingTotpEnrollment, setIsCreatingTotpEnrollment] = useState(false);
+  const [isConfirmingTotpEnrollment, setIsConfirmingTotpEnrollment] = useState(false);
   const [isSavingAppPreferences, setIsSavingAppPreferences] = useState(false);
   const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
   const [pairingFeedback, setPairingFeedback] = useState<string | null>(null);
@@ -203,7 +215,7 @@ export function SettingsPage() {
         }
       } catch {
         if (isSubscribed) {
-          setError("Не удалось получить локальное состояние безопасности.");
+          setError("Не удалось получить локальное состояние устройства.");
         }
       } finally {
         if (isSubscribed) {
@@ -232,9 +244,7 @@ export function SettingsPage() {
     try {
       const nextState = await window.karpik.openPairingSession();
       setPairingState(nextState);
-      setPairingFeedback(
-        "Pairing window opened. Use the current code within 5 minutes while the desktop is online."
-      );
+      setPairingFeedback("Pairing window opened. Use the current code within 5 minutes.");
     } catch {
       setError("Не удалось открыть pairing-сессию.");
     } finally {
@@ -260,11 +270,73 @@ export function SettingsPage() {
       setAuthConfigState(nextState);
       setPassword("");
       setTotpSecret("");
+      setPendingTotpEnrollment(null);
+      setTotpCode("");
       setAuthFeedback("Auth settings saved locally.");
     } catch {
       setError("Не удалось сохранить auth-настройки.");
     } finally {
       setIsSavingAuthConfig(false);
+    }
+  }
+
+  async function handleCreateTotpEnrollment() {
+    if (!window.karpik?.createTotpEnrollment) {
+      setError("TOTP QR API недоступен в этом окружении.");
+      return;
+    }
+
+    setError(null);
+    setAuthFeedback(null);
+    setIsCreatingTotpEnrollment(true);
+
+    try {
+      const enrollment = await window.karpik.createTotpEnrollment();
+      setPendingTotpEnrollment(enrollment);
+      setTotpCode("");
+      setTotpSecret("");
+      setAuthFeedback(
+        "Scan the QR with Yandex Authenticator or Google Authenticator, then enter the current code."
+      );
+    } catch {
+      setError("Не удалось подготовить QR для TOTP.");
+    } finally {
+      setIsCreatingTotpEnrollment(false);
+    }
+  }
+
+  async function handleConfirmTotpEnrollment() {
+    if (!window.karpik?.confirmTotpEnrollment) {
+      setError("TOTP confirmation API недоступен в этом окружении.");
+      return;
+    }
+
+    if (pendingTotpEnrollment === null) {
+      setError("Сначала создай QR для TOTP.");
+      return;
+    }
+
+    setError(null);
+    setAuthFeedback(null);
+    setIsConfirmingTotpEnrollment(true);
+
+    try {
+      const nextState = await window.karpik.confirmTotpEnrollment({
+        code: totpCode
+      });
+      setAuthConfigState(nextState);
+      setPendingTotpEnrollment(null);
+      setTotpCode("");
+      setTotpSecret("");
+      setAuthFeedback("TOTP confirmed and saved locally.");
+    } catch (caughtError) {
+      if (caughtError instanceof Error && caughtError.message.includes("Invalid TOTP code")) {
+        setError("Неверный TOTP-код. Проверь код в приложении и попробуй ещё раз.");
+      } else {
+        setError("Не удалось подтвердить TOTP.");
+      }
+    } finally {
+      setIsConfirmingTotpEnrollment(false);
     }
   }
 
@@ -362,6 +434,7 @@ export function SettingsPage() {
       <p className="muted-text">
         Здесь управляются pairing-код, доверенные Telegram ID и локальная политика доступа.
       </p>
+      {error !== null ? <p className="task-error status-feedback">{error}</p> : null}
 
       <section className="quick-card">
         <p className="section-label">Remote auth</p>
@@ -380,8 +453,82 @@ export function SettingsPage() {
           type="password"
           value={password}
         />
+
+        <div className="task-card totp-enrollment-card">
+          <p className="section-label">TOTP через QR</p>
+          <p className="muted-text">
+            ПК генерирует QR. Сканируй его в Яндекс Аутентификаторе или Google Authenticator,
+            затем введи текущий 6-значный код, чтобы сохранить секрет локально.
+          </p>
+          <button
+            aria-busy={isCreatingTotpEnrollment}
+            className={buildButtonClass(isCreatingTotpEnrollment, pendingTotpEnrollment !== null)}
+            disabled={isLoading || isCreatingTotpEnrollment || isConfirmingTotpEnrollment}
+            onClick={() => {
+              void handleCreateTotpEnrollment();
+            }}
+            type="button"
+          >
+            {isCreatingTotpEnrollment ? "Создаём QR..." : "Создать QR для TOTP"}
+          </button>
+
+          {pendingTotpEnrollment !== null ? (
+            <>
+              <img
+                alt="TOTP QR code"
+                className="totp-qr-preview"
+                src={pendingTotpEnrollment.qrDataUrl}
+              />
+              <label className="section-label" htmlFor="settings-totp-generated-secret">
+                Secret для ручного ввода
+              </label>
+              <input
+                className="quick-input"
+                id="settings-totp-generated-secret"
+                readOnly
+                type="text"
+                value={pendingTotpEnrollment.secret}
+              />
+              <label className="section-label" htmlFor="settings-totp-code">
+                Код из аутентификатора
+              </label>
+              <input
+                className="quick-input"
+                id="settings-totp-code"
+                inputMode="numeric"
+                onChange={(event) => {
+                  setAuthFeedback(null);
+                  setTotpCode(event.target.value);
+                }}
+                placeholder="123456"
+                type="text"
+                value={totpCode}
+              />
+              <button
+                aria-busy={isConfirmingTotpEnrollment}
+                className={buildButtonClass(
+                  isConfirmingTotpEnrollment,
+                  authConfigState.totpConfigured && authFeedback === "TOTP confirmed and saved locally."
+                )}
+                disabled={
+                  isLoading ||
+                  isCreatingTotpEnrollment ||
+                  isConfirmingTotpEnrollment ||
+                  totpCode.trim().length === 0
+                }
+                onClick={() => {
+                  void handleConfirmTotpEnrollment();
+                }}
+                type="button"
+              >
+                {isConfirmingTotpEnrollment ? "Подтверждаем..." : "Подтвердить TOTP"}
+              </button>
+            </>
+          ) : null}
+        </div>
+
         <label className="section-label" htmlFor="settings-totp-secret">
-          TOTP secret
+          TOTP secret вручную (fallback)
         </label>
         <input
           className="quick-input"
@@ -395,7 +542,7 @@ export function SettingsPage() {
         />
         <button
           aria-busy={isSavingAuthConfig}
-          className={buildButtonClass(isSavingAuthConfig, authFeedback !== null)}
+          className={buildButtonClass(isSavingAuthConfig, authFeedback === "Auth settings saved locally.")}
           disabled={isLoading || isSavingAuthConfig}
           onClick={() => {
             void handleSaveAuthConfig();
@@ -498,12 +645,11 @@ export function SettingsPage() {
       <section className="quick-card">
         <p className="section-label">Telegram pairing</p>
         <p>{pairingStatus}</p>
-        {!isLoading && pairingState.isActive && pairingState.code !== null ? (
-          <p>Код: {pairingState.code}</p>
-        ) : null}
-        <p className="muted-text">{formatExpiryHint(pairingState.isActive ? pairingState.expiresAt : null)}</p>
+        {!isLoading && pairingState.isActive && pairingState.code !== null ? <p>Код: {pairingState.code}</p> : null}
+        <p className="muted-text">
+          {formatExpiryHint(pairingState.isActive ? pairingState.expiresAt : null)}
+        </p>
         <p className="muted-text">Доверенные Telegram ID: {pairingState.trustedTelegramUserIds.length}</p>
-        {error !== null ? <p className="muted-text">{error}</p> : null}
         <button
           aria-busy={isOpeningPairing}
           className={buildButtonClass(isOpeningPairing, pairingFeedback !== null)}

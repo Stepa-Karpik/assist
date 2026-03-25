@@ -14,7 +14,7 @@ export type LocalChatRecord = {
   workspaceId: string | null;
 };
 
-export type LocalChatMessageArtifactKind = "image_base64";
+export type LocalChatMessageArtifactKind = "image_base64" | "file_base64";
 
 export type LocalChatMessage = {
   messageId: string;
@@ -115,7 +115,7 @@ function cloneDetail(chat: LocalChatDetail): LocalChatDetail {
 
 function normalizeArtifactFields(value: Partial<LocalChatMessage> | undefined) {
   if (
-    value?.artifactKind === "image_base64" &&
+    (value?.artifactKind === "image_base64" || value?.artifactKind === "file_base64") &&
     typeof value.artifactMimeType === "string" &&
     typeof value.artifactFileName === "string" &&
     typeof value.artifactBase64 === "string"

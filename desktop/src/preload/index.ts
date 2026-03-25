@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld("karpik", {
   getActivityLog: () => ipcRenderer.invoke("activity-log:get"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
+  createTotpEnrollment: () => ipcRenderer.invoke("auth:create-totp-enrollment"),
+  confirmTotpEnrollment: (payload: { code: string }) =>
+    ipcRenderer.invoke("auth:confirm-totp-enrollment", payload),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),

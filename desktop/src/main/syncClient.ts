@@ -42,7 +42,7 @@ export type RemoteTaskRecord = {
   finished_at?: string | null;
   result_text?: string | null;
   error_text?: string | null;
-  artifact_kind?: "image_base64" | null;
+  artifact_kind?: "image_base64" | "file_base64" | null;
   artifact_mime_type?: string | null;
   artifact_file_name?: string | null;
   artifact_base64?: string | null;
@@ -51,7 +51,7 @@ export type RemoteTaskRecord = {
 };
 
 export type TaskResultArtifact = {
-  kind: "image_base64";
+  kind: "image_base64" | "file_base64";
   mimeType: string;
   fileName: string;
   contentBase64: string;

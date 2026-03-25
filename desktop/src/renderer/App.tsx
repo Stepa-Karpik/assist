@@ -171,7 +171,7 @@ function QuickPopupView() {
 
   async function handleCreateDesktopChat() {
     if (!window.karpik?.createDesktopChat) {
-      setError("Local chat API РЅРµРґРѕСЃС‚СѓРїРµРЅ РІ СЌС‚РѕРј РѕРєСЂСѓР¶РµРЅРёРё.");
+      setError("Local chat API недоступен в этом окружении.");
       return;
     }
 
@@ -185,7 +185,7 @@ function QuickPopupView() {
       setResponseText(null);
       setRequestText("");
     } catch {
-      setError("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚.");
+      setError("Не удалось создать локальный чат.");
     }
   }
 

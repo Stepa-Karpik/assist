@@ -8,7 +8,12 @@ import {
   type CodexWritePreviewDraft,
   type CodexWritePreviewResult
 } from "./codexWritePreview";
-import { createScreenshotCapture, type CapturedScreenshot } from "./screenshotCapture";
+import { resolveFileArtifact } from "./fileArtifactResolver";
+import {
+  createScreenshotCapture,
+  type CapturedScreenshot,
+  type ScreenshotTarget
+} from "./screenshotCapture";
 import type { TaskResultArtifact } from "./syncClient";
 
 export type ExecutableTask = {
@@ -48,7 +53,7 @@ type TaskExecutorOptions = {
     prompt: string;
     workspaceRoot: string;
   }) => Promise<CodexWritePreviewResult>;
-  captureScreenshot?: () => Promise<CapturedScreenshot>;
+  captureScreenshot?: (target: ScreenshotTarget) => Promise<CapturedScreenshot>;
   maxResultLength?: number;
 };
 
@@ -70,12 +75,50 @@ function normalizeTarget(root: string, relativeTarget: string): string | null {
   return targetPath;
 }
 
+function normalizeSystemTarget(relativeTarget: string): string | null {
+  const trimmed = relativeTarget.trim().replaceAll("/", path.sep);
+  const lower = trimmed.toLowerCase();
+  const homeRoot = os.homedir();
+  const trimLeadingSeparators = (value: string) => value.replace(/^[\\/]+/, "");
+
+  if (lower === "desktop" || lower.startsWith(`desktop${path.sep}`)) {
+    return normalizeTarget(
+      path.join(homeRoot, "Desktop"),
+      trimLeadingSeparators(trimmed.slice("desktop".length))
+    );
+  }
+
+  if (lower === "documents" || lower.startsWith(`documents${path.sep}`)) {
+    return normalizeTarget(
+      path.join(homeRoot, "Documents"),
+      trimLeadingSeparators(trimmed.slice("documents".length))
+    );
+  }
+
+  if (lower === "downloads" || lower.startsWith(`downloads${path.sep}`)) {
+    return normalizeTarget(
+      path.join(homeRoot, "Downloads"),
+      trimLeadingSeparators(trimmed.slice("downloads".length))
+    );
+  }
+
+  return null;
+}
+
 function isSafeNoteName(value: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(value);
 }
 
 function buildLocalApprovalWaitingText(changedFiles: string[]): string {
   return `Waiting for local review. Files: ${changedFiles.join(", ")}`;
+}
+
+function resolveReadListTarget(defaultRoot: string, relativeTarget: string): string | null {
+  return normalizeSystemTarget(relativeTarget) ?? normalizeTarget(defaultRoot, relativeTarget);
+}
+
+function parseScreenshotTarget(intent: string): ScreenshotTarget {
+  return /screen-2/i.test(intent) ? "screen-2" : "screen-1";
 }
 
 export function createTaskExecutor({
@@ -118,7 +161,7 @@ export function createTaskExecutor({
 
       if (/^screenshot(?:\s+.+)?$/i.test(normalizedIntent)) {
         try {
-          const screenshot = await captureScreenshot();
+          const screenshot = await captureScreenshot(parseScreenshotTarget(normalizedIntent));
 
           return {
             ok: true,
@@ -139,6 +182,35 @@ export function createTaskExecutor({
                 : "Unable to capture screenshot."
           };
         }
+      }
+
+      const sendFileMatch = /^send-file\s+(.+)$/i.exec(normalizedIntent);
+
+      if (sendFileMatch !== null) {
+        const workspaceRoot = getWorkspaceRoot(task);
+        const artifact = await resolveFileArtifact({
+          query: sendFileMatch[1],
+          userHome: os.homedir(),
+          additionalRoots: [normalizedUserRoot, workspaceRoot]
+        });
+
+        if (artifact === null) {
+          return {
+            ok: false,
+            errorText: "File not found."
+          };
+        }
+
+        return {
+          ok: true,
+          resultText: `Prepared file: ${artifact.fileName}`,
+          artifact: {
+            kind: "file_base64",
+            mimeType: artifact.mimeType,
+            fileName: artifact.fileName,
+            contentBase64: artifact.contentBase64
+          }
+        };
       }
 
       const codexWriteMatch = /^codex-write(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);
@@ -256,7 +328,7 @@ export function createTaskExecutor({
       const readMatch = /^read\s+(.+)$/i.exec(normalizedIntent);
 
       if (readMatch !== null) {
-        const targetPath = normalizeTarget(normalizedUserRoot, readMatch[1]);
+        const targetPath = resolveReadListTarget(normalizedUserRoot, readMatch[1]);
 
         if (targetPath === null) {
           return {
@@ -289,7 +361,7 @@ export function createTaskExecutor({
       const listMatch = /^list\s+(.+)$/i.exec(normalizedIntent);
 
       if (listMatch !== null) {
-        const targetPath = normalizeTarget(normalizedUserRoot, listMatch[1]);
+        const targetPath = resolveReadListTarget(normalizedUserRoot, listMatch[1]);
 
         if (targetPath === null) {
           return {

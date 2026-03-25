@@ -110,6 +110,20 @@ const saveAuthConfig = vi.fn(async () => ({
   totpConfigured: true
 }));
 
+const createTotpEnrollment = vi.fn(async () => ({
+  secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+  otpAuthUri:
+    "otpauth://totp/Karpik:desktop-local?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Karpik&algorithm=SHA1&digits=6&period=30",
+  qrDataUrl: "data:image/png;base64,ZmFrZS1xci1kYXRh",
+  issuer: "Karpik",
+  accountName: "desktop-local"
+}));
+
+const confirmTotpEnrollment = vi.fn(async () => ({
+  passwordConfigured: false,
+  totpConfigured: true
+}));
+
 const getCodexConfigState = vi.fn(async () => ({
   workspaces: [
     {
@@ -419,6 +433,8 @@ describe("App navigation", () => {
       getActivityLog,
       getAppPreferences,
       getAuthConfigState,
+      createTotpEnrollment,
+      confirmTotpEnrollment,
       getCodexConfigState,
       getKnowledgeState,
       getLocalApprovals,
@@ -452,6 +468,8 @@ describe("App navigation", () => {
     getActivityLog.mockClear();
     getAppPreferences.mockClear();
     getAuthConfigState.mockClear();
+    createTotpEnrollment.mockClear();
+    confirmTotpEnrollment.mockClear();
     getCodexConfigState.mockClear();
     getKnowledgeState.mockClear();
     getLocalApprovals.mockClear();
@@ -547,7 +565,8 @@ describe("App navigation", () => {
 
     expect(await screen.findByRole("button", { name: "Открыть pairing" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Пароль для remote auth")).toBeInTheDocument();
-    expect(await screen.findByLabelText("TOTP secret")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "\u0421\u043e\u0437\u0434\u0430\u0442\u044c QR \u0434\u043b\u044f TOTP" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("TOTP secret \u0432\u0440\u0443\u0447\u043d\u0443\u044e (fallback)")).toBeInTheDocument();
     expect(await screen.findByLabelText("Launch at login")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace name 1")).toBeInTheDocument();
     expect(await screen.findByLabelText("Workspace path 2")).toBeInTheDocument();
@@ -605,7 +624,7 @@ describe("App navigation", () => {
     fireEvent.change(await screen.findByLabelText("Пароль для remote auth"), {
       target: { value: "secret-password" }
     });
-    fireEvent.change(await screen.findByLabelText("TOTP secret"), {
+    fireEvent.change(await screen.findByLabelText("TOTP secret \u0432\u0440\u0443\u0447\u043d\u0443\u044e (fallback)"), {
       target: { value: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" }
     });
     fireEvent.click(await screen.findByRole("button", { name: "Сохранить auth-настройки" }));

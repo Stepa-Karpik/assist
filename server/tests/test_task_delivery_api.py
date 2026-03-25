@@ -189,3 +189,33 @@ def test_completing_task_with_image_artifact_keeps_delivery_payload() -> None:
     assert response.json()["items"][0]["artifact_mime_type"] == "image/png"
     assert response.json()["items"][0]["artifact_file_name"] == "screen.png"
     assert response.json()["items"][0]["artifact_base64"] == "c2NyZWVuc2hvdA=="
+
+
+def test_completing_task_with_file_artifact_keeps_delivery_payload() -> None:
+    task_id = create_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={
+            "result_text": "Prepared file: hack.pptx",
+            "artifact": {
+                "kind": "file_base64",
+                "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "file_name": "hack.pptx",
+                "content_base64": "c2xpZGVz",
+            },
+        },
+    )
+
+    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["artifact_kind"] == "file_base64"
+    assert (
+        response.json()["items"][0]["artifact_mime_type"]
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    assert response.json()["items"][0]["artifact_file_name"] == "hack.pptx"
+    assert response.json()["items"][0]["artifact_base64"] == "c2xpZGVz"
