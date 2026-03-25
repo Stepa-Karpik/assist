@@ -5,6 +5,10 @@ import { BrowserWindow } from "electron";
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
+export function resolvePreloadPath(buildRoot: string): string {
+  return path.join(buildRoot, "index.js");
+}
+
 function loadRenderer(browserWindow: BrowserWindow, query?: Record<string, string>): void {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     const url = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -35,7 +39,7 @@ export function createMainWindow({ startHidden = false }: { startHidden?: boolea
     autoHideMenuBar: true,
     title: "Karpik",
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js")
+      preload: resolvePreloadPath(__dirname)
     }
   });
 
@@ -64,7 +68,7 @@ export function createQuickPopupWindow(mainWindow: BrowserWindow): BrowserWindow
     parent: mainWindow,
     title: "Karpik Quick Access",
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js")
+      preload: resolvePreloadPath(__dirname)
     }
   });
 

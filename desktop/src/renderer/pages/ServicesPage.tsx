@@ -180,6 +180,8 @@ export function ServicesPage() {
             <p>{updateState.message ?? "No updater activity yet."}</p>
             <div className="action-row">
               <button
+                aria-busy={isCheckingUpdates}
+                className={`ghost-button${isCheckingUpdates ? " is-busy" : ""}`}
                 type="button"
                 onClick={() => {
                   void handleCheckForUpdates();
@@ -189,6 +191,8 @@ export function ServicesPage() {
                 {isCheckingUpdates ? "Проверяем..." : "Проверить обновления"}
               </button>
               <button
+                aria-busy={isInstallingUpdate}
+                className={`ghost-button${isInstallingUpdate ? " is-busy" : ""}`}
                 type="button"
                 onClick={() => {
                   void handleInstallUpdate();

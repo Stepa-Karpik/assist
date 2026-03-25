@@ -102,11 +102,7 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function createWorkspaceId(
-  name: string,
-  rootPath: string,
-  usedIds: Set<string>
-): string {
+function createWorkspaceId(name: string, rootPath: string, usedIds: Set<string>): string {
   const baseId = slugify(name) || slugify(rootPath) || "workspace";
   let candidate = baseId;
   let suffix = 2;
@@ -158,6 +154,10 @@ function buildWorkspacePayload(workspaceDrafts: WorkspaceDraft[]): CodexWorkspac
   });
 }
 
+function buildButtonClass(isBusy: boolean, isSuccess: boolean): string {
+  return `ghost-button${isBusy ? " is-busy" : ""}${isSuccess ? " is-success" : ""}`;
+}
+
 export function SettingsPage() {
   const [pairingState, setPairingState] = useState<PairingState>(emptyPairingState);
   const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
@@ -172,29 +172,26 @@ export function SettingsPage() {
   const [isSavingAuthConfig, setIsSavingAuthConfig] = useState(false);
   const [isSavingAppPreferences, setIsSavingAppPreferences] = useState(false);
   const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
+  const [pairingFeedback, setPairingFeedback] = useState<string | null>(null);
+  const [authFeedback, setAuthFeedback] = useState<string | null>(null);
+  const [appPreferencesFeedback, setAppPreferencesFeedback] = useState<string | null>(null);
+  const [codexFeedback, setCodexFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const workspaceOptions = useMemo(
-    () => buildWorkspacePayload(workspaceDrafts),
-    [workspaceDrafts]
-  );
+  const workspaceOptions = useMemo(() => buildWorkspacePayload(workspaceDrafts), [workspaceDrafts]);
 
   useEffect(() => {
     let isSubscribed = true;
 
     async function loadSettingsState() {
       try {
-        const [
-          nextPairingState,
-          nextAuthConfigState,
-          nextAppPreferences,
-          nextCodexConfigState
-        ] = await Promise.all([
-          window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
-          window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState),
-          window.karpik?.getAppPreferences?.() ?? Promise.resolve(emptyAppPreferencesState),
-          window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState)
-        ]);
+        const [nextPairingState, nextAuthConfigState, nextAppPreferences, nextCodexConfigState] =
+          await Promise.all([
+            window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
+            window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState),
+            window.karpik?.getAppPreferences?.() ?? Promise.resolve(emptyAppPreferencesState),
+            window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState)
+          ]);
 
         if (isSubscribed) {
           setPairingState(nextPairingState);
@@ -229,11 +226,15 @@ export function SettingsPage() {
     }
 
     setError(null);
+    setPairingFeedback(null);
     setIsOpeningPairing(true);
 
     try {
       const nextState = await window.karpik.openPairingSession();
       setPairingState(nextState);
+      setPairingFeedback(
+        "Pairing window opened. Use the current code within 5 minutes while the desktop is online."
+      );
     } catch {
       setError("Не удалось открыть pairing-сессию.");
     } finally {
@@ -248,6 +249,7 @@ export function SettingsPage() {
     }
 
     setError(null);
+    setAuthFeedback(null);
     setIsSavingAuthConfig(true);
 
     try {
@@ -258,6 +260,7 @@ export function SettingsPage() {
       setAuthConfigState(nextState);
       setPassword("");
       setTotpSecret("");
+      setAuthFeedback("Auth settings saved locally.");
     } catch {
       setError("Не удалось сохранить auth-настройки.");
     } finally {
@@ -272,11 +275,13 @@ export function SettingsPage() {
     }
 
     setError(null);
+    setAppPreferencesFeedback(null);
     setIsSavingAppPreferences(true);
 
     try {
       const nextState = await window.karpik.saveAppPreferences(appPreferences);
       setAppPreferences(nextState);
+      setAppPreferencesFeedback("Desktop behavior saved.");
     } catch {
       setError("Не удалось сохранить настройки desktop behavior.");
     } finally {
@@ -304,6 +309,7 @@ export function SettingsPage() {
       : workspaces[0].id;
 
     setError(null);
+    setCodexFeedback(null);
     setIsSavingCodexConfig(true);
 
     try {
@@ -314,6 +320,7 @@ export function SettingsPage() {
       setCodexConfigState(nextState);
       setWorkspaceDrafts(buildWorkspaceDrafts(nextState));
       setSelectedDefaultWorkspaceId(nextState.defaultWorkspaceId);
+      setCodexFeedback("Workspace settings saved.");
     } catch {
       setError("Не удалось сохранить настройки Codex.");
     } finally {
@@ -321,11 +328,8 @@ export function SettingsPage() {
     }
   }
 
-  function handleWorkspaceDraftChange(
-    index: number,
-    field: "name" | "rootPath",
-    value: string
-  ) {
+  function handleWorkspaceDraftChange(index: number, field: "name" | "rootPath", value: string) {
+    setCodexFeedback(null);
     setWorkspaceDrafts((currentDrafts) =>
       currentDrafts.map((draft, draftIndex) =>
         draftIndex === index ? { ...draft, [field]: value } : draft
@@ -334,6 +338,7 @@ export function SettingsPage() {
   }
 
   function handleAddWorkspace() {
+    setCodexFeedback(null);
     setWorkspaceDrafts((currentDrafts) => [
       ...currentDrafts,
       {
@@ -355,8 +360,7 @@ export function SettingsPage() {
       <p className="eyebrow">Настройки</p>
       <h2>Локальные настройки устройства</h2>
       <p className="muted-text">
-        Здесь управляются pairing-код, доверенные Telegram ID и локальная политика
-        доступа.
+        Здесь управляются pairing-код, доверенные Telegram ID и локальная политика доступа.
       </p>
 
       <section className="quick-card">
@@ -369,7 +373,10 @@ export function SettingsPage() {
         <input
           className="quick-input"
           id="settings-password"
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setAuthFeedback(null);
+            setPassword(event.target.value);
+          }}
           type="password"
           value={password}
         />
@@ -379,12 +386,16 @@ export function SettingsPage() {
         <input
           className="quick-input"
           id="settings-totp-secret"
-          onChange={(event) => setTotpSecret(event.target.value)}
+          onChange={(event) => {
+            setAuthFeedback(null);
+            setTotpSecret(event.target.value);
+          }}
           type="text"
           value={totpSecret}
         />
         <button
-          className="ghost-button"
+          aria-busy={isSavingAuthConfig}
+          className={buildButtonClass(isSavingAuthConfig, authFeedback !== null)}
           disabled={isLoading || isSavingAuthConfig}
           onClick={() => {
             void handleSaveAuthConfig();
@@ -393,6 +404,7 @@ export function SettingsPage() {
         >
           {isSavingAuthConfig ? "Сохраняем..." : "Сохранить auth-настройки"}
         </button>
+        {authFeedback !== null ? <p className="task-success status-feedback">{authFeedback}</p> : null}
       </section>
 
       <section className="quick-card">
@@ -401,12 +413,13 @@ export function SettingsPage() {
           <input
             checked={appPreferences.launchAtLogin}
             id="settings-launch-at-login"
-            onChange={(event) =>
+            onChange={(event) => {
+              setAppPreferencesFeedback(null);
               setAppPreferences((currentState) => ({
                 ...currentState,
                 launchAtLogin: event.target.checked
-              }))
-            }
+              }));
+            }}
             type="checkbox"
           />{" "}
           Launch at login
@@ -415,12 +428,13 @@ export function SettingsPage() {
           <input
             checked={appPreferences.notificationsEnabled}
             id="settings-desktop-notifications"
-            onChange={(event) =>
+            onChange={(event) => {
+              setAppPreferencesFeedback(null);
               setAppPreferences((currentState) => ({
                 ...currentState,
                 notificationsEnabled: event.target.checked
-              }))
-            }
+              }));
+            }}
             type="checkbox"
           />{" "}
           Desktop notifications
@@ -429,12 +443,13 @@ export function SettingsPage() {
           <input
             checked={appPreferences.startHiddenOnLaunch}
             id="settings-start-hidden"
-            onChange={(event) =>
+            onChange={(event) => {
+              setAppPreferencesFeedback(null);
               setAppPreferences((currentState) => ({
                 ...currentState,
                 startHiddenOnLaunch: event.target.checked
-              }))
-            }
+              }));
+            }}
             type="checkbox"
           />{" "}
           Start hidden in tray
@@ -443,18 +458,20 @@ export function SettingsPage() {
           <input
             checked={appPreferences.closeToTrayOnClose}
             id="settings-close-to-tray"
-            onChange={(event) =>
+            onChange={(event) => {
+              setAppPreferencesFeedback(null);
               setAppPreferences((currentState) => ({
                 ...currentState,
                 closeToTrayOnClose: event.target.checked
-              }))
-            }
+              }));
+            }}
             type="checkbox"
           />{" "}
           Close main window to tray
         </label>
         <button
-          className="ghost-button"
+          aria-busy={isSavingAppPreferences}
+          className={buildButtonClass(isSavingAppPreferences, appPreferencesFeedback !== null)}
           disabled={isLoading || isSavingAppPreferences}
           onClick={() => {
             void handleSaveAppPreferences();
@@ -463,13 +480,14 @@ export function SettingsPage() {
         >
           {isSavingAppPreferences ? "Saving..." : "Save desktop behavior"}
         </button>
+        {appPreferencesFeedback !== null ? (
+          <p className="task-success status-feedback">{appPreferencesFeedback}</p>
+        ) : null}
       </section>
 
       <section className="quick-card">
         <p className="section-label">Supported remote tasks</p>
-        <p className="muted-text">
-          Codex and codex-write are always treated as high-risk tasks.
-        </p>
+        <p className="muted-text">Codex and codex-write are always treated as high-risk tasks.</p>
         {supportedRemoteTasks.map((taskExample) => (
           <p className="muted-text" key={taskExample}>
             {taskExample}
@@ -483,15 +501,12 @@ export function SettingsPage() {
         {!isLoading && pairingState.isActive && pairingState.code !== null ? (
           <p>Код: {pairingState.code}</p>
         ) : null}
-        <p className="muted-text">
-          {formatExpiryHint(pairingState.isActive ? pairingState.expiresAt : null)}
-        </p>
-        <p className="muted-text">
-          Доверенные Telegram ID: {pairingState.trustedTelegramUserIds.length}
-        </p>
+        <p className="muted-text">{formatExpiryHint(pairingState.isActive ? pairingState.expiresAt : null)}</p>
+        <p className="muted-text">Доверенные Telegram ID: {pairingState.trustedTelegramUserIds.length}</p>
         {error !== null ? <p className="muted-text">{error}</p> : null}
         <button
-          className="ghost-button"
+          aria-busy={isOpeningPairing}
+          className={buildButtonClass(isOpeningPairing, pairingFeedback !== null)}
           disabled={isLoading || isOpeningPairing}
           onClick={() => {
             void handleOpenPairingSession();
@@ -500,42 +515,31 @@ export function SettingsPage() {
         >
           {isOpeningPairing ? "Открываем..." : "Открыть pairing"}
         </button>
+        {pairingFeedback !== null ? <p className="task-success status-feedback">{pairingFeedback}</p> : null}
       </section>
 
       <section className="quick-card">
         <p className="section-label">Local codex</p>
-        <p className="muted-text">
-          Workspaces: {codexConfigState.workspaces.length || workspaceOptions.length}
-        </p>
+        <p className="muted-text">Workspaces: {codexConfigState.workspaces.length || workspaceOptions.length}</p>
         {workspaceDrafts.map((workspaceDraft, index) => (
           <div className="task-card" key={`${workspaceDraft.id || "draft"}-${index}`}>
-            <label
-              className="section-label"
-              htmlFor={`settings-workspace-name-${index + 1}`}
-            >
+            <label className="section-label" htmlFor={`settings-workspace-name-${index + 1}`}>
               Workspace name {index + 1}
             </label>
             <input
               className="quick-input"
               id={`settings-workspace-name-${index + 1}`}
-              onChange={(event) =>
-                handleWorkspaceDraftChange(index, "name", event.target.value)
-              }
+              onChange={(event) => handleWorkspaceDraftChange(index, "name", event.target.value)}
               type="text"
               value={workspaceDraft.name}
             />
-            <label
-              className="section-label"
-              htmlFor={`settings-workspace-path-${index + 1}`}
-            >
+            <label className="section-label" htmlFor={`settings-workspace-path-${index + 1}`}>
               Workspace path {index + 1}
             </label>
             <input
               className="quick-input"
               id={`settings-workspace-path-${index + 1}`}
-              onChange={(event) =>
-                handleWorkspaceDraftChange(index, "rootPath", event.target.value)
-              }
+              onChange={(event) => handleWorkspaceDraftChange(index, "rootPath", event.target.value)}
               type="text"
               value={workspaceDraft.rootPath}
             />
@@ -547,7 +551,10 @@ export function SettingsPage() {
         <select
           className="quick-input"
           id="settings-default-workspace"
-          onChange={(event) => setSelectedDefaultWorkspaceId(event.target.value)}
+          onChange={(event) => {
+            setCodexFeedback(null);
+            setSelectedDefaultWorkspaceId(event.target.value);
+          }}
           value={selectedDefaultWorkspaceId}
         >
           {workspaceOptions.map((workspace) => (
@@ -557,16 +564,12 @@ export function SettingsPage() {
           ))}
         </select>
         <div className="task-card-header">
-          <button
-            className="ghost-button"
-            disabled={isLoading}
-            onClick={handleAddWorkspace}
-            type="button"
-          >
+          <button className="ghost-button" disabled={isLoading} onClick={handleAddWorkspace} type="button">
             Add workspace
           </button>
           <button
-            className="ghost-button"
+            aria-busy={isSavingCodexConfig}
+            className={buildButtonClass(isSavingCodexConfig, codexFeedback !== null)}
             disabled={isLoading || isSavingCodexConfig}
             onClick={() => {
               void handleSaveCodexConfig();
@@ -576,6 +579,7 @@ export function SettingsPage() {
             {isSavingCodexConfig ? "Saving..." : "Save workspaces"}
           </button>
         </div>
+        {codexFeedback !== null ? <p className="task-success status-feedback">{codexFeedback}</p> : null}
       </section>
     </div>
   );

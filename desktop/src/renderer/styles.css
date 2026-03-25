@@ -95,11 +95,17 @@ input {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .nav-button.active {
   border-color: rgba(34, 197, 94, 0.5);
   background: rgba(22, 163, 74, 0.18);
+  box-shadow: 0 10px 24px rgba(22, 163, 74, 0.16);
 }
 
 .content-panel {
@@ -177,6 +183,56 @@ h1 {
   background: rgba(15, 23, 42, 0.75);
   color: inherit;
   cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.nav-button:hover,
+.ghost-button:hover,
+.action-row button:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(30, 41, 59, 0.92);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.nav-button:active,
+.ghost-button:active,
+.action-row button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.nav-button:focus-visible,
+.ghost-button:focus-visible,
+.action-row button:focus-visible,
+.quick-input:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 2px;
+}
+
+.ghost-button.is-busy,
+.action-row button[aria-busy="true"] {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(14, 116, 144, 0.22);
+  box-shadow: 0 12px 28px rgba(14, 116, 144, 0.18);
+}
+
+.ghost-button.is-success {
+  border-color: rgba(34, 197, 94, 0.48);
+  background: rgba(22, 163, 74, 0.18);
+  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.16);
+}
+
+.nav-button:disabled,
+.ghost-button:disabled,
+.action-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+  transform: none;
 }
 
 .task-list {
@@ -217,6 +273,14 @@ h1 {
 
 .task-error {
   color: #fca5a5;
+}
+
+.task-success {
+  color: #86efac;
+}
+
+.status-feedback {
+  margin-top: 10px;
 }
 
 .local-chats-layout {
@@ -265,6 +329,28 @@ h1 {
 .local-chat-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-row button {
+  min-width: 36px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.75);
+  color: inherit;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
 }
 
 .activity-log-card.status-success {

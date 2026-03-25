@@ -21,16 +21,11 @@ const emptyCodexConfigState: CodexConfigState = {
   chatBindings: {}
 };
 
-function isTelegramTask(
-  task: TaskSnapshotItem
-): task is TaskSnapshotItem & { chat_id: number } {
+function isTelegramTask(task: TaskSnapshotItem): task is TaskSnapshotItem & { chat_id: number } {
   return task.chat_id !== null && task.chat_id !== undefined;
 }
 
-function groupTasksByChat(tasks: TaskSnapshotItem[]): Array<{
-  chatId: number;
-  tasks: TaskSnapshotItem[];
-}> {
+function groupTasksByChat(tasks: TaskSnapshotItem[]): Array<{ chatId: number; tasks: TaskSnapshotItem[] }> {
   const grouped = new Map<number, TaskSnapshotItem[]>();
 
   for (const task of tasks) {
@@ -51,15 +46,20 @@ function groupTasksByChat(tasks: TaskSnapshotItem[]): Array<{
     }));
 }
 
+function buildButtonClass(isBusy: boolean, isSuccess: boolean): string {
+  return `ghost-button${isBusy ? " is-busy" : ""}${isSuccess ? " is-success" : ""}`;
+}
+
 type TelegramChatsPageProps = {
   onContinueToLocalChats?: (chatId: string) => void;
 };
 
 export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageProps) {
   const [tasks, setTasks] = useState<TaskSnapshotItem[]>([]);
-  const [codexConfigState, setCodexConfigState] =
-    useState<CodexConfigState>(emptyCodexConfigState);
+  const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Record<string, string>>({});
+  const [workspaceFeedbackByChat, setWorkspaceFeedbackByChat] = useState<Record<string, string>>({});
+  const [continueFeedbackByChat, setContinueFeedbackByChat] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyChatId, setBusyChatId] = useState<number | null>(null);
@@ -94,8 +94,7 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
           }
 
           nextSelectedWorkspaceIds[chatKey] =
-            nextCodexConfigState.chatBindings[chatKey] ??
-            nextCodexConfigState.defaultWorkspaceId;
+            nextCodexConfigState.chatBindings[chatKey] ?? nextCodexConfigState.defaultWorkspaceId;
         }
 
         return nextSelectedWorkspaceIds;
@@ -130,11 +129,14 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       return;
     }
 
-    const workspaceId =
-      selectedWorkspaceIds[String(chatId)] || codexConfigState.defaultWorkspaceId;
+    const workspaceId = selectedWorkspaceIds[String(chatId)] || codexConfigState.defaultWorkspaceId;
 
     setError(null);
     setBusyChatId(chatId);
+    setWorkspaceFeedbackByChat((current) => ({
+      ...current,
+      [String(chatId)]: ""
+    }));
 
     try {
       const nextCodexConfigState = await window.karpik.saveChatWorkspaceBinding({
@@ -145,8 +147,11 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       setSelectedWorkspaceIds((currentSelectedWorkspaceIds) => ({
         ...currentSelectedWorkspaceIds,
         [String(chatId)]:
-          nextCodexConfigState.chatBindings[String(chatId)] ??
-          nextCodexConfigState.defaultWorkspaceId
+          nextCodexConfigState.chatBindings[String(chatId)] ?? nextCodexConfigState.defaultWorkspaceId
+      }));
+      setWorkspaceFeedbackByChat((current) => ({
+        ...current,
+        [String(chatId)]: `Workspace binding saved for chat ${chatId}.`
       }));
     } catch {
       setError("Не удалось сохранить привязку чата к workspace.");
@@ -168,6 +173,10 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
 
     setError(null);
     setBusyChatId(chatId);
+    setContinueFeedbackByChat((current) => ({
+      ...current,
+      [String(chatId)]: ""
+    }));
 
     try {
       const nextChat = await window.karpik.createLocalContinuationChat({
@@ -175,6 +184,10 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
         title: `Telegram ${chatId}`,
         workspaceId
       });
+      setContinueFeedbackByChat((current) => ({
+        ...current,
+        [String(chatId)]: `Continuation chat is ready: ${nextChat.title}.`
+      }));
       onContinueToLocalChats?.(nextChat.chatId);
     } catch {
       setError("Не удалось создать локальный continuation chat.");
@@ -196,102 +209,104 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       <p className="eyebrow">Чаты Telegram</p>
       <h2>Telegram Conversations</h2>
       <p className="muted-text">
-        Здесь видны последние Telegram-задачи, их статусы и локальная привязка чатов к
-        workspace.
+        Здесь видны последние Telegram-задачи, их статусы и локальная привязка чатов к workspace.
       </p>
 
       {isLoading ? <p className="muted-text">Загружаем Telegram-задачи...</p> : null}
       {error !== null ? <p className="task-error">{error}</p> : null}
 
-      {!isLoading && chatGroups.length === 0 ? (
-        <p className="muted-text">Telegram-задач пока нет.</p>
-      ) : null}
+      {!isLoading && chatGroups.length === 0 ? <p className="muted-text">Telegram-задач пока нет.</p> : null}
 
       {chatGroups.length > 0 ? (
         <div className="task-list" aria-live="polite">
-          {chatGroups.map((chatGroup) => (
-            <article className="task-card" key={chatGroup.chatId}>
-              <div className="task-card-header">
-                <strong>Chat {chatGroup.chatId}</strong>
-                <span className="task-status">
-                  {chatGroup.tasks.length} task{chatGroup.tasks.length === 1 ? "" : "s"}
-                </span>
-              </div>
+          {chatGroups.map((chatGroup) => {
+            const chatKey = String(chatGroup.chatId);
+            const workspaceFeedback = workspaceFeedbackByChat[chatKey] || null;
+            const continueFeedback = continueFeedbackByChat[chatKey] || null;
 
-              <label
-                className="section-label"
-                htmlFor={`telegram-chat-workspace-${chatGroup.chatId}`}
-              >
-                Workspace for chat {chatGroup.chatId}
-              </label>
-              <select
-                className="quick-input"
-                id={`telegram-chat-workspace-${chatGroup.chatId}`}
-                onChange={(event) =>
-                  setSelectedWorkspaceIds((currentSelectedWorkspaceIds) => ({
-                    ...currentSelectedWorkspaceIds,
-                    [String(chatGroup.chatId)]: event.target.value
-                  }))
-                }
-                value={
-                  selectedWorkspaceIds[String(chatGroup.chatId)] ||
-                  codexConfigState.chatBindings[String(chatGroup.chatId)] ||
-                  codexConfigState.defaultWorkspaceId
-                }
-              >
-                {renderWorkspaceOptions(codexConfigState.workspaces)}
-              </select>
-              <div className="task-card-header">
-                <button
-                  className="ghost-button"
-                  disabled={busyChatId === chatGroup.chatId}
-                  onClick={() => {
-                    void handleSaveChatWorkspace(chatGroup.chatId);
-                  }}
-                  type="button"
-                >
-                  {busyChatId === chatGroup.chatId
-                    ? "Saving..."
-                    : "Save chat workspace"}
-                </button>
-                <button
-                  className="ghost-button"
-                  disabled={busyChatId === chatGroup.chatId}
-                  onClick={() => {
-                    void handleContinueChat(chatGroup.chatId);
-                  }}
-                  type="button"
-                >
-                  Продолжить чат
-                </button>
-              </div>
+            return (
+              <article className="task-card" key={chatGroup.chatId}>
+                <div className="task-card-header">
+                  <strong>Chat {chatGroup.chatId}</strong>
+                  <span className="task-status">
+                    {chatGroup.tasks.length} task{chatGroup.tasks.length === 1 ? "" : "s"}
+                  </span>
+                </div>
 
-              <div className="task-list">
-                {chatGroup.tasks.map((task) => (
-                  <article className="task-card" key={task.task_id}>
-                    <div className="task-card-header">
-                      <strong>{task.task_id}</strong>
-                      <span className="task-status">{formatTaskStatus(task.status)}</span>
-                    </div>
-                    <p>{task.intent}</p>
-                    {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
-                    {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
-                    {buildTaskArtifactDataUrl(task) !== null ? (
-                      <figure>
-                        <img
-                          alt={task.artifactFileName ?? "remote-task-artifact"}
-                          src={buildTaskArtifactDataUrl(task) ?? undefined}
-                        />
-                        {task.artifactFileName ? (
-                          <figcaption className="muted-text">{task.artifactFileName}</figcaption>
-                        ) : null}
-                      </figure>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            </article>
-          ))}
+                <label className="section-label" htmlFor={`telegram-chat-workspace-${chatGroup.chatId}`}>
+                  Workspace for chat {chatGroup.chatId}
+                </label>
+                <select
+                  className="quick-input"
+                  id={`telegram-chat-workspace-${chatGroup.chatId}`}
+                  onChange={(event) =>
+                    setSelectedWorkspaceIds((currentSelectedWorkspaceIds) => ({
+                      ...currentSelectedWorkspaceIds,
+                      [chatKey]: event.target.value
+                    }))
+                  }
+                  value={
+                    selectedWorkspaceIds[chatKey] ||
+                    codexConfigState.chatBindings[chatKey] ||
+                    codexConfigState.defaultWorkspaceId
+                  }
+                >
+                  {renderWorkspaceOptions(codexConfigState.workspaces)}
+                </select>
+                <div className="task-card-header">
+                  <button
+                    aria-busy={busyChatId === chatGroup.chatId}
+                    className={buildButtonClass(busyChatId === chatGroup.chatId, workspaceFeedback !== null)}
+                    disabled={busyChatId === chatGroup.chatId}
+                    onClick={() => {
+                      void handleSaveChatWorkspace(chatGroup.chatId);
+                    }}
+                    type="button"
+                  >
+                    {busyChatId === chatGroup.chatId ? "Saving..." : "Save chat workspace"}
+                  </button>
+                  <button
+                    aria-busy={busyChatId === chatGroup.chatId}
+                    className={buildButtonClass(busyChatId === chatGroup.chatId, continueFeedback !== null)}
+                    disabled={busyChatId === chatGroup.chatId}
+                    onClick={() => {
+                      void handleContinueChat(chatGroup.chatId);
+                    }}
+                    type="button"
+                  >
+                    Продолжить чат
+                  </button>
+                </div>
+                {workspaceFeedback !== null ? <p className="task-success status-feedback">{workspaceFeedback}</p> : null}
+                {continueFeedback !== null ? <p className="task-success status-feedback">{continueFeedback}</p> : null}
+
+                <div className="task-list">
+                  {chatGroup.tasks.map((task) => (
+                    <article className="task-card" key={task.task_id}>
+                      <div className="task-card-header">
+                        <strong>{task.task_id}</strong>
+                        <span className="task-status">{formatTaskStatus(task.status)}</span>
+                      </div>
+                      <p>{task.intent}</p>
+                      {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
+                      {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
+                      {buildTaskArtifactDataUrl(task) !== null ? (
+                        <figure>
+                          <img
+                            alt={task.artifactFileName ?? "remote-task-artifact"}
+                            src={buildTaskArtifactDataUrl(task) ?? undefined}
+                          />
+                          {task.artifactFileName ? (
+                            <figcaption className="muted-text">{task.artifactFileName}</figcaption>
+                          ) : null}
+                        </figure>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : null}
     </div>
