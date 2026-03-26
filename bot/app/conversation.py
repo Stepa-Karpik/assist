@@ -27,11 +27,19 @@ class SupportsTaskWorkflow(Protocol):
     ) -> TaskWorkflowResult: ...
 
     def submit_auth_input(
-        self, telegram_user_id: int, chat_id: int, value: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
 
     def submit_decision(
-        self, telegram_user_id: int, chat_id: int, decision: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        decision: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
 
 
@@ -50,6 +58,7 @@ class BotReply:
 @dataclass(frozen=True, slots=True)
 class PendingState:
     kind: PendingStateKind
+    challenge_id: str | None = None
 
 
 class BotConversationStore:
@@ -62,13 +71,20 @@ class BotConversationStore:
     def clear(self, chat_id: int) -> None:
         self._chat_state.pop(chat_id, None)
 
-    def set_pending_auth(self, *, chat_id: int, step: Literal["password", "totp"]) -> None:
+    def set_pending_auth(
+        self,
+        *,
+        chat_id: int,
+        step: Literal["password", "totp"],
+        challenge_id: str | None = None,
+    ) -> None:
         self._chat_state[chat_id] = PendingState(
-            kind="auth_password" if step == "password" else "auth_totp"
+            kind="auth_password" if step == "password" else "auth_totp",
+            challenge_id=challenge_id,
         )
 
-    def set_pending_confirm(self, *, chat_id: int) -> None:
-        self._chat_state[chat_id] = PendingState(kind="confirm")
+    def set_pending_confirm(self, *, chat_id: int, challenge_id: str | None = None) -> None:
+        self._chat_state[chat_id] = PendingState(kind="confirm", challenge_id=challenge_id)
 
     def set_pending_screenshot_choice(self, *, chat_id: int) -> None:
         self._chat_state[chat_id] = PendingState(kind="screenshot_scope")
@@ -79,10 +95,14 @@ SCREENSHOT_BUTTONS = (
     BotButton(text="Экран 2", callback_data="screenshot:screen-2"),
     BotButton(text="Оба", callback_data="screenshot:both"),
 )
-DECISION_BUTTONS = (
-    BotButton(text="Подтвердить", callback_data="decision:confirm"),
-    BotButton(text="Отклонить", callback_data="decision:decline"),
-)
+
+
+def build_decision_buttons(challenge_id: str | None) -> tuple[BotButton, ...]:
+    prefix = f"decision:{challenge_id}:" if challenge_id else "decision:"
+    return (
+        BotButton(text="Подтвердить", callback_data=f"{prefix}confirm"),
+        BotButton(text="Отклонить", callback_data=f"{prefix}decline"),
+    )
 
 
 def _reply_from_workflow_result(
@@ -102,27 +122,35 @@ def _reply_from_workflow_result(
         return BotReply(text=get_auth_success_text(device_online=result.device_online))
 
     if result.status == "awaiting_auth" and result.challenge_step == "password":
-        store.set_pending_auth(chat_id=chat_id, step="password")
+        store.set_pending_auth(
+            chat_id=chat_id, step="password", challenge_id=result.challenge_id
+        )
         return BotReply(text=get_auth_password_prompt_text())
 
     if result.status == "awaiting_auth" and result.challenge_step == "confirm":
-        store.set_pending_confirm(chat_id=chat_id)
-        return BotReply(text=get_confirm_prompt_text(), buttons=DECISION_BUTTONS)
+        store.set_pending_confirm(chat_id=chat_id, challenge_id=result.challenge_id)
+        return BotReply(
+            text=get_confirm_prompt_text(),
+            buttons=build_decision_buttons(result.challenge_id),
+        )
 
     if result.status == "totp_required":
-        store.set_pending_auth(chat_id=chat_id, step="totp")
+        store.set_pending_auth(chat_id=chat_id, step="totp", challenge_id=result.challenge_id)
         return BotReply(text="Пароль принят. Введите код из приложения-аутентификатора.")
 
     if result.status == "confirm_required":
-        store.set_pending_confirm(chat_id=chat_id)
-        return BotReply(text=get_confirm_prompt_text(), buttons=DECISION_BUTTONS)
+        store.set_pending_confirm(chat_id=chat_id, challenge_id=result.challenge_id)
+        return BotReply(
+            text=get_confirm_prompt_text(),
+            buttons=build_decision_buttons(result.challenge_id),
+        )
 
     if result.status == "invalid_password":
-        store.set_pending_auth(chat_id=chat_id, step="password")
+        store.set_pending_auth(chat_id=chat_id, step="password", challenge_id=result.challenge_id)
         return BotReply(text=get_invalid_password_text())
 
     if result.status == "invalid_totp":
-        store.set_pending_auth(chat_id=chat_id, step="totp")
+        store.set_pending_auth(chat_id=chat_id, step="totp", challenge_id=result.challenge_id)
         return BotReply(text=get_invalid_totp_text())
 
     if result.status == "declined":
@@ -184,7 +212,12 @@ def process_text_message(
     current_state = store.get(chat_id)
 
     if current_state is not None and current_state.kind in {"auth_password", "auth_totp"}:
-        result = task_client.submit_auth_input(telegram_user_id, chat_id, text.strip())
+        result = task_client.submit_auth_input(
+            telegram_user_id,
+            chat_id,
+            text.strip(),
+            challenge_id=current_state.challenge_id,
+        )
         return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
 
     resolution = resolver.resolve(text)
@@ -251,12 +284,33 @@ def process_callback_query(
         if current_state is None or current_state.kind != "confirm":
             return BotReply(text="Подтверждение уже неактуально. Отправьте задачу заново.")
 
-        decision = callback_data.split(":", 1)[1]
+        parts = callback_data.split(":")
+        challenge_id: str | None = None
+
+        if len(parts) == 2:
+            _, decision = parts
+            challenge_id = current_state.challenge_id
+        elif len(parts) == 3:
+            _, challenge_id, decision = parts
+        else:
+            return BotReply(text="Не удалось понять выбранное действие.")
 
         if decision not in {"confirm", "decline"}:
             return BotReply(text="Не удалось понять выбранное действие.")
 
-        result = task_client.submit_decision(telegram_user_id, chat_id, decision)
+        if (
+            current_state.challenge_id is not None
+            and challenge_id is not None
+            and current_state.challenge_id != challenge_id
+        ):
+            return BotReply(text="Подтверждение уже неактуально. Отправьте задачу заново.")
+
+        result = task_client.submit_decision(
+            telegram_user_id,
+            chat_id,
+            decision,
+            challenge_id=challenge_id,
+        )
         return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
 
     return None

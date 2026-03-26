@@ -15,6 +15,7 @@ FILE_EXTENSION_PATTERN = re.compile(
     r"\b[\w.\-]+\.(?:pptx?|pdf|docx?|xlsx?|txt|md|png|jpe?g|gif|zip)\b",
     re.IGNORECASE,
 )
+NUMERIC_CODE_PATTERN = re.compile(r"^\d{4,8}$")
 
 STOP_WORDS = {
     "скинь",
@@ -72,7 +73,7 @@ def extract_file_query(text: str) -> str:
     exact_file_match = FILE_EXTENSION_PATTERN.search(text)
 
     if exact_file_match is not None:
-      return exact_file_match.group(0)
+        return exact_file_match.group(0)
 
     tokens = [
         token
@@ -99,35 +100,41 @@ class RuleBasedIntentResolver:
         if not normalized or normalized.startswith("/"):
             return IntentResolution(kind="ignored")
 
+        if NUMERIC_CODE_PATTERN.fullmatch(normalized):
+            return IntentResolution(kind="ignored")
+
         lowered = normalized.casefold()
+
+        if self._looks_like_meta_command(normalized, lowered):
+            return IntentResolution(kind="ignored")
 
         if self._looks_like_status(lowered):
             return IntentResolution(kind="task", risk="low", intent="status")
 
         screenshot_resolution = self._resolve_screenshot(normalized, lowered)
-
         if screenshot_resolution is not None:
             return screenshot_resolution
 
         file_resolution = self._resolve_file_request(normalized, lowered)
-
         if file_resolution is not None:
             return file_resolution
 
         read_resolution = self._resolve_read_request(normalized, lowered)
-
         if read_resolution is not None:
             return read_resolution
 
-        list_resolution = self._resolve_list_request(normalized, lowered)
-
+        list_resolution = self._resolve_list_request(lowered)
         if list_resolution is not None:
             return list_resolution
 
         return IntentResolution(kind="task", risk="high", intent=f"codex {normalized}")
 
+    def _looks_like_meta_command(self, normalized: str, lowered: str) -> bool:
+        stripped = lowered.lstrip("-—–").strip()
+        return stripped == "help" or normalized in {"--help", "-help", "—help", "–help"}
+
     def _looks_like_status(self, lowered: str) -> bool:
-        return contains_any(
+        if contains_any(
             lowered,
             {
                 "статус",
@@ -135,8 +142,16 @@ class RuleBasedIntentResolver:
                 "online",
                 "жив",
                 "пинг",
+                "что сейчас с задач",
+                "что с задач",
+                "что по задач",
+                "как там задачи",
+                "как дела у задач",
             },
-        )
+        ):
+            return True
+
+        return "задач" in lowered and "сейчас" in lowered
 
     def _resolve_screenshot(
         self, normalized: str, lowered: str
@@ -224,9 +239,7 @@ class RuleBasedIntentResolver:
             intent=f"read {file_match.group(0)}",
         )
 
-    def _resolve_list_request(
-        self, normalized: str, lowered: str
-    ) -> IntentResolution | None:
+    def _resolve_list_request(self, lowered: str) -> IntentResolution | None:
         if not contains_any(
             lowered,
             {"список", "что в папке", "покажи папку", "list "},
@@ -254,6 +267,9 @@ class DeepSeekIntentResolver:
 
     def resolve(self, text: str) -> IntentResolution:
         fallback = self.fallback_resolver.resolve(text)
+
+        if fallback.kind == "ignored":
+            return fallback
 
         if fallback.kind == "task" and fallback.intent != f"codex {normalize_whitespace(text)}":
             return fallback

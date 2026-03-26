@@ -43,15 +43,23 @@ class FakeTaskClient:
         return self.task_result
 
     def submit_auth_input(
-        self, telegram_user_id: int, chat_id: int, value: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
-        del telegram_user_id, chat_id, value
+        del telegram_user_id, chat_id, value, challenge_id
         return self.auth_result
 
     def submit_decision(
-        self, telegram_user_id: int, chat_id: int, decision: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        decision: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
-        del telegram_user_id, chat_id, decision
+        del telegram_user_id, chat_id, decision, challenge_id
         return self.decision_result
 
     def fetch_task(self, task_id: str) -> TaskStatusResult:

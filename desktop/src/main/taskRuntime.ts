@@ -83,10 +83,17 @@ export async function runTaskSyncCycle({
     }
 
     if (executionResult.ok) {
-      await client.completeTask(task.task_id, {
+      const completeResponse = await client.completeTask(task.task_id, {
         resultText: executionResult.resultText,
         artifact: executionResult.artifact
       });
+
+      if (!completeResponse.ok) {
+        await client.failTask(
+          task.task_id,
+          `Failed to upload task result: ${completeResponse.status}`
+        );
+      }
       continue;
     }
 

@@ -85,6 +85,7 @@ class ChallengeInputRequest(BaseModel):
     device_id: str
     telegram_user_id: int
     chat_id: int
+    challenge_id: str | None = None
     value: str
     wait_seconds: float = 0
 
@@ -102,6 +103,7 @@ class ChallengeDecisionRequest(BaseModel):
     device_id: str
     telegram_user_id: int
     chat_id: int
+    challenge_id: str | None = None
     decision: Literal["confirm", "decline"]
 
 

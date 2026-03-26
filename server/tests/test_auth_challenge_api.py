@@ -234,6 +234,154 @@ def test_high_risk_with_active_trust_window_still_requires_confirm() -> None:
     assert response.json()["task"]["required_auth"] == "password_and_totp"
 
 
+def test_challenge_input_can_target_a_specific_challenge_in_the_same_chat() -> None:
+    trust_telegram_user()
+    client.post(
+        "/api/auth/config/status",
+        json={
+            "device_id": "desktop-local",
+            "password_configured": True,
+            "totp_configured": False,
+        },
+    )
+
+    first_create = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Export the latest log bundle",
+            "source": "telegram",
+            "risk": "medium",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+    second_create = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Send file from desktop",
+            "source": "telegram",
+            "risk": "medium",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+
+    second_challenge_id = second_create.json()["challenge_id"]
+    second_task_id = second_create.json()["task"]["task_id"]
+    first_task_id = first_create.json()["task"]["task_id"]
+
+    input_response = client.post(
+        "/api/challenges/input",
+        json={
+            "device_id": "desktop-local",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+            "challenge_id": second_challenge_id,
+            "value": "secret-password",
+            "wait_seconds": 0,
+        },
+    )
+    event_id = input_response.json()["event_id"]
+
+    resolve_response = client.post(
+        f"/api/auth/events/{event_id}/resolve",
+        json={"accepted": True},
+    )
+    first_task = client.get(f"/api/tasks/{first_task_id}")
+
+    assert input_response.status_code == 202
+    assert input_response.json()["challenge_id"] == second_challenge_id
+    assert resolve_response.status_code == 200
+    assert resolve_response.json()["status"] == "task_queued"
+    assert resolve_response.json()["task"]["task_id"] == second_task_id
+    assert first_task.json()["status"] == "awaiting_auth"
+
+
+def test_challenge_decision_can_target_a_specific_confirm_challenge() -> None:
+    trust_telegram_user()
+    client.post(
+        "/api/auth/config/status",
+        json={
+            "device_id": "desktop-local",
+            "password_configured": True,
+            "totp_configured": True,
+        },
+    )
+
+    medium_create = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Export the latest log bundle",
+            "source": "telegram",
+            "risk": "medium",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+    password_input = client.post(
+        "/api/challenges/input",
+        json={
+            "device_id": "desktop-local",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+            "value": "secret-password",
+            "wait_seconds": 0,
+        },
+    )
+    client.post(
+        f"/api/auth/events/{password_input.json()['event_id']}/resolve",
+        json={"accepted": True},
+    )
+
+    first_high = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Run protected action one",
+            "source": "telegram",
+            "risk": "high",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+    second_high = client.post(
+        "/api/tasks",
+        json={
+            "device_id": "desktop-local",
+            "intent": "Run protected action two",
+            "source": "telegram",
+            "risk": "high",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+        },
+    )
+
+    second_challenge_id = second_high.json()["challenge_id"]
+    second_task_id = second_high.json()["task"]["task_id"]
+    first_task_id = first_high.json()["task"]["task_id"]
+
+    decision_response = client.post(
+        "/api/challenges/decision",
+        json={
+            "device_id": "desktop-local",
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+            "challenge_id": second_challenge_id,
+            "decision": "decline",
+        },
+    )
+    first_task = client.get(f"/api/tasks/{first_task_id}")
+
+    assert medium_create.json()["status"] == "awaiting_auth"
+    assert decision_response.status_code == 200
+    assert decision_response.json()["status"] == "declined"
+    assert decision_response.json()["task"]["task_id"] == second_task_id
+    assert first_task.json()["status"] == "awaiting_auth"
+
+
 def test_repeated_failed_auth_attempts_lock_the_chat_for_three_minutes() -> None:
     trust_telegram_user()
     client.post(

@@ -148,12 +148,24 @@ class InMemoryChallengeStore:
             ]
 
     def create_auth_event(
-        self, device_id: str, telegram_user_id: int, chat_id: int, value: str
+        self,
+        device_id: str,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        *,
+        challenge_id: str | None = None,
     ) -> AuthInputEvent | None:
         with self._lock:
-            challenge = self._get_active_challenge_unlocked(device_id, telegram_user_id, chat_id)
+            challenge = self._get_target_challenge_unlocked(
+                device_id,
+                telegram_user_id,
+                chat_id,
+                challenge_id=challenge_id,
+                allowed_steps={"password", "totp"},
+            )
 
-            if challenge is None or challenge.step not in {"password", "totp"}:
+            if challenge is None:
                 return None
 
             event = AuthInputEvent(
@@ -270,11 +282,19 @@ class InMemoryChallengeStore:
         chat_id: int,
         decision: str,
         task_store: InMemoryTaskStore,
+        *,
+        challenge_id: str | None = None,
     ) -> tuple[str, TaskRecord | None]:
         with self._lock:
-            challenge = self._get_active_challenge_unlocked(device_id, telegram_user_id, chat_id)
+            challenge = self._get_target_challenge_unlocked(
+                device_id,
+                telegram_user_id,
+                chat_id,
+                challenge_id=challenge_id,
+                allowed_steps={"confirm"},
+            )
 
-            if challenge is None or challenge.step != "confirm":
+            if challenge is None:
                 return "ignored", None
 
             task = task_store.get_task(challenge.task_id)
@@ -313,6 +333,43 @@ class InMemoryChallengeStore:
                 return challenge
 
         return None
+
+    def _get_target_challenge_unlocked(
+        self,
+        device_id: str,
+        telegram_user_id: int,
+        chat_id: int,
+        *,
+        challenge_id: str | None,
+        allowed_steps: set[ChallengeStep],
+    ) -> ChallengeRecord | None:
+        if challenge_id is None:
+            challenge = self._get_active_challenge_unlocked(device_id, telegram_user_id, chat_id)
+            if challenge is None or challenge.step not in allowed_steps:
+                return None
+            return challenge
+
+        challenge = self._challenges.get(challenge_id)
+
+        if challenge is None:
+            return None
+
+        if (
+            challenge.device_id != device_id
+            or challenge.telegram_user_id != telegram_user_id
+            or challenge.chat_id != chat_id
+            or challenge.status != "pending"
+        ):
+            return None
+
+        if challenge.expires_at <= self._now():
+            challenge.status = "expired"
+            return None
+
+        if challenge.step not in allowed_steps:
+            return None
+
+        return challenge
 
     def _restore_state(self) -> None:
         if self._state_backend is None:

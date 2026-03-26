@@ -55,7 +55,11 @@ def submit_challenge_input(
     payload: ChallengeInputRequest, request: Request
 ) -> ChallengeInputResponse:
     event = request.app.state.challenge_store.create_auth_event(
-        payload.device_id, payload.telegram_user_id, payload.chat_id, payload.value
+        payload.device_id,
+        payload.telegram_user_id,
+        payload.chat_id,
+        payload.value,
+        challenge_id=payload.challenge_id,
     )
 
     if event is None:
@@ -96,5 +100,6 @@ def submit_challenge_decision(
         payload.chat_id,
         payload.decision,
         request.app.state.task_store,
+        challenge_id=payload.challenge_id,
     )
     return ChallengeDecisionResponse(status=status_value, task=task)

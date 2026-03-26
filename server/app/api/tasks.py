@@ -75,7 +75,7 @@ def create_task(payload: TaskCreateRequest, request: Request) -> TaskIntakeRespo
         return TaskIntakeResponse(
             status="setup_required",
             device_online=device_online,
-            message="Настрой пароль и TOTP в GUI Karpik на ПК.",
+            message="Сначала настрой пароль и TOTP в GUI Karpik на ПК.",
         )
 
     required_auth = get_required_auth(payload.risk)

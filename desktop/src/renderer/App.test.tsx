@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+﻿import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -842,7 +842,7 @@ describe("App navigation", () => {
         .getByRole("navigation", { name: "Primary navigation" })
         .querySelectorAll("button")[2]!
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
 
     expect(retryTask).toHaveBeenCalledWith("task-2");
     await waitFor(() => {
@@ -851,7 +851,7 @@ describe("App navigation", () => {
   });
 
   it("shows local approval previews and allows approving them", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-approval",
         intent: "codex-write update README",
@@ -862,7 +862,7 @@ describe("App navigation", () => {
         telegram_user_id: 101
       }
     ]);
-    getLocalApprovals.mockResolvedValueOnce([
+    getLocalApprovals.mockResolvedValue([
       {
         taskId: "task-approval",
         intent: "codex-write update README",
@@ -879,7 +879,7 @@ describe("App navigation", () => {
 
     expect(await screen.findByText("Updated README")).toBeInTheDocument();
     expect(await screen.findByText("diff preview")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Подтвердить" }));
 
     expect(approveLocalApproval).toHaveBeenCalledWith("task-approval");
   });
@@ -1110,7 +1110,7 @@ describe("App navigation", () => {
         targetChat: {
           chatId: "local-chat-1",
           source: "desktop_chat",
-          title: "РќРѕРІС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚",
+          title: "Новый локальный чат",
           createdAt: "2026-03-24T12:30:00.000Z",
           updatedAt: "2026-03-24T12:30:00.000Z",
           messageCount: 0,
@@ -1124,7 +1124,7 @@ describe("App navigation", () => {
           {
             chatId: "local-chat-1",
             source: "desktop_chat",
-            title: "Р СњР С•Р Р†РЎвЂ№Р в„– Р В»Р С•Р С”Р В°Р В»РЎРЉР Р…РЎвЂ№Р в„– РЎвЂЎР В°РЎвЂљ",
+            title: "Новый локальный чат",
             createdAt: "2026-03-24T12:30:00.000Z",
             updatedAt: "2026-03-24T12:30:00.000Z",
             messageCount: 0,

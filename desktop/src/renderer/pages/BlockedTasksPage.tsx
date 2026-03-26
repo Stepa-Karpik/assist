@@ -36,9 +36,7 @@ export function BlockedTasksPage() {
     ]);
 
     setTasks(snapshot.filter(requiresAttention));
-    setLocalApprovals(
-      Object.fromEntries(approvals.map((approval) => [approval.taskId, approval]))
-    );
+    setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
     setIsLoading(false);
   }
 
@@ -56,9 +54,7 @@ export function BlockedTasksPage() {
       }
 
       setTasks(snapshot.filter(requiresAttention));
-      setLocalApprovals(
-        Object.fromEntries(approvals.map((approval) => [approval.taskId, approval]))
-      );
+      setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
       setIsLoading(false);
     }
 
@@ -75,7 +71,7 @@ export function BlockedTasksPage() {
 
   async function handleApprove(taskId: string) {
     if (!window.karpik?.approveLocalApproval) {
-      setActionError("Local approval API is unavailable.");
+      setActionError("API локального подтверждения недоступен.");
       return;
     }
 
@@ -86,7 +82,7 @@ export function BlockedTasksPage() {
       await window.karpik.approveLocalApproval(taskId);
       await refreshBlockedTasks();
     } catch {
-      setActionError("Failed to approve the local preview.");
+      setActionError("Не удалось подтвердить локальный preview.");
     } finally {
       setBusyTaskId(null);
     }
@@ -94,7 +90,7 @@ export function BlockedTasksPage() {
 
   async function handleReject(taskId: string) {
     if (!window.karpik?.rejectLocalApproval) {
-      setActionError("Local approval API is unavailable.");
+      setActionError("API локального подтверждения недоступен.");
       return;
     }
 
@@ -105,7 +101,7 @@ export function BlockedTasksPage() {
       await window.karpik.rejectLocalApproval(taskId);
       await refreshBlockedTasks();
     } catch {
-      setActionError("Failed to reject the local preview.");
+      setActionError("Не удалось отклонить локальный preview.");
     } finally {
       setBusyTaskId(null);
     }
@@ -113,7 +109,7 @@ export function BlockedTasksPage() {
 
   async function handleRetry(taskId: string) {
     if (!window.karpik?.retryTask) {
-      setActionError("Task retry API is unavailable.");
+      setActionError("API повтора задачи недоступен.");
       return;
     }
 
@@ -124,7 +120,7 @@ export function BlockedTasksPage() {
       await window.karpik.retryTask(taskId);
       await refreshBlockedTasks();
     } catch {
-      setActionError("Failed to retry the task.");
+      setActionError("Не удалось повторить задачу.");
     } finally {
       setBusyTaskId(null);
     }
@@ -133,15 +129,20 @@ export function BlockedTasksPage() {
   return (
     <div className="page-shell">
       <p className="eyebrow">Невыполненное</p>
-      <h2>Blocked and Local-Approval Tasks</h2>
+      <h2>Заблокированные задачи и локальное подтверждение</h2>
       <p className="muted-text">
-        Здесь собраны задачи, которые остановились на auth, были заблокированы или завершились ошибкой.
+        Здесь собраны задачи, которые остановились на авторизации, были заблокированы
+        или завершились ошибкой.
       </p>
 
-      {isLoading ? <p className="muted-text">Загружаем задачи, требующие внимания...</p> : null}
+      {isLoading ? (
+        <p className="muted-text">Загружаем задачи, требующие внимания...</p>
+      ) : null}
 
       {!isLoading && tasks.length === 0 ? (
-        <p className="muted-text">Сейчас нет заблокированных или требующих внимания задач.</p>
+        <p className="muted-text">
+          Сейчас нет заблокированных или требующих внимания задач.
+        </p>
       ) : null}
 
       {actionError !== null ? <p className="task-error">{actionError}</p> : null}
@@ -173,7 +174,7 @@ export function BlockedTasksPage() {
                 <>
                   <p className="task-result">{localApprovals[task.task_id].summaryText}</p>
                   <p className="muted-text">
-                    Files: {localApprovals[task.task_id].changedFiles.join(", ")}
+                    Файлы: {localApprovals[task.task_id].changedFiles.join(", ")}
                   </p>
                   <pre className="task-result">{localApprovals[task.task_id].previewText}</pre>
                   <div className="task-card-header">
@@ -185,7 +186,7 @@ export function BlockedTasksPage() {
                       }}
                       type="button"
                     >
-                      Approve
+                      Подтвердить
                     </button>
                     <button
                       className="ghost-button"
@@ -195,7 +196,7 @@ export function BlockedTasksPage() {
                       }}
                       type="button"
                     >
-                      Reject
+                      Отклонить
                     </button>
                   </div>
                 </>
@@ -210,7 +211,7 @@ export function BlockedTasksPage() {
                     }}
                     type="button"
                   >
-                    Retry
+                    Повторить
                   </button>
                 </div>
               ) : null}

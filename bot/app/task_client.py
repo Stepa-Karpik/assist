@@ -13,6 +13,7 @@ TaskWorkflowStatus = Literal[
     "setup_required",
     "locked",
     "ignored",
+    "pending",
     "task_queued",
     "totp_required",
     "confirm_required",
@@ -35,6 +36,7 @@ TaskLifecycleStatus = Literal[
 @dataclass(frozen=True, slots=True)
 class TaskWorkflowResult:
     status: TaskWorkflowStatus
+    challenge_id: str | None = None
     challenge_step: str | None = None
     message: str | None = None
     task_id: str | None = None
@@ -56,6 +58,8 @@ def normalize_workflow_result(value: object) -> TaskWorkflowStatus:
         "awaiting_auth",
         "setup_required",
         "locked",
+        "ignored",
+        "pending",
         "task_queued",
         "totp_required",
         "confirm_required",
@@ -107,8 +111,13 @@ def parse_workflow_result(body: str) -> TaskWorkflowResult:
 
     return TaskWorkflowResult(
         status=normalize_workflow_result(parsed.get("status")),
-        challenge_step=parsed.get("challenge_step"),
-        message=parsed.get("message"),
+        challenge_id=parsed.get("challenge_id")
+        if isinstance(parsed.get("challenge_id"), str)
+        else None,
+        challenge_step=parsed.get("challenge_step")
+        if isinstance(parsed.get("challenge_step"), str)
+        else None,
+        message=parsed.get("message") if isinstance(parsed.get("message"), str) else None,
         task_id=extract_task_id(parsed),
         device_online=parsed.get("device_online")
         if isinstance(parsed.get("device_online"), bool)
@@ -158,26 +167,42 @@ class TaskServerClient:
         return self._post("/api/tasks", payload)
 
     def submit_auth_input(
-        self, telegram_user_id: int, chat_id: int, value: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
-        payload = {
+        payload: dict[str, object] = {
             "device_id": self.device_id,
             "telegram_user_id": telegram_user_id,
             "chat_id": chat_id,
             "value": value,
             "wait_seconds": self.wait_seconds,
         }
+
+        if challenge_id is not None:
+            payload["challenge_id"] = challenge_id
+
         return self._post("/api/challenges/input", payload)
 
     def submit_decision(
-        self, telegram_user_id: int, chat_id: int, decision: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        decision: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
-        payload = {
+        payload: dict[str, object] = {
             "device_id": self.device_id,
             "telegram_user_id": telegram_user_id,
             "chat_id": chat_id,
             "decision": decision,
         }
+
+        if challenge_id is not None:
+            payload["challenge_id"] = challenge_id
+
         return self._post("/api/challenges/decision", payload)
 
     def fetch_task(self, task_id: str) -> TaskStatusResult:

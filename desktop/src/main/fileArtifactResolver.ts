@@ -75,13 +75,13 @@ function transliterate(value: string): string {
 }
 
 function normalizeToken(value: string): string {
-  return transliterate(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
+  return transliterate(value).toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function levenshtein(left: string, right: string): number {
-  const rows = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
+  const rows = Array.from({ length: left.length + 1 }, () =>
+    new Array<number>(right.length + 1).fill(0)
+  );
 
   for (let index = 0; index <= left.length; index += 1) {
     rows[index][0] = index;
@@ -145,8 +145,7 @@ function parseQuery(value: string) {
   const loweredQuery = rawQuery.toLowerCase();
   const exactFileName = path.basename(rawQuery).trim().toLowerCase();
   const prefersPresentation =
-    loweredQuery.includes("presentation") ||
-    loweredQuery.includes("презентац");
+    loweredQuery.includes("presentation") || loweredQuery.includes("презентац");
   const tokens = rawQuery
     .split(/[\s._-]+/)
     .map((token) => token.trim())

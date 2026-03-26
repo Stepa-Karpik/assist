@@ -49,34 +49,44 @@ class FakeTaskClient:
         return self.task_result
 
     def submit_auth_input(
-        self, telegram_user_id: int, chat_id: int, value: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
         self.auth_calls.append(
             {
                 "telegram_user_id": telegram_user_id,
                 "chat_id": chat_id,
                 "value": value,
+                "challenge_id": challenge_id,
             }
         )
         return self.auth_result
 
     def submit_decision(
-        self, telegram_user_id: int, chat_id: int, decision: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        decision: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
         self.decision_calls.append(
             {
                 "telegram_user_id": telegram_user_id,
                 "chat_id": chat_id,
                 "decision": decision,
+                "challenge_id": challenge_id,
             }
         )
         return self.decision_result
 
     def fetch_task(self, task_id: str) -> TaskStatusResult:
-        raise AssertionError("fetch_task is not used in this test")
+        raise AssertionError(f"fetch_task is not used in this test: {task_id}")
 
     def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
-        raise AssertionError("fetch_latest_task is not used in this test")
+        raise AssertionError(f"fetch_latest_task is not used in this test: {chat_id}")
 
 
 def test_ambiguous_screenshot_message_returns_inline_screen_buttons() -> None:
@@ -135,12 +145,15 @@ def test_screenshot_callback_creates_task_for_selected_screen() -> None:
     assert reply == BotReply(text="Задача task-7 поставлена в очередь.")
 
 
-def test_password_and_totp_can_be_sent_as_plain_messages() -> None:
+def test_password_message_is_bound_to_the_current_challenge() -> None:
     store = BotConversationStore()
+    store.set_pending_auth(chat_id=5001, step="password", challenge_id="challenge-1")
     client = FakeTaskClient(
-        auth_result=TaskWorkflowResult(status="totp_required")
+        auth_result=TaskWorkflowResult(
+            status="totp_required",
+            challenge_id="challenge-1",
+        )
     )
-    store.set_pending_auth(chat_id=5001, step="password")
 
     reply = process_text_message(
         "secret-password",
@@ -156,17 +169,23 @@ def test_password_and_totp_can_be_sent_as_plain_messages() -> None:
             "telegram_user_id": 42,
             "chat_id": 5001,
             "value": "secret-password",
+            "challenge_id": "challenge-1",
         }
     ]
-    assert reply == BotReply(text="Пароль принят. Введите код из приложения-аутентификатора.")
-
-
-def test_confirm_stage_returns_inline_buttons_instead_of_command_text() -> None:
-    store = BotConversationStore()
-    client = FakeTaskClient(
-        auth_result=TaskWorkflowResult(status="confirm_required")
+    assert reply == BotReply(
+        text="Пароль принят. Введите код из приложения-аутентификатора."
     )
-    store.set_pending_auth(chat_id=5001, step="totp")
+
+
+def test_confirm_stage_returns_inline_buttons_with_challenge_id() -> None:
+    store = BotConversationStore()
+    store.set_pending_auth(chat_id=5001, step="totp", challenge_id="challenge-2")
+    client = FakeTaskClient(
+        auth_result=TaskWorkflowResult(
+            status="confirm_required",
+            challenge_id="challenge-2",
+        )
+    )
 
     reply = process_text_message(
         "123456",
@@ -177,24 +196,32 @@ def test_confirm_stage_returns_inline_buttons_instead_of_command_text() -> None:
         resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
     )
 
+    assert client.auth_calls == [
+        {
+            "telegram_user_id": 42,
+            "chat_id": 5001,
+            "value": "123456",
+            "challenge_id": "challenge-2",
+        }
+    ]
     assert reply == BotReply(
         text="Код TOTP принят. Подтвердить выполнение задачи?",
         buttons=(
-            BotButton(text="Подтвердить", callback_data="decision:confirm"),
-            BotButton(text="Отклонить", callback_data="decision:decline"),
+            BotButton(text="Подтвердить", callback_data="decision:challenge-2:confirm"),
+            BotButton(text="Отклонить", callback_data="decision:challenge-2:decline"),
         ),
     )
 
 
-def test_confirm_callback_submits_decision() -> None:
+def test_confirm_callback_submits_decision_for_matching_challenge() -> None:
     store = BotConversationStore()
-    store.set_pending_confirm(chat_id=5001)
+    store.set_pending_confirm(chat_id=5001, challenge_id="challenge-2")
     client = FakeTaskClient(
         decision_result=TaskWorkflowResult(status="task_queued", task_id="task-9")
     )
 
     reply = process_callback_query(
-        "decision:confirm",
+        "decision:challenge-2:confirm",
         telegram_user_id=42,
         chat_id=5001,
         task_client=client,
@@ -206,6 +233,7 @@ def test_confirm_callback_submits_decision() -> None:
             "telegram_user_id": 42,
             "chat_id": 5001,
             "decision": "confirm",
+            "challenge_id": "challenge-2",
         }
     ]
     assert reply == BotReply(text="Задача task-9 поставлена в очередь.")

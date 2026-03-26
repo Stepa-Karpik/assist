@@ -60,7 +60,7 @@ def test_render_delivery_text_for_failed_task() -> None:
     assert "File not found." in text
 
 
-def test_delivery_cycle_sends_and_acks_pending_events() -> None:
+def test_delivery_cycle_sends_plain_messages_and_acks_them() -> None:
     event = DeliveryEvent(
         event_id="evt-3",
         device_id="desktop-local",
@@ -83,36 +83,46 @@ def test_delivery_cycle_sends_and_acks_pending_events() -> None:
     deliver_outbox_cycle(client=client, send_message=sender)
 
     assert client.fetch_calls == 1
-    assert sent_messages == [(5001, render_delivery_text(event))]
     assert client.ack_calls == ["evt-3"]
+    assert sent_messages == [(5001, render_delivery_text(event))]
 
 
-def test_delivery_cycle_skips_ack_when_send_fails() -> None:
+def test_delivery_cycle_prefers_photo_sender_for_image_artifacts() -> None:
     event = DeliveryEvent(
         event_id="evt-4",
         device_id="desktop-local",
         task_id="task-4",
         chat_id=5001,
         telegram_user_id=101,
-        kind="task_failed",
-        intent="read docs/missing.txt",
-        result_text=None,
-        error_text="File not found.",
+        kind="task_done",
+        intent="screenshot screen-1",
+        result_text="Screenshot captured.",
+        error_text=None,
         status="pending",
         created_at="2026-03-24T12:00:00Z",
+        artifact_kind="image_base64",
+        artifact_mime_type="image/png",
+        artifact_file_name="screen-1.png",
+        artifact_base64="ZmFrZQ==",
     )
     client = FakeDeliveryClient(events=[event])
+    sent_messages: list[tuple[int, str]] = []
+    sent_photos: list[tuple[int, str, DeliveryEvent]] = []
 
-    def sender(_chat_id: int, _text: str) -> None:
-        raise RuntimeError("Telegram unavailable")
+    def send_message(chat_id: int, text: str) -> None:
+        sent_messages.append((chat_id, text))
 
-    deliver_outbox_cycle(client=client, send_message=sender)
+    def send_photo(chat_id: int, text: str, delivery_event: DeliveryEvent) -> None:
+        sent_photos.append((chat_id, text, delivery_event))
 
-    assert client.fetch_calls == 1
-    assert client.ack_calls == []
+    deliver_outbox_cycle(client=client, send_message=send_message, send_photo=send_photo)
+
+    assert sent_messages == []
+    assert sent_photos == [(5001, render_delivery_text(event), event)]
+    assert client.ack_calls == ["evt-4"]
 
 
-def test_delivery_cycle_sends_photo_for_image_artifacts() -> None:
+def test_delivery_cycle_prefers_document_sender_for_file_artifacts() -> None:
     event = DeliveryEvent(
         event_id="evt-5",
         device_id="desktop-local",
@@ -120,59 +130,26 @@ def test_delivery_cycle_sends_photo_for_image_artifacts() -> None:
         chat_id=5001,
         telegram_user_id=101,
         kind="task_done",
-        intent="screenshot",
-        result_text="Screenshot captured.",
-        error_text=None,
-        status="pending",
-        created_at="2026-03-24T12:00:00Z",
-        artifact_kind="image_base64",
-        artifact_mime_type="image/png",
-        artifact_file_name="screen.png",
-        artifact_base64="c2NyZWVuc2hvdA==",
-    )
-    client = FakeDeliveryClient(events=[event])
-    sent_photos: list[tuple[int, str, DeliveryEvent]] = []
-
-    def send_message(_chat_id: int, _text: str) -> None:
-        raise AssertionError("text sender should not be used for image artifacts")
-
-    def send_photo(chat_id: int, caption: str, delivery_event: DeliveryEvent) -> None:
-        sent_photos.append((chat_id, caption, delivery_event))
-
-    deliver_outbox_cycle(client=client, send_message=send_message, send_photo=send_photo)
-
-    assert sent_photos == [(5001, render_delivery_text(event), event)]
-    assert client.ack_calls == ["evt-5"]
-
-
-def test_delivery_cycle_sends_document_for_file_artifacts() -> None:
-    event = DeliveryEvent(
-        event_id="evt-6",
-        device_id="desktop-local",
-        task_id="task-6",
-        chat_id=5001,
-        telegram_user_id=101,
-        kind="task_done",
         intent="send-file desktop::hack.pptx",
-        result_text="Prepared file: hack.pptx",
+        result_text="Файл найден.",
         error_text=None,
         status="pending",
         created_at="2026-03-24T12:00:00Z",
         artifact_kind="file_base64",
         artifact_mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         artifact_file_name="hack.pptx",
-        artifact_base64="c2xpZGVz",
+        artifact_base64="ZmFrZQ==",
     )
     client = FakeDeliveryClient(events=[event])
     sent_documents: list[tuple[int, str, DeliveryEvent]] = []
 
     def send_message(_chat_id: int, _text: str) -> None:
-        raise AssertionError("text sender should not be used for file artifacts")
+        raise AssertionError("plain sender should not be used for file artifacts")
 
-    def send_document(chat_id: int, caption: str, delivery_event: DeliveryEvent) -> None:
-        sent_documents.append((chat_id, caption, delivery_event))
+    def send_document(chat_id: int, text: str, delivery_event: DeliveryEvent) -> None:
+        sent_documents.append((chat_id, text, delivery_event))
 
     deliver_outbox_cycle(client=client, send_message=send_message, send_document=send_document)
 
     assert sent_documents == [(5001, render_delivery_text(event), event)]
-    assert client.ack_calls == ["evt-6"]
+    assert client.ack_calls == ["evt-5"]

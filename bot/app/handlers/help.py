@@ -20,7 +20,7 @@ def get_help_text() -> str:
             "/task high codex-write <prompt>",
             "/status [task_id]",
             "",
-            "Пароль и TOTP теперь вводятся обычными сообщениями, а подтверждение приходит inline-кнопками.",
+            "Пароль и TOTP вводятся обычными сообщениями, а подтверждение приходит inline-кнопками.",
             "Codex и codex-write всегда идут через high-risk auth flow.",
         ]
     )

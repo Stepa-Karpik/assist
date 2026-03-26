@@ -18,11 +18,19 @@ class SupportsTaskWorkflow(Protocol):
     ) -> TaskWorkflowResult: ...
 
     def submit_auth_input(
-        self, telegram_user_id: int, chat_id: int, value: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        value: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
 
     def submit_decision(
-        self, telegram_user_id: int, chat_id: int, decision: str
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        decision: str,
+        challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
 
     def fetch_task(self, task_id: str) -> TaskStatusResult: ...
@@ -32,10 +40,8 @@ class SupportsTaskWorkflow(Protocol):
 
 def parse_task_command(text: str) -> tuple[str, str] | None:
     match = TASK_COMMAND_PATTERN.fullmatch(text.strip())
-
     if match is None:
         return None
-
     return match.group(1), match.group(2)
 
 
@@ -46,7 +52,6 @@ def parse_auth_command(text: str) -> str | None:
 
 def parse_status_command(text: str) -> str | None:
     match = STATUS_COMMAND_PATTERN.fullmatch(text.strip())
-
     if match is None:
         return None
 

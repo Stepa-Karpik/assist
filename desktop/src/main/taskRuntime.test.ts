@@ -258,4 +258,85 @@ describe("runTaskSyncCycle", () => {
     expect(blockTask).not.toHaveBeenCalled();
     expect(snapshot[0].status).toBe("awaiting_local_approval");
   });
+
+  it("fails the task when result upload is rejected by the server", async () => {
+    const fetchTaskHistory = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [{ task_id: "task-4", intent: "send-file desktop::hack.pptx", status: "queued" }]
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [
+            {
+              task_id: "task-4",
+              intent: "send-file desktop::hack.pptx",
+              status: "failed",
+              error_text: "Failed to upload task result: 413"
+            }
+          ]
+        })
+      );
+    const fetchQueuedTasks = vi.fn(async () =>
+      jsonResponse({
+        items: [{ task_id: "task-4", intent: "send-file desktop::hack.pptx", status: "queued" }]
+      })
+    );
+    const startTask = vi.fn(async () =>
+      jsonResponse({
+        task_id: "task-4",
+        intent: "send-file desktop::hack.pptx",
+        status: "running"
+      })
+    );
+    const completeTask = vi.fn(async () => new Response("too large", { status: 413 }));
+    const failTask = vi.fn(async () =>
+      jsonResponse({
+        task_id: "task-4",
+        intent: "send-file desktop::hack.pptx",
+        status: "failed"
+      })
+    );
+    const awaitLocalApproval = vi.fn();
+    const blockTask = vi.fn();
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      resultText: "Sending file...",
+      artifact: {
+        kind: "file_base64" as const,
+        fileName: "hack.pptx",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        contentBase64: "ZmFrZQ=="
+      }
+    }));
+
+    const snapshot = await runTaskSyncCycle({
+      client: {
+        fetchTaskHistory,
+        fetchQueuedTasks,
+        startTask,
+        awaitLocalApproval,
+        blockTask,
+        completeTask,
+        failTask
+      },
+      executeTask
+    });
+
+    expect(completeTask).toHaveBeenCalledWith("task-4", {
+      resultText: "Sending file...",
+      artifact: {
+        kind: "file_base64",
+        fileName: "hack.pptx",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        contentBase64: "ZmFrZQ=="
+      }
+    });
+    expect(failTask).toHaveBeenCalledWith("task-4", "Failed to upload task result: 413");
+    expect(snapshot[0].status).toBe("failed");
+  });
 });
