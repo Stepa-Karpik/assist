@@ -74,6 +74,8 @@ const authPollIntervalMs = 2_000;
 const deviceHeartbeatIntervalMs = 15_000;
 const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
+const backgroundTaskSnapshotLimit = 25;
+const manualTaskHistoryLimit = 100;
 const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
 const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
 const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
@@ -89,6 +91,54 @@ if (started) {
 
 function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
+}
+
+function shouldPollAuth(snapshot: RemoteTaskRecord[]): boolean {
+  return snapshot.some((task) => task.status === "awaiting_auth");
+}
+
+function isArtifactMetadataComplete(task: RemoteTaskRecord): boolean {
+  return (
+    (task.artifact_kind === "image_base64" || task.artifact_kind === "file_base64") &&
+    task.artifact_mime_type !== null &&
+    task.artifact_mime_type !== undefined &&
+    task.artifact_file_name !== null &&
+    task.artifact_file_name !== undefined
+  );
+}
+
+function canReuseArtifactPayload(previousTask: RemoteTaskRecord | undefined, nextTask: RemoteTaskRecord): boolean {
+  return Boolean(
+    previousTask !== undefined &&
+      previousTask.artifact_kind === nextTask.artifact_kind &&
+      previousTask.artifact_mime_type === nextTask.artifact_mime_type &&
+      previousTask.artifact_file_name === nextTask.artifact_file_name &&
+      previousTask.artifact_base64
+  );
+}
+
+function buildRemoteTaskArtifact(task: RemoteTaskRecord):
+  | {
+      kind: "image_base64" | "file_base64";
+      mimeType: string;
+      fileName: string;
+      contentBase64: string;
+    }
+  | undefined {
+  if (
+    !isArtifactMetadataComplete(task) ||
+    task.artifact_base64 === null ||
+    task.artifact_base64 === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: task.artifact_kind!,
+    mimeType: task.artifact_mime_type!,
+    fileName: task.artifact_file_name!,
+    contentBase64: task.artifact_base64
+  };
 }
 
 function buildRemoteAppCatalogItems(): RemoteAppCatalogItem[] {
@@ -185,6 +235,11 @@ async function pollAuthEvents() {
 }
 
 async function pollPairingEvents() {
+  if (!pairingStore.getState().isActive) {
+    stopPairingPolling();
+    return;
+  }
+
   const response = await syncClient.fetchPairingEvents();
 
   if (!response.ok) {
@@ -219,6 +274,10 @@ async function pollPairingEvents() {
       }
     }
   }
+
+  if (!pairingStore.getState().isActive) {
+    stopPairingPolling();
+  }
 }
 
 async function pollTaskState() {
@@ -240,21 +299,54 @@ async function pollTaskState() {
       },
       runtimeState: taskRuntimeState
     });
-    updateTaskSnapshot(nextSnapshot);
+    updateTaskSnapshot(await hydrateTaskSnapshot(nextSnapshot));
   } finally {
     taskPollInFlight = false;
   }
 }
 
 async function refreshTaskSnapshot() {
-  const response = await syncClient.fetchTaskHistory();
+  const response = await syncClient.fetchTaskHistory({ limit: manualTaskHistoryLimit });
 
   if (!response.ok) {
     throw new Error(`Failed to refresh task snapshot: ${response.status}`);
   }
 
   const payload = (await response.json()) as { items: RemoteTaskRecord[] };
-  updateTaskSnapshot(payload.items);
+  updateTaskSnapshot(await hydrateTaskSnapshot(payload.items));
+}
+
+async function hydrateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): Promise<RemoteTaskRecord[]> {
+  const previousByTaskId = new Map(taskSnapshot.map((task) => [task.task_id, task]));
+
+  return Promise.all(
+    nextSnapshot.map(async (task) => {
+      if (!isArtifactMetadataComplete(task)) {
+        return task;
+      }
+
+      if (task.artifact_base64 !== null && task.artifact_base64 !== undefined) {
+        return task;
+      }
+
+      const previousTask = previousByTaskId.get(task.task_id);
+      if (canReuseArtifactPayload(previousTask, task)) {
+        return {
+          ...task,
+          artifact_base64: previousTask!.artifact_base64
+        };
+      }
+
+      const detailResponse = await syncClient.fetchTask(task.task_id);
+
+      if (!detailResponse.ok) {
+        logResponseError("Fetching task detail", detailResponse);
+        return task;
+      }
+
+      return (await detailResponse.json()) as RemoteTaskRecord;
+    })
+  );
 }
 
 function buildTaskActivityStatus(task: RemoteTaskRecord): "info" | "success" | "warning" | "error" {
@@ -306,21 +398,7 @@ function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
             status: task.status,
             resultText: task.result_text,
             errorText: task.error_text,
-            artifact:
-              (task.artifact_kind === "image_base64" || task.artifact_kind === "file_base64") &&
-              task.artifact_mime_type !== null &&
-              task.artifact_mime_type !== undefined &&
-              task.artifact_file_name !== null &&
-              task.artifact_file_name !== undefined &&
-              task.artifact_base64 !== null &&
-              task.artifact_base64 !== undefined
-                ? {
-                    kind: task.artifact_kind,
-                    mimeType: task.artifact_mime_type,
-                    fileName: task.artifact_file_name,
-                    contentBase64: task.artifact_base64
-                  }
-                : undefined
+            artifact: buildRemoteTaskArtifact(task)
           });
         }
       });
@@ -362,6 +440,12 @@ function updateTaskSnapshot(nextSnapshot: RemoteTaskRecord[]): void {
 
   taskSnapshot = nextSnapshot;
   taskActivityInitialized = true;
+
+  if (shouldPollAuth(nextSnapshot)) {
+    ensureAuthPolling();
+  } else {
+    stopAuthPolling();
+  }
 }
 
 function ensureAuthPolling() {
@@ -381,7 +465,7 @@ function ensureAuthPolling() {
 }
 
 function ensurePairingPolling() {
-  if (pairingPollInterval !== null) {
+  if (pairingPollInterval !== null || !pairingStore.getState().isActive) {
     return;
   }
 
@@ -743,6 +827,7 @@ function registerIpcHandlers() {
       throw new Error(`Failed to open pairing session: ${response.status}`);
     }
 
+    ensurePairingPolling();
     return pairingStore.getState();
   });
 
@@ -864,9 +949,7 @@ async function bootstrap() {
     mainWindow,
     quickPopup
   });
-  ensureAuthPolling();
   ensureDeviceHeartbeatPolling();
-  ensurePairingPolling();
   ensureTaskPolling();
 
   void syncAuthConfigState().catch((error: unknown) => {

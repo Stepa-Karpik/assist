@@ -67,7 +67,13 @@ class InMemoryTaskStore:
         return task
 
     def list_tasks(
-        self, device_id: str, *, include_history: bool = False, chat_id: int | None = None
+        self,
+        device_id: str,
+        *,
+        include_history: bool = False,
+        chat_id: int | None = None,
+        limit: int | None = None,
+        include_artifact_payload: bool = False,
     ) -> list[TaskRecord]:
         items = [
             task
@@ -78,9 +84,16 @@ class InMemoryTaskStore:
         ]
 
         if include_history:
-            return list(reversed(items))
+            snapshot = list(reversed(items))
+            if limit is not None:
+                snapshot = snapshot[:limit]
+        else:
+            snapshot = items
 
-        return items
+        if include_artifact_payload:
+            return snapshot
+
+        return [task.without_artifact_payload() for task in snapshot]
 
     def start_task(self, task_id: str) -> TaskRecord | None:
         task = self.get_task(task_id)

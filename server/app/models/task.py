@@ -62,6 +62,13 @@ class TaskRecord(BaseModel):
     attempt_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    def without_artifact_payload(self) -> "TaskRecord":
+        return self.model_copy(
+            update={
+                "artifact_base64": None
+            }
+        )
+
 
 class TaskIntakeResponse(BaseModel):
     status: TaskIntakeStatus

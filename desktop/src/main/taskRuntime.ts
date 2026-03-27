@@ -4,7 +4,7 @@ import type { TaskExecutionResult } from "./taskExecutor";
 import type { TaskResultArtifact } from "./syncClient";
 
 type TaskSyncClient = {
-  fetchTaskHistory: () => Promise<Response>;
+  fetchTaskSnapshot: () => Promise<Response>;
   fetchQueuedTasks: () => Promise<Response>;
   startTask: (taskId: string) => Promise<Response>;
   awaitLocalApproval: (taskId: string, resultText: string) => Promise<Response>;
@@ -137,7 +137,7 @@ export async function runTaskSyncCycle({
     activeExecutions: new Map()
   }
 }: TaskRuntimeOptions): Promise<RemoteTaskRecord[]> {
-  const initialSnapshot = await readTaskList(await client.fetchTaskHistory());
+  const initialSnapshot = await readTaskList(await client.fetchTaskSnapshot());
 
   for (const task of initialSnapshot) {
     if (task.status !== "cancel_requested") {
@@ -212,5 +212,5 @@ export async function runTaskSyncCycle({
     return initialSnapshot;
   }
 
-  return readTaskList(await client.fetchTaskHistory());
+  return readTaskList(await client.fetchTaskSnapshot());
 }

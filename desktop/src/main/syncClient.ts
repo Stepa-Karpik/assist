@@ -154,6 +154,10 @@ export type TaskListResponse = {
   items: RemoteTaskRecord[];
 };
 
+export type TaskHistoryOptions = {
+  limit?: number;
+};
+
 type FetchLike = typeof fetch;
 
 type SyncClientOptions = {
@@ -177,6 +181,19 @@ export function buildQueuePollPayload(deviceId: string): QueuePollPayload {
   return {
     device_id: deviceId
   };
+}
+
+function buildTaskHistoryParams(deviceId: string, { limit }: TaskHistoryOptions = {}): URLSearchParams {
+  const params = new URLSearchParams({
+    ...buildQueuePollPayload(deviceId),
+    include_history: "true"
+  });
+
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+
+  return params;
 }
 
 export function buildPairingOpenPayload(
@@ -259,12 +276,22 @@ export function createSyncClient({
       });
     },
 
-    fetchTaskHistory() {
-      const params = new URLSearchParams({
-        ...buildQueuePollPayload(deviceId),
-        include_history: "true"
-      });
+    fetchTaskSnapshot(limit = 25) {
+      const params = buildTaskHistoryParams(deviceId, { limit });
       return fetchImpl(`${baseUrl}/api/tasks?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    fetchTaskHistory(options: TaskHistoryOptions = {}) {
+      const params = buildTaskHistoryParams(deviceId, options);
+      return fetchImpl(`${baseUrl}/api/tasks?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    fetchTask(taskId: string) {
+      return fetchImpl(`${baseUrl}/api/tasks/${taskId}`, {
         method: "GET"
       });
     },

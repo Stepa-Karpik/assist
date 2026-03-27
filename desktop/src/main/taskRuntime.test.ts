@@ -52,7 +52,7 @@ function startImmediateTaskExecution(result: {
 
 describe("runTaskSyncCycle", () => {
   it("starts and completes queued tasks, then returns the refreshed snapshot", async () => {
-    const fetchTaskHistory = vi
+    const fetchTaskSnapshot = vi
       .fn<() => Promise<Response>>()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -102,7 +102,7 @@ describe("runTaskSyncCycle", () => {
 
     const snapshot = await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,
@@ -113,7 +113,7 @@ describe("runTaskSyncCycle", () => {
       startTaskExecution
     });
 
-    expect(fetchTaskHistory).toHaveBeenCalledTimes(2);
+    expect(fetchTaskSnapshot).toHaveBeenCalledTimes(2);
     expect(fetchQueuedTasks).toHaveBeenCalledTimes(1);
     expect(startTask).toHaveBeenCalledWith("task-1");
     expect(startTaskExecution).toHaveBeenCalledWith({
@@ -132,7 +132,7 @@ describe("runTaskSyncCycle", () => {
   });
 
   it("fails queued tasks when the executor returns an error", async () => {
-    const fetchTaskHistory = vi
+    const fetchTaskSnapshot = vi
       .fn<() => Promise<Response>>()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -182,7 +182,7 @@ describe("runTaskSyncCycle", () => {
 
     const snapshot = await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,
@@ -202,7 +202,7 @@ describe("runTaskSyncCycle", () => {
   });
 
   it("moves tasks into awaiting_local_approval and persists the preview draft", async () => {
-    const fetchTaskHistory = vi
+    const fetchTaskSnapshot = vi
       .fn<() => Promise<Response>>()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -269,7 +269,7 @@ describe("runTaskSyncCycle", () => {
 
     const snapshot = await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,
@@ -303,7 +303,7 @@ describe("runTaskSyncCycle", () => {
   });
 
   it("fails the task when result upload is rejected by the server", async () => {
-    const fetchTaskHistory = vi
+    const fetchTaskSnapshot = vi
       .fn<() => Promise<Response>>()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -360,7 +360,7 @@ describe("runTaskSyncCycle", () => {
 
     const snapshot = await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,
@@ -403,7 +403,7 @@ describe("runTaskSyncCycle", () => {
       }),
       cancel
     }));
-    const fetchTaskHistory = vi
+    const fetchTaskSnapshot = vi
       .fn<() => Promise<Response>>()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -447,7 +447,7 @@ describe("runTaskSyncCycle", () => {
 
     await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,
@@ -462,7 +462,7 @@ describe("runTaskSyncCycle", () => {
 
     await runTaskSyncCycle({
       client: {
-        fetchTaskHistory,
+        fetchTaskSnapshot,
         fetchQueuedTasks,
         startTask,
         awaitLocalApproval,

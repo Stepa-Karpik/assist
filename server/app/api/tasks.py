@@ -129,12 +129,14 @@ def list_tasks(
     request: Request,
     include_history: bool = False,
     chat_id: int | None = None,
+    limit: int | None = None,
 ) -> TaskListResponse:
     return TaskListResponse(
         items=request.app.state.task_store.list_tasks(
             device_id,
             include_history=include_history,
             chat_id=chat_id,
+            limit=limit,
         )
     )
 

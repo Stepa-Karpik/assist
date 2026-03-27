@@ -247,6 +247,57 @@ def test_task_history_returns_recent_items_and_chat_filtered_view() -> None:
     assert chat_response.json()["items"][0]["result_text"] == "desktop-local is online"
 
 
+def test_task_history_omits_artifact_payload_but_task_detail_keeps_it() -> None:
+    task_id = create_low_risk_telegram_task(chat_id=5001)
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={
+            "result_text": "Screenshot captured.",
+            "artifact": {
+                "kind": "image_base64",
+                "mime_type": "image/png",
+                "file_name": "screen.png",
+                "content_base64": "c2NyZWVuc2hvdA==",
+            },
+        },
+    )
+
+    history_response = client.get(
+        "/api/tasks",
+        params={"device_id": "desktop-local", "include_history": "true"},
+    )
+    detail_response = client.get(f"/api/tasks/{task_id}")
+
+    assert history_response.status_code == 200
+    assert history_response.json()["items"][0]["artifact_kind"] == "image_base64"
+    assert history_response.json()["items"][0]["artifact_file_name"] == "screen.png"
+    assert history_response.json()["items"][0]["artifact_base64"] is None
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["artifact_kind"] == "image_base64"
+    assert detail_response.json()["artifact_file_name"] == "screen.png"
+    assert detail_response.json()["artifact_base64"] == "c2NyZWVuc2hvdA=="
+
+
+def test_task_history_supports_limit_for_lightweight_snapshot_polls() -> None:
+    first_task_id = create_low_risk_telegram_task(chat_id=5001)
+    second_task_id = create_low_risk_telegram_task(chat_id=5001)
+
+    limited_response = client.get(
+        "/api/tasks",
+        params={
+            "device_id": "desktop-local",
+            "include_history": "true",
+            "limit": 1,
+        },
+    )
+
+    assert limited_response.status_code == 200
+    assert [item["task_id"] for item in limited_response.json()["items"]] == [second_task_id]
+
+
 def test_queued_task_can_be_cancelled_immediately() -> None:
     task_id = create_low_risk_telegram_task()
 

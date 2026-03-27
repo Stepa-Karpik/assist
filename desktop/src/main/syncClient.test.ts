@@ -116,7 +116,9 @@ describe("syncClient pairing api", () => {
       }
     ]);
     await client.fetchAppCatalog();
-    await client.fetchTaskHistory();
+    await client.fetchTaskSnapshot();
+    await client.fetchTaskHistory({ limit: 50 });
+    await client.fetchTask("task-1");
     await client.fetchDevicePresence();
     await client.startTask("task-1");
     await client.completeTask("task-1", {
@@ -234,7 +236,7 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       9,
-      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true",
+      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=25",
       expect.objectContaining({
         method: "GET"
       })
@@ -242,7 +244,7 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       10,
-      "http://127.0.0.1:8000/api/devices/desktop-local",
+      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=50",
       expect.objectContaining({
         method: "GET"
       })
@@ -250,6 +252,22 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       11,
+      "http://127.0.0.1:8000/api/tasks/task-1",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      12,
+      "http://127.0.0.1:8000/api/devices/desktop-local",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      13,
       "http://127.0.0.1:8000/api/tasks/task-1/start",
       expect.objectContaining({
         method: "POST"
@@ -257,7 +275,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      12,
+      14,
       "http://127.0.0.1:8000/api/tasks/task-1/complete",
       expect.objectContaining({
         method: "POST",
@@ -271,7 +289,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      13,
+      15,
       "http://127.0.0.1:8000/api/tasks/task-2/fail",
       expect.objectContaining({
         method: "POST",
@@ -285,7 +303,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      14,
+      16,
       "http://127.0.0.1:8000/api/tasks/task-2/retry",
       expect.objectContaining({
         method: "POST"
