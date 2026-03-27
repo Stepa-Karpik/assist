@@ -90,18 +90,18 @@ describe("createLocalChatRuntime", () => {
     ]);
   });
 
-  it("falls back to codex for generic local chat prompts", async () => {
+  it("returns a lightweight assistant reply for a generic greeting", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
       now: () => new Date("2026-03-24T13:06:00.000Z"),
       generateChatId: () => "local-chat-2b"
     });
     chatStore.createDesktopChat({
-      title: "Local codex"
+      title: "Local assistant"
     });
     const executeTask = vi.fn(async () => ({
       ok: true as const,
-      resultText: "Привет. Чем помочь?"
+      resultText: "unused"
     }));
     const runtime = createLocalChatRuntime({
       chatStore,
@@ -114,11 +114,7 @@ describe("createLocalChatRuntime", () => {
       text: "привет"
     });
 
-    expect(executeTask).toHaveBeenCalledWith({
-      task_id: "local-task-2b",
-      intent: "codex привет",
-      workspace_root: undefined
-    });
+    expect(executeTask).not.toHaveBeenCalled();
     expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
       "user:привет",
       "assistant:Привет. Чем помочь?"

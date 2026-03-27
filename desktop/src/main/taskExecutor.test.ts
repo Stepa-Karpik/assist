@@ -38,7 +38,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: true,
-      resultText: "desktop-local is online"
+      resultText: "desktop-local онлайн"
     });
   });
 
@@ -119,7 +119,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Invalid note name."
+      errorText: "Ошибка: некорректное имя заметки."
     });
   });
 
@@ -136,7 +136,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Path is outside the allowed runtime area."
+      errorText: "Ошибка: путь вне разрешённой области."
     });
   });
 
@@ -234,7 +234,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Codex prompt is empty."
+      errorText: "Ошибка: пустой запрос для Codex."
     });
     expect(runCodex).not.toHaveBeenCalled();
   });
@@ -255,7 +255,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Codex workspace does not exist."
+      errorText: "Ошибка: рабочая папка Codex не найдена."
     });
     expect(runCodex).not.toHaveBeenCalled();
   });
@@ -278,7 +278,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Codex CLI is unavailable."
+      errorText: "Ошибка: Codex сейчас недоступен."
     });
   });
 
@@ -354,7 +354,7 @@ describe("createTaskExecutor", () => {
     expect(result).toEqual({
       ok: true,
       requiresLocalApproval: true,
-      waitingText: "Waiting for local review. Files: README.md",
+      waitingText: "Ожидает локального подтверждения. Файлы: README.md",
       draft: {
         taskId: "task-codex-write",
         workspaceRoot,
@@ -416,7 +416,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: true,
-      resultText: "Screenshot captured.",
+      resultText: "Скриншот готов.",
       artifact: {
         kind: "image_base64",
         mimeType: "image/png",
@@ -446,7 +446,7 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: true,
-      resultText: "Screenshot captured.",
+      resultText: "Скриншот готов.",
       artifact: {
         kind: "image_base64",
         mimeType: "image/png",
@@ -470,7 +470,131 @@ describe("createTaskExecutor", () => {
 
     expect(result).toEqual({
       ok: false,
-      errorText: "Unsupported task intent."
+      errorText: "Ошибка: такая команда пока не поддерживается."
+    });
+  });
+
+  it("opens a site through the injected site launcher", async () => {
+    const openSite = vi.fn(async () => undefined);
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      openSite
+    });
+
+    const result = await executor.execute({
+      task_id: "task-site",
+      intent: "open-site https://youtube.com"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Сайт открыт."
+    });
+    expect(openSite).toHaveBeenCalledWith("https://youtube.com");
+  });
+
+  it("launches a registered app as a deferred execution", async () => {
+    const kill = vi.fn(async () => undefined);
+    const launchApp = vi.fn(async () => ({
+      pid: 4242,
+      waitForExit: async () => undefined,
+      kill
+    }));
+    const registerAssistantProcess = vi.fn();
+    const markAssistantProcessExited = vi.fn();
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getRegisteredApp: (appId) =>
+        appId === "app-osu"
+          ? {
+              appId: "app-osu",
+              displayName: "osu! lazer",
+              launchPath: "C:\\Games\\osu!\\osu!.exe",
+              aliases: ["osu", "осу"],
+              linked: true,
+              source: "manual"
+            }
+          : null,
+      launchApp,
+      registerAssistantProcess,
+      markAssistantProcessExited
+    });
+
+    const execution = executor.start({
+      task_id: "task-app",
+      intent: "launch-app app-osu"
+    });
+
+    expect(execution.kind).toBe("deferred");
+    expect(await execution.result).toEqual({
+      ok: true,
+      resultText: "Приложение osu! lazer завершилось."
+    });
+    expect(registerAssistantProcess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: "task-app",
+        appId: "app-osu",
+        displayName: "osu! lazer",
+        pid: 4242
+      })
+    );
+    expect(markAssistantProcessExited).toHaveBeenCalledWith("task-app");
+  });
+
+  it("kills an assistant-started app by query", async () => {
+    const kill = vi.fn(async () => undefined);
+    const markAssistantProcessCancelled = vi.fn();
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      findAssistantProcessByQuery: (query) =>
+        query === "осу"
+          ? {
+              taskId: "task-app",
+              appId: "app-osu",
+              displayName: "osu! lazer",
+              aliases: ["osu", "осу"],
+              pid: 4242,
+              kill
+            }
+          : null,
+      markAssistantProcessCancelled
+    });
+
+    const result = await executor.execute({
+      task_id: "task-kill-app",
+      intent: "kill-app осу"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      resultText: "Останавливаю osu! lazer."
+    });
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(markAssistantProcessCancelled).toHaveBeenCalledWith("task-app");
+  });
+
+  it("normalizes raw codex CLI argument errors to Russian", async () => {
+    const workspaceRoot = createUserRoot();
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      runCodex: async () => {
+        throw new Error("error: unexpected argument 'osu' found");
+      }
+    });
+
+    const result = await executor.execute({
+      task_id: "task-codex-russian",
+      intent: "codex osu"
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errorText: "Ошибка: аргумент 'osu' не найден."
     });
   });
 });

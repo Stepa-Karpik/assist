@@ -3,6 +3,32 @@ export type OnlineEventPayload = {
   status: "online";
 };
 
+export type RemoteAppCatalogSource =
+  | "manual"
+  | "shortcut"
+  | "start_menu"
+  | "program_files"
+  | "discovered";
+
+export type RemoteAppCatalogItem = {
+  appId: string;
+  displayName: string;
+  aliases: string[];
+  linked: boolean;
+  source: RemoteAppCatalogSource;
+};
+
+export type RemoteAppCatalogResponse = {
+  device_id: string;
+  items: Array<{
+    app_id: string;
+    display_name: string;
+    aliases: string[];
+    linked: boolean;
+    source: RemoteAppCatalogSource;
+  }>;
+};
+
 export type DevicePresenceResponse = {
   device_id: string;
   status: "online";
@@ -192,6 +218,22 @@ export function buildAuthConfigStatusPayload(
   };
 }
 
+export function buildAppCatalogSyncPayload(
+  deviceId: string,
+  items: RemoteAppCatalogItem[]
+): RemoteAppCatalogResponse {
+  return {
+    device_id: deviceId,
+    items: items.map((item) => ({
+      app_id: item.appId,
+      display_name: item.displayName,
+      aliases: [...item.aliases],
+      linked: item.linked,
+      source: item.source
+    }))
+  };
+}
+
 export function createSyncClient({
   serverUrl,
   deviceId,
@@ -377,6 +419,25 @@ export function createSyncClient({
           "Content-Type": "application/json"
         },
         body: JSON.stringify(resolution)
+      });
+    },
+
+    syncAppCatalog(items: RemoteAppCatalogItem[]) {
+      return fetchImpl(`${baseUrl}/api/apps/catalog`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(buildAppCatalogSyncPayload(deviceId, items))
+      });
+    },
+
+    fetchAppCatalog() {
+      const params = new URLSearchParams({
+        device_id: deviceId
+      });
+      return fetchImpl(`${baseUrl}/api/apps?${params.toString()}`, {
+        method: "GET"
       });
     }
   };

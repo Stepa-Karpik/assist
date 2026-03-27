@@ -1,7 +1,7 @@
 {
   "name": "karpik-desktop",
   "productName": "Karpik",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Desktop app for Karpik",
   "author": "Stepa Karpik",
   "main": ".vite/build/main.js",

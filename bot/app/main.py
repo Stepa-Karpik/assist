@@ -13,9 +13,11 @@ from aiogram.types import (
 )
 
 from app.config import Settings, get_settings
+from app.chat_responder import DeepSeekChatResponder
 from app.conversation import (
     BotConversationStore,
     BotReply,
+    build_app_catalog_reply,
     process_callback_query,
     process_manual_auth_input,
     process_manual_decision,
@@ -93,6 +95,14 @@ def create_dispatcher(
         if resolved_settings.deepseek_api_key
         else RuleBasedIntentResolver()
     )
+    chat_responder = (
+        DeepSeekChatResponder(
+            api_key=resolved_settings.deepseek_api_key,
+            model=resolved_settings.deepseek_model,
+        )
+        if resolved_settings.deepseek_api_key
+        else None
+    )
     conversation_store = BotConversationStore()
     dispatcher = Dispatcher()
 
@@ -103,6 +113,11 @@ def create_dispatcher(
     @dispatcher.message(Command("help"))
     async def help_handler(message: Message) -> None:
         await message.answer(get_help_text())
+
+    @dispatcher.message(Command("apps"))
+    async def apps_handler(message: Message) -> None:
+        reply = build_app_catalog_reply(resolved_task_client)
+        await message.answer(reply.text or "", reply_markup=to_inline_keyboard(reply))
 
     @dispatcher.message(Command("pair"))
     async def pair_handler(message: Message) -> None:
@@ -293,6 +308,7 @@ def create_dispatcher(
             task_client=resolved_task_client,
             store=conversation_store,
             resolver=resolved_intent_resolver,
+            chat_responder=chat_responder,
         )
 
         if response is not None:

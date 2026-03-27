@@ -98,6 +98,7 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
 
         return nextSelectedWorkspaceIds;
       });
+      setError(null);
       setIsLoading(false);
     }
 
@@ -226,7 +227,7 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       <div className="page-header">
         <div>
           <p className="eyebrow">Чаты Telegram</p>
-          <h2>Удалённые очереди и workspace routing</h2>
+          <h2>Удалённые очереди и routing по workspace</h2>
           <p className="muted-text">
             Здесь видны последние Telegram-задачи, их статусы и привязка чатов к workspace.
           </p>
@@ -262,10 +263,11 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
 
                 <div className="chat-workspace-bar">
                   <label className="section-label" htmlFor={`telegram-chat-workspace-${chatGroup.chatId}`}>
-                    Workspace for chat {chatGroup.chatId}
+                    Workspace для чата {chatGroup.chatId}
                   </label>
                   <div className="chat-workspace-bar__controls">
                     <select
+                      aria-label={`Workspace for chat ${chatGroup.chatId}`}
                       className="quick-input"
                       id={`telegram-chat-workspace-${chatGroup.chatId}`}
                       onChange={(event) =>
@@ -319,7 +321,10 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
                       {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
                       {buildTaskArtifactDataUrl(task) !== null ? (
                         <figure className="task-artifact">
-                          <img alt={task.artifactFileName ?? "remote-task-artifact"} src={buildTaskArtifactDataUrl(task) ?? undefined} />
+                          <img
+                            alt={task.artifactFileName ?? "remote-task-artifact"}
+                            src={buildTaskArtifactDataUrl(task) ?? undefined}
+                          />
                           {task.artifactFileName ? <figcaption>{task.artifactFileName}</figcaption> : null}
                         </figure>
                       ) : null}

@@ -5,6 +5,8 @@ const view = new URLSearchParams(window.location.search).get("view") ?? "main";
 contextBridge.exposeInMainWorld("karpik", {
   view,
   getActivityLog: () => ipcRenderer.invoke("activity-log:get"),
+  getAppsState: () => ipcRenderer.invoke("apps:get-state"),
+  getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   createTotpEnrollment: () => ipcRenderer.invoke("auth:create-totp-enrollment"),
@@ -33,6 +35,7 @@ contextBridge.exposeInMainWorld("karpik", {
     sectionId: "master_info" | "knowledge" | "notes" | "websites";
     relativePath: string;
   }) => ipcRenderer.invoke("knowledge:read-entry", payload),
+  refreshDiscoveredApps: () => ipcRenderer.invoke("apps:refresh-discovered"),
   sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
     ipcRenderer.invoke("chats:send-message", payload),
   submitQuickRequest: (payload: { chatId?: string; text: string }) =>
@@ -49,10 +52,19 @@ contextBridge.exposeInMainWorld("karpik", {
     startHiddenOnLaunch?: boolean;
     closeToTrayOnClose?: boolean;
   }) => ipcRenderer.invoke("app-preferences:save", payload),
+  saveAppRegistryEntry: (payload: {
+    appId?: string;
+    displayName: string;
+    launchPath: string;
+    aliases?: string[];
+    linked?: boolean;
+    source?: "manual" | "shortcut" | "start_menu" | "program_files" | "discovered";
+  }) => ipcRenderer.invoke("apps:save", payload),
   saveChatWorkspaceBinding: (payload: { chatId: number; workspaceId: string }) =>
     ipcRenderer.invoke("codex:save-chat-binding", payload),
   saveCodexConfig: (payload: {
     workspaces?: Array<{ id?: string; name?: string; rootPath?: string }>;
     defaultWorkspaceId?: string;
-  }) => ipcRenderer.invoke("codex:save-config", payload)
+  }) => ipcRenderer.invoke("codex:save-config", payload),
+  removeAppRegistryEntry: (appId: string) => ipcRenderer.invoke("apps:remove", appId)
 });

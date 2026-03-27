@@ -1,5 +1,13 @@
 export type NavigationItem = {
-  id: "chats" | "telegram" | "blocked" | "knowledge" | "logs" | "services" | "settings";
+  id:
+    | "chats"
+    | "telegram"
+    | "blocked"
+    | "applications"
+    | "knowledge"
+    | "logs"
+    | "services"
+    | "settings";
   label: string;
 };
 
@@ -20,7 +28,7 @@ export function Sidebar({ items, activeSection, onSelect }: SidebarProps) {
           <p className="eyebrow">Karpik</p>
           <h1 className="sidebar-title">Operator Console</h1>
           <p className="muted-text">
-            Telegram intake, локальные чаты, codex review и контроль исполнения.
+            Telegram, локальные чаты, приложения, Codex и контроль выполнения в одном рабочем окне.
           </p>
         </div>
       </div>

@@ -28,6 +28,44 @@ function hasAnyMatch(input: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(input));
 }
 
+export function normalizeMatchKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replaceAll("ё", "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function messageExplicitlyRequestsCodex(text: string): boolean {
+  const normalized = normalizeMatchKey(text);
+  return (
+    normalized.split(" ").includes("codex") ||
+    normalized.split(" ").includes("кодекс") ||
+    normalized.includes("через codex")
+  );
+}
+
+export function messageRequiresCodex(text: string): boolean {
+  const normalized = normalizeMatchKey(text);
+
+  if (FILE_EXTENSION_PATTERN.test(text)) {
+    return true;
+  }
+
+  return [
+    "файл",
+    "проект",
+    "репозитор",
+    "workspace",
+    "repo",
+    "readme",
+    "код",
+    "desktop/",
+    "desktop\\"
+  ].some((needle) => normalized.includes(needle));
+}
+
 export function normalizeLocalIntent(input: string): string {
   const normalized = input.trim().replace(/\s+/g, " ");
 
@@ -36,7 +74,7 @@ export function normalizeLocalIntent(input: string): string {
   }
 
   if (
-    /^(status|screenshot(?:\s+(?:screen-1|screen-2|both))?|send-file\s+.+|read\s+.+|list\s+.+|write-note\s+.+::.+|codex(?:-write)?(?:\s+.+)?)$/i.test(
+    /^(status|screenshot(?:\s+(?:screen-1|screen-2|both))?|open-site\s+.+|launch-app\s+.+|kill-app\s+.+|send-file\s+.+|read\s+.+|list\s+.+|write-note\s+.+::.+|codex(?:-write)?(?:\s+.+)?)$/i.test(
       normalized
     )
   ) {
@@ -53,7 +91,7 @@ export function normalizeLocalIntent(input: string): string {
       /(что\s+с\s+задач)/i,
       /(что\s+с\s+пк)/i,
       /(что\s+по\s+задач)/i,
-      /(какие\s+задач)/i,
+      /(какие\s+задачи)/i,
       /(как\s+там\s+задач)/i
     ])
   ) {

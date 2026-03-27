@@ -19,6 +19,11 @@ import {
   type CapturedScreenshot,
   type ScreenshotTarget
 } from "./screenshotCapture";
+import type { AppRegistryItem } from "./appRegistryStore";
+import type { AssistantProcessRecord } from "./assistantProcessStore";
+import { createAppLauncher, type AppLaunchHandle } from "./appLauncher";
+import { normalizeExecutionError } from "./errorNormalizer";
+import { createSiteLauncher } from "./siteLauncher";
 import type { TaskResultArtifact } from "./syncClient";
 
 export type ExecutableTask = {
@@ -71,6 +76,14 @@ type TaskExecutorOptions = {
     workspaceRoot: string;
   }) => Promise<CodexWritePreviewResult>;
   captureScreenshot?: (target: ScreenshotTarget) => Promise<CapturedScreenshot>;
+  getRegisteredApp?: (appId: string) => AppRegistryItem | null;
+  findAssistantProcessByQuery?: (query: string) => AssistantProcessRecord | null;
+  registerAssistantProcess?: (record: AssistantProcessRecord) => void;
+  markAssistantProcessExited?: (taskId: string) => void;
+  markAssistantProcessCancelled?: (taskId: string) => void;
+  launchApp?: (app: AppRegistryItem) => Promise<AppLaunchHandle>;
+  openSite?: (url: string) => Promise<void>;
+  normalizeError?: (value: unknown, fallback?: string) => string;
   maxResultLength?: number;
 };
 
@@ -127,7 +140,7 @@ function isSafeNoteName(value: string): boolean {
 }
 
 function buildLocalApprovalWaitingText(changedFiles: string[]): string {
-  return `Waiting for local review. Files: ${changedFiles.join(", ")}`;
+  return `Ожидает локального подтверждения. Файлы: ${changedFiles.join(", ")}`;
 }
 
 function resolveReadListTarget(defaultRoot: string, relativeTarget: string): string | null {
@@ -136,6 +149,13 @@ function resolveReadListTarget(defaultRoot: string, relativeTarget: string): str
 
 function parseScreenshotTarget(intent: string): ScreenshotTarget {
   return /screen-2/i.test(intent) ? "screen-2" : "screen-1";
+}
+
+function buildUnsupportedIntentResult(): TaskExecutionResult {
+  return {
+    ok: false,
+    errorText: "Ошибка: такая команда пока не поддерживается."
+  };
 }
 
 function createImmediateHandle(result: TaskExecutionResult | Promise<TaskExecutionResult>): TaskExecutionHandle {
@@ -165,6 +185,14 @@ export function createTaskExecutor({
   startCodexWritePreview,
   generateCodexWritePreview,
   captureScreenshot = createScreenshotCapture(deviceId),
+  getRegisteredApp,
+  findAssistantProcessByQuery,
+  registerAssistantProcess,
+  markAssistantProcessExited,
+  markAssistantProcessCancelled,
+  launchApp,
+  openSite,
+  normalizeError,
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
@@ -193,6 +221,9 @@ export function createTaskExecutor({
     resolveCodexWorkspace ??
     (() => getCodexWorkspaceRoot?.() ?? normalizedUserRoot);
   const notesRoot = path.join(normalizedUserRoot, "docs", "notes");
+  const appLauncher = createAppLauncher();
+  const siteLauncher = createSiteLauncher();
+  const normalizeErrorImpl = normalizeError ?? normalizeExecutionError;
 
   function getWorkspaceRoot(task: ExecutableTask): string {
     if (typeof task.workspace_root === "string" && task.workspace_root.trim().length > 0) {
@@ -209,7 +240,7 @@ export function createTaskExecutor({
       if (normalizedIntent.toLowerCase() === "status") {
         return createImmediateHandle({
           ok: true,
-          resultText: `${deviceId} is online`
+          resultText: `${deviceId} онлайн`
         });
       }
 
@@ -218,7 +249,7 @@ export function createTaskExecutor({
           captureScreenshot(parseScreenshotTarget(normalizedIntent))
             .then((screenshot) => ({
               ok: true as const,
-              resultText: "Screenshot captured.",
+              resultText: "Скриншот готов.",
               artifact: {
                 kind: "image_base64" as const,
                 mimeType: screenshot.mimeType,
@@ -228,10 +259,118 @@ export function createTaskExecutor({
             }))
             .catch((error: unknown) => ({
               ok: false as const,
-              errorText:
-                error instanceof Error && error.message
-                  ? error.message
-                  : "Unable to capture screenshot."
+              errorText: normalizeErrorImpl(error, "Ошибка: не удалось снять скриншот.")
+            }))
+        );
+      }
+
+      const openSiteMatch = /^open-site\s+(.+)$/i.exec(normalizedIntent);
+
+      if (openSiteMatch !== null) {
+        const url = openSiteMatch[1].trim();
+
+        if (url.length === 0) {
+          return createImmediateHandle(buildUnsupportedIntentResult());
+        }
+
+        return createImmediateHandle(
+          (openSite ?? ((siteUrl: string) => siteLauncher.open(siteUrl)))(url)
+            .then(() => ({
+              ok: true as const,
+              resultText: "Сайт открыт."
+            }))
+            .catch((error: unknown) => ({
+              ok: false as const,
+              errorText: normalizeErrorImpl(error, "Ошибка: не удалось открыть сайт.")
+            }))
+        );
+      }
+
+      const launchAppMatch = /^launch-app\s+(.+)$/i.exec(normalizedIntent);
+
+      if (launchAppMatch !== null) {
+        const appId = launchAppMatch[1].trim();
+        const app = getRegisteredApp?.(appId) ?? null;
+
+        if (app === null) {
+          return createImmediateHandle({
+            ok: false,
+            errorText: "Ошибка: приложение не найдено."
+          });
+        }
+
+        let cancelled = false;
+        let launchHandle: AppLaunchHandle | null = null;
+
+        return {
+          kind: "deferred",
+          result: (async () => {
+            launchHandle = await (launchApp ?? ((item: AppRegistryItem) => appLauncher.launch(item)))(app);
+
+            registerAssistantProcess?.({
+              taskId: task.task_id,
+              appId: app.appId,
+              displayName: app.displayName,
+              aliases: app.aliases,
+              pid: launchHandle.pid,
+              kill: launchHandle.kill
+            });
+
+            if (cancelled) {
+              await launchHandle.kill?.();
+              markAssistantProcessCancelled?.(task.task_id);
+              return {
+                ok: false as const,
+                errorText: "Cancelled by operator."
+              };
+            }
+
+            await launchHandle.waitForExit();
+            markAssistantProcessExited?.(task.task_id);
+
+            return {
+              ok: true as const,
+              resultText: `Приложение ${app.displayName} завершилось.`
+            };
+          })().catch((error: unknown) => {
+            markAssistantProcessExited?.(task.task_id);
+            return {
+              ok: false as const,
+              errorText: normalizeErrorImpl(error, "Ошибка: не удалось запустить приложение.")
+            };
+          }),
+          cancel: async () => {
+            cancelled = true;
+            await launchHandle?.kill?.();
+          }
+        };
+      }
+
+      const killAppMatch = /^kill-app\s+(.+)$/i.exec(normalizedIntent);
+
+      if (killAppMatch !== null) {
+        const query = killAppMatch[1].trim();
+        const activeProcess = findAssistantProcessByQuery?.(query) ?? null;
+
+        if (activeProcess === null) {
+          return createImmediateHandle({
+            ok: false,
+            errorText: "Ошибка: ассистент не запускал такое приложение."
+          });
+        }
+
+        return createImmediateHandle(
+          Promise.resolve(activeProcess.kill?.())
+            .then(() => {
+              markAssistantProcessCancelled?.(activeProcess.taskId);
+              return {
+                ok: true as const,
+                resultText: `Останавливаю ${activeProcess.displayName}.`
+              };
+            })
+            .catch((error: unknown) => ({
+              ok: false as const,
+              errorText: normalizeErrorImpl(error, "Ошибка: не удалось остановить приложение.")
             }))
         );
       }
@@ -249,13 +388,13 @@ export function createTaskExecutor({
             if (artifact === null) {
               return {
                 ok: false as const,
-                errorText: "File not found."
+                errorText: "Ошибка: файл не найден."
               };
             }
 
             return {
               ok: true as const,
-              resultText: `Prepared file: ${artifact.fileName}`,
+              resultText: `Файл подготовлен: ${artifact.fileName}`,
               artifact: {
                 kind: "file_base64" as const,
                 mimeType: artifact.mimeType,
@@ -275,7 +414,7 @@ export function createTaskExecutor({
         if (!prompt) {
           return createImmediateHandle({
             ok: false,
-            errorText: "Codex prompt is empty."
+            errorText: "Ошибка: пустой запрос для Codex."
           });
         }
 
@@ -289,7 +428,7 @@ export function createTaskExecutor({
             if (!(await workspaceExists(workspaceRoot))) {
               return {
                 ok: false as const,
-                errorText: "Codex workspace does not exist."
+                errorText: "Ошибка: рабочая папка Codex не найдена."
               };
             }
 
@@ -323,10 +462,7 @@ export function createTaskExecutor({
             });
           })().catch((error: unknown) => ({
               ok: false as const,
-              errorText:
-                error instanceof Error && error.message
-                  ? error.message
-                  : "Codex execution failed."
+              errorText: normalizeErrorImpl(error, "Ошибка: Codex не смог подготовить изменения.")
             })),
           cancel: () => {
             cancelled = true;
@@ -343,7 +479,7 @@ export function createTaskExecutor({
         if (!prompt) {
           return createImmediateHandle({
             ok: false,
-            errorText: "Codex prompt is empty."
+            errorText: "Ошибка: пустой запрос для Codex."
           });
         }
 
@@ -357,7 +493,7 @@ export function createTaskExecutor({
             if (!(await workspaceExists(workspaceRoot))) {
               return {
                 ok: false as const,
-                errorText: "Codex workspace does not exist."
+                errorText: "Ошибка: рабочая папка Codex не найдена."
               };
             }
 
@@ -379,10 +515,7 @@ export function createTaskExecutor({
             }));
           })().catch((error: unknown) => ({
               ok: false as const,
-              errorText:
-                error instanceof Error && error.message
-                  ? error.message
-                  : "Codex execution failed."
+              errorText: normalizeErrorImpl(error, "Ошибка: Codex не выполнил запрос.")
             })),
           cancel: () => {
             cancelled = true;
@@ -399,7 +532,7 @@ export function createTaskExecutor({
         if (targetPath === null) {
           return createImmediateHandle({
             ok: false,
-            errorText: "Path is outside the allowed runtime area."
+            errorText: "Ошибка: путь вне разрешённой области."
           });
         }
 
@@ -413,13 +546,13 @@ export function createTaskExecutor({
               if ((error as NodeJS.ErrnoException).code === "ENOENT") {
                 return {
                   ok: false as const,
-                  errorText: "File not found."
+                  errorText: "Ошибка: файл не найден."
                 };
               }
 
               return {
                 ok: false as const,
-                errorText: "Unable to read file."
+                errorText: "Ошибка: не удалось прочитать файл."
               };
             })
         );
@@ -433,7 +566,7 @@ export function createTaskExecutor({
         if (targetPath === null) {
           return createImmediateHandle({
             ok: false,
-            errorText: "Path is outside the allowed runtime area."
+            errorText: "Ошибка: путь вне разрешённой области."
           });
         }
 
@@ -447,13 +580,13 @@ export function createTaskExecutor({
               if ((error as NodeJS.ErrnoException).code === "ENOENT") {
                 return {
                   ok: false as const,
-                  errorText: "Directory not found."
+                  errorText: "Ошибка: папка не найдена."
                 };
               }
 
               return {
                 ok: false as const,
-                errorText: "Unable to list directory."
+                errorText: "Ошибка: не удалось прочитать папку."
               };
             })
         );
@@ -467,7 +600,7 @@ export function createTaskExecutor({
         if (!isSafeNoteName(noteName)) {
           return createImmediateHandle({
             ok: false,
-            errorText: "Invalid note name."
+            errorText: "Ошибка: некорректное имя заметки."
           });
         }
 
@@ -482,8 +615,7 @@ export function createTaskExecutor({
       }
 
       return createImmediateHandle({
-        ok: false,
-        errorText: "Unsupported task intent."
+        ...buildUnsupportedIntentResult()
       });
     },
 

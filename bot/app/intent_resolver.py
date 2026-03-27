@@ -65,6 +65,43 @@ def normalize_whitespace(value: str) -> str:
     return " ".join(value.strip().split())
 
 
+def normalize_match_key(value: str) -> str:
+    normalized = value.casefold().replace("ё", "е")
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def message_explicitly_requests_codex(text: str) -> bool:
+    normalized = normalize_match_key(text)
+    return any(
+        token in normalized.split()
+        for token in {"codex", "кодекс"}
+    ) or "через codex" in normalized
+
+
+def message_requires_codex(text: str) -> bool:
+    normalized = normalize_match_key(text)
+
+    if FILE_EXTENSION_PATTERN.search(text) is not None:
+        return True
+
+    return contains_any(
+        normalized,
+        {
+            "файл",
+            "файле",
+            "проект",
+            "репозитор",
+            "workspace",
+            "repo",
+            "readme",
+            "код",
+            "desktop/",
+            "desktop\\",
+        },
+    )
+
+
 def contains_any(value: str, needles: set[str]) -> bool:
     return any(needle in value for needle in needles)
 

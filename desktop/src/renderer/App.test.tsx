@@ -178,6 +178,38 @@ const saveChatWorkspaceBinding = vi.fn(async () => ({
     "5001": "default-workspace"
   }
 }));
+const getAppsState = vi.fn(async () => ({
+  items: [
+    {
+      appId: "app-osu",
+      displayName: "osu! lazer",
+      launchPath: "C:\\Games\\osu!\\osu!.exe",
+      aliases: ["osu", "осу", "osu lazer"],
+      linked: true,
+      source: "manual" as const
+    },
+    {
+      appId: "app-discovered",
+      displayName: "Discord",
+      launchPath: "C:\\Users\\TBG\\Desktop\\Discord.lnk",
+      aliases: ["discord"],
+      linked: false,
+      source: "shortcut" as const
+    }
+  ]
+}));
+const getAssistantProcesses = vi.fn(async () => [
+  {
+    taskId: "task-launch-1",
+    appId: "app-osu",
+    displayName: "osu! lazer",
+    aliases: ["osu", "осу"],
+    pid: 4242
+  }
+]);
+const refreshDiscoveredApps = vi.fn(async () => getAppsState());
+const saveAppRegistryEntry = vi.fn(async () => getAppsState());
+const removeAppRegistryEntry = vi.fn(async () => getAppsState());
 
 const getPairingState = vi.fn(async () => ({
   code: null,
@@ -432,6 +464,8 @@ describe("App navigation", () => {
     window.karpik = {
       view: "main",
       getActivityLog,
+      getAppsState,
+      getAssistantProcesses,
       getAppPreferences,
       getAuthConfigState,
       createTotpEnrollment,
@@ -456,18 +490,23 @@ describe("App navigation", () => {
       createLocalContinuationChat,
       checkForUpdates,
       installUpdate,
+      refreshDiscoveredApps,
       submitQuickRequest,
       sendLocalChatMessage,
       saveAuthConfig,
+      saveAppRegistryEntry,
       saveAppPreferences,
       saveChatWorkspaceBinding,
-      saveCodexConfig
+      saveCodexConfig,
+      removeAppRegistryEntry
     };
   });
 
   afterEach(() => {
     cleanup();
     getActivityLog.mockClear();
+    getAppsState.mockClear();
+    getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
     getAuthConfigState.mockClear();
     createTotpEnrollment.mockClear();
@@ -492,12 +531,15 @@ describe("App navigation", () => {
     createLocalContinuationChat.mockClear();
     checkForUpdates.mockClear();
     installUpdate.mockClear();
+    refreshDiscoveredApps.mockClear();
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
+    saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
+    removeAppRegistryEntry.mockClear();
   });
 
   it("renders all primary sections", () => {
@@ -505,11 +547,23 @@ describe("App navigation", () => {
 
     expect(screen.getByRole("button", { name: "Чаты" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Чаты Telegram" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Невыполненное" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Задачи" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Приложения" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Knowledge / Review" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Логи" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сервисы" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
+  });
+
+  it("shows linked applications and assistant-started processes", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Приложения" }));
+
+    expect(await screen.findByText("Реестр запуска и alias-связки")).toBeInTheDocument();
+    expect((await screen.findAllByText("osu! lazer")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Discord")).toBeInTheDocument();
+    expect(await screen.findByText("PID: 4242")).toBeInTheDocument();
   });
 
   it("shows local chat empty state and lets the user create a desktop chat", async () => {
@@ -589,9 +643,7 @@ describe("App navigation", () => {
   it("saves desktop operator preferences from the settings page", async () => {
     render(<App />);
 
-    fireEvent.click(
-      screen.getByRole("navigation", { name: "Primary navigation" }).querySelectorAll("button")[6]!
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByLabelText("Launch at login"));
     fireEvent.click(await screen.findByLabelText("Desktop notifications"));
     fireEvent.click(await screen.findByLabelText("Start hidden in tray"));
@@ -806,7 +858,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Невыполненное" }));
+    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
 
     expect(await screen.findByText("task-2")).toBeInTheDocument();
     expect(await screen.findByText("read docs/missing.txt")).toBeInTheDocument();
@@ -840,11 +892,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
-    fireEvent.click(
-      screen
-        .getByRole("navigation", { name: "Primary navigation" })
-        .querySelectorAll("button")[2]!
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
     fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
 
     expect(retryTask).toHaveBeenCalledWith("task-2");
@@ -879,7 +927,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Невыполненное" }));
+    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
 
     expect(await screen.findByText("Updated README")).toBeInTheDocument();
     expect(await screen.findByText("diff preview")).toBeInTheDocument();
@@ -967,7 +1015,7 @@ describe("App navigation", () => {
     render(<App />);
 
     expect(await screen.findByLabelText("Target local chat")).toHaveValue("local-chat-10");
-    expect(await screen.findByText("Approximate completion across active tasks: 80%")).toBeInTheDocument();
+    expect(await screen.findByText("Грубая оценка прогресса по активным задачам: 80%")).toBeInTheDocument();
     expect(await screen.findByText("Remote task task-quick-2")).toBeInTheDocument();
     expect(await screen.findByText("codex-write update notes -> awaiting_local_approval")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Quick request"), {
@@ -1157,7 +1205,7 @@ describe("App navigation", () => {
 
     expect(createDesktopChat).toHaveBeenCalledTimes(1);
     expect(await screen.findByLabelText("Target local chat")).toHaveValue("local-chat-1");
-    expect(await screen.findByText("Local chats: 2")).toBeInTheDocument();
+    expect(await screen.findByText("Всего: 2")).toBeInTheDocument();
   });
 
   it("shows runtime activity entries in the logs page", async () => {

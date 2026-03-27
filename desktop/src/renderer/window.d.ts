@@ -27,6 +27,27 @@ type AppPreferencesState = {
   closeToTrayOnClose: boolean;
 };
 
+type AppRegistryItem = {
+  appId: string;
+  displayName: string;
+  launchPath: string;
+  aliases: string[];
+  linked: boolean;
+  source: "manual" | "shortcut" | "start_menu" | "program_files" | "discovered";
+};
+
+type AppRegistryState = {
+  items: AppRegistryItem[];
+};
+
+type AssistantProcessItem = {
+  taskId: string;
+  appId: string;
+  displayName: string;
+  aliases: string[];
+  pid: number | null;
+};
+
 type CodexWorkspace = {
   id: string;
   name: string;
@@ -171,6 +192,8 @@ declare global {
     karpik?: {
       view: string;
       getActivityLog: () => Promise<ActivityLogEntry[]>;
+      getAppsState: () => Promise<AppRegistryState>;
+      getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       createTotpEnrollment: () => Promise<TotpEnrollment>;
@@ -198,6 +221,7 @@ declare global {
       }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
       installUpdate: () => Promise<void>;
+      refreshDiscoveredApps: () => Promise<AppRegistryState>;
       readKnowledgeEntry: (payload: {
         sectionId: KnowledgeSectionId;
         relativePath: string;
@@ -218,6 +242,14 @@ declare global {
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
+      saveAppRegistryEntry: (payload: {
+        appId?: string;
+        displayName: string;
+        launchPath: string;
+        aliases?: string[];
+        linked?: boolean;
+        source?: AppRegistryItem["source"];
+      }) => Promise<AppRegistryState>;
       saveChatWorkspaceBinding: (payload: {
         chatId: number;
         workspaceId: string;
@@ -226,6 +258,7 @@ declare global {
         workspaces?: Array<Partial<CodexWorkspace>>;
         defaultWorkspaceId?: string;
       }) => Promise<CodexConfigState>;
+      removeAppRegistryEntry: (appId: string) => Promise<AppRegistryState>;
     };
   }
 }

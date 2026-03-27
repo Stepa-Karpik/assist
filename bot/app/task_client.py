@@ -51,6 +51,15 @@ ATTENTION_TASK_STATUSES: tuple[TaskLifecycleStatus, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class AppCatalogEntry:
+    app_id: str
+    display_name: str
+    aliases: tuple[str, ...]
+    linked: bool
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkflowResult:
     status: TaskWorkflowStatus
     challenge_id: str | None = None
@@ -200,6 +209,34 @@ def parse_task_summary_item(value: object) -> TaskSummaryResult | None:
     )
 
 
+def parse_app_catalog_item(value: object) -> AppCatalogEntry | None:
+    if not isinstance(value, dict):
+        return None
+
+    app_id = value.get("app_id")
+    display_name = value.get("display_name")
+    aliases = value.get("aliases")
+    linked = value.get("linked")
+    source = value.get("source")
+
+    if (
+        not isinstance(app_id, str)
+        or not isinstance(display_name, str)
+        or not isinstance(aliases, list)
+        or not isinstance(linked, bool)
+        or not isinstance(source, str)
+    ):
+        return None
+
+    return AppCatalogEntry(
+        app_id=app_id,
+        display_name=display_name,
+        aliases=tuple(alias for alias in aliases if isinstance(alias, str)),
+        linked=linked,
+        source=source,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TaskServerClient:
     server_url: str
@@ -314,6 +351,22 @@ class TaskServerClient:
 
     def cancel_task(self, task_id: str) -> TaskStatusResult:
         return parse_task_status_item(self._post_json(f"/api/tasks/{task_id}/cancel", None))
+
+    def fetch_app_catalog(self) -> list[AppCatalogEntry]:
+        parsed = self._get_json(f"/api/apps?{urlencode({'device_id': self.device_id})}")
+
+        if not isinstance(parsed, dict):
+            return []
+
+        items = parsed.get("items")
+        if not isinstance(items, list):
+            return []
+
+        return [
+            item
+            for item in (parse_app_catalog_item(value) for value in items)
+            if item is not None
+        ]
 
     def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:
         query = {

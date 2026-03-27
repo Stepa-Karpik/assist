@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Sidebar, type NavigationItem } from "./layout/Sidebar";
+import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { BlockedTasksPage } from "./pages/BlockedTasksPage";
 import { ChatsPage } from "./pages/ChatsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LogsPage } from "./pages/LogsPage";
-import { formatTaskStatus, type TaskSnapshot } from "./pages/taskSnapshot";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TelegramChatsPage } from "./pages/TelegramChatsPage";
+import { formatTaskStatus, type TaskSnapshot } from "./pages/taskSnapshot";
 
 type QuickProgressState = {
   activeTaskCount: number;
@@ -50,7 +51,7 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
       awaitingApprovalCount,
       blockedTaskCount,
       percentage: 100,
-      summaryText: "Сейчас активных задач нет."
+      summaryText: "Сейчас нет активных задач."
     };
   }
 
@@ -75,7 +76,7 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
     awaitingApprovalCount,
     blockedTaskCount,
     percentage: averageProgress,
-    summaryText: `Approximate completion across active tasks: ${averageProgress}%`
+    summaryText: `Грубая оценка прогресса по активным задачам: ${averageProgress}%`
   };
 }
 
@@ -95,10 +96,10 @@ function QuickPopupView() {
   const [responseText, setResponseText] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const quickProgress = buildQuickProgressState(taskSnapshot);
   const selectedTargetChat =
     quickState.recentChats.find((chat) => chat.chatId === selectedTargetChatId) ?? quickState.targetChat;
-
   const activeTasks = useMemo(
     () =>
       taskSnapshot
@@ -107,11 +108,10 @@ function QuickPopupView() {
             task.status
           )
         )
-        .slice(0, 2),
+        .slice(0, 1),
     [taskSnapshot]
   );
-
-  const recentActivity = useMemo(() => quickState.recentActivity.slice(0, 2), [quickState.recentActivity]);
+  const recentActivity = useMemo(() => quickState.recentActivity.slice(0, 1), [quickState.recentActivity]);
 
   useEffect(() => {
     setSelectedTargetChatId((currentChatId) => {
@@ -139,9 +139,10 @@ function QuickPopupView() {
 
         setQuickState(nextState);
         setTaskSnapshot(nextTaskSnapshot);
+        setError(null);
       } catch {
         if (isSubscribed) {
-          setError("Не удалось загрузить quick access.");
+          setError("Не удалось загрузить быстрый доступ.");
         }
       }
     }
@@ -216,12 +217,14 @@ function QuickPopupView() {
       <header className="quick-popup__header">
         <div>
           <p className="eyebrow">Karpik</p>
-          <h1>Quick Access</h1>
-          <p className="muted-text">Локальный чат, очередь и свежая активность без лишнего шума.</p>
+          <h1>Быстрый доступ</h1>
+          <p className="muted-text">
+            Последний чат, очередь и короткий запрос без открытия основного окна.
+          </p>
         </div>
         <button
           aria-label="New local chat"
-          className="ghost-button ghost-button--primary"
+          className="ghost-button ghost-button--primary quick-popup__new-chat"
           onClick={() => {
             void handleCreateDesktopChat();
           }}
@@ -246,25 +249,22 @@ function QuickPopupView() {
         </div>
       </section>
 
-      <section className="quick-panel">
+      <section className="quick-panel quick-panel--compact">
         <div className="quick-panel__header">
-          <strong>Прогресс</strong>
+          <strong>Глобальный прогресс</strong>
           <span>{quickProgress.percentage}%</span>
         </div>
         <ProgressBar percentage={quickProgress.percentage} />
         <p className="muted-text">{quickProgress.summaryText}</p>
       </section>
 
-      <section className="quick-panel">
+      <section className="quick-panel quick-panel--compact">
         <div className="quick-panel__header">
           <strong>Целевой чат</strong>
-          <span>Local chats: {quickState.localChatCount}</span>
+          <span>Всего: {quickState.localChatCount}</span>
         </div>
-        <label className="section-label" htmlFor="quick-target-chat">
-          Выбор локального чата
-        </label>
         <p className="muted-text">
-          {selectedTargetChat?.title ?? "При первом сообщении будет создан новый локальный чат."}
+          {selectedTargetChat?.title ?? "Если чат не выбран, первый запрос создаст новый локальный диалог."}
         </p>
         {quickState.recentChats.length > 0 ? (
           <select
@@ -283,7 +283,7 @@ function QuickPopupView() {
         ) : null}
       </section>
 
-      <section className="quick-panel quick-panel--split">
+      <section className="quick-panel quick-panel--feed">
         <div>
           <div className="quick-panel__header">
             <strong>Очередь</strong>
@@ -292,33 +292,25 @@ function QuickPopupView() {
           {activeTasks.length === 0 ? (
             <p className="muted-text">Пусто</p>
           ) : (
-            <div className="quick-mini-list">
-              {activeTasks.map((task) => (
-                <article className="quick-mini-card" key={task.task_id}>
-                  <strong>{formatTaskStatus(task.status)}</strong>
-                  <p>{task.intent}</p>
-                </article>
-              ))}
-            </div>
+            <article className="quick-mini-card">
+              <strong>{formatTaskStatus(activeTasks[0].status)}</strong>
+              <p>{activeTasks[0].intent}</p>
+            </article>
           )}
         </div>
 
         <div>
           <div className="quick-panel__header">
-            <strong>Активность</strong>
+            <strong>Последнее событие</strong>
             <span>{recentActivity.length}</span>
           </div>
           {recentActivity.length === 0 ? (
             <p className="muted-text">Пока пусто</p>
           ) : (
-            <div className="quick-mini-list">
-              {recentActivity.map((entry) => (
-                <article className={`quick-mini-card status-${entry.status}`} key={entry.entryId}>
-                  <strong>{entry.title}</strong>
-                  {entry.detail ? <p>{entry.detail}</p> : null}
-                </article>
-              ))}
-            </div>
+            <article className={`quick-mini-card status-${recentActivity[0].status}`}>
+              <strong>{recentActivity[0].title}</strong>
+              {recentActivity[0].detail ? <p>{recentActivity[0].detail}</p> : null}
+            </article>
           )}
         </div>
       </section>
@@ -344,6 +336,7 @@ function QuickPopupView() {
             value={requestText}
           />
           <button
+            aria-label="Send"
             className="ghost-button ghost-button--primary"
             disabled={isSubmitting || requestText.trim().length === 0}
             onClick={() => {
@@ -351,7 +344,7 @@ function QuickPopupView() {
             }}
             type="button"
           >
-            {isSubmitting ? "..." : "Send"}
+            {isSubmitting ? "..." : "Отправить"}
           </button>
         </div>
         {responseText ? <p className="task-result">{responseText}</p> : null}
@@ -364,7 +357,8 @@ function QuickPopupView() {
 const navigationItems: NavigationItem[] = [
   { id: "chats", label: "Чаты" },
   { id: "telegram", label: "Чаты Telegram" },
-  { id: "blocked", label: "Невыполненное" },
+  { id: "blocked", label: "Задачи" },
+  { id: "applications", label: "Приложения" },
   { id: "knowledge", label: "Knowledge / Review" },
   { id: "logs", label: "Логи" },
   { id: "services", label: "Сервисы" },
@@ -391,6 +385,7 @@ function MainWindowView() {
           />
         )}
         {activeSection === "blocked" && <BlockedTasksPage />}
+        {activeSection === "applications" && <ApplicationsPage />}
         {activeSection === "knowledge" && <KnowledgePage />}
         {activeSection === "logs" && <LogsPage />}
         {activeSection === "services" && <ServicesPage />}

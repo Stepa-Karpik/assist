@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildAppCatalogSyncPayload,
   buildAuthConfigStatusPayload,
   buildEventResolutionPayload,
   buildOnlineEventPayload,
@@ -55,6 +56,31 @@ describe("syncClient payload builders", () => {
       totp_configured: false
     });
   });
+
+  it("describes the app catalog sync payload", () => {
+    expect(
+      buildAppCatalogSyncPayload("desktop-local", [
+        {
+          appId: "app-osu",
+          displayName: "osu! lazer",
+          aliases: ["osu", "осу", "osu lazer"],
+          linked: true,
+          source: "manual"
+        }
+      ])
+    ).toEqual({
+      device_id: "desktop-local",
+      items: [
+        {
+          app_id: "app-osu",
+          display_name: "osu! lazer",
+          aliases: ["osu", "осу", "osu lazer"],
+          linked: true,
+          source: "manual"
+        }
+      ]
+    });
+  });
 });
 
 describe("syncClient pairing api", () => {
@@ -80,6 +106,16 @@ describe("syncClient pairing api", () => {
     await client.resolveAuthEvent("auth-1", {
       accepted: true
     });
+    await client.syncAppCatalog([
+      {
+        appId: "app-osu",
+        displayName: "osu! lazer",
+        aliases: ["osu", "осу", "osu lazer"],
+        linked: true,
+        source: "manual"
+      }
+    ]);
+    await client.fetchAppCatalog();
     await client.fetchTaskHistory();
     await client.fetchDevicePresence();
     await client.startTask("task-1");
@@ -167,15 +203,30 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       7,
-      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true",
+      "http://127.0.0.1:8000/api/apps/catalog",
       expect.objectContaining({
-        method: "GET"
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: "desktop-local",
+          items: [
+            {
+              app_id: "app-osu",
+              display_name: "osu! lazer",
+              aliases: ["osu", "осу", "osu lazer"],
+              linked: true,
+              source: "manual"
+            }
+          ]
+        })
       })
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       8,
-      "http://127.0.0.1:8000/api/devices/desktop-local",
+      "http://127.0.0.1:8000/api/apps?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
       })
@@ -183,6 +234,22 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       9,
+      "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      10,
+      "http://127.0.0.1:8000/api/devices/desktop-local",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      11,
       "http://127.0.0.1:8000/api/tasks/task-1/start",
       expect.objectContaining({
         method: "POST"
@@ -190,7 +257,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      10,
+      12,
       "http://127.0.0.1:8000/api/tasks/task-1/complete",
       expect.objectContaining({
         method: "POST",
@@ -204,7 +271,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      11,
+      13,
       "http://127.0.0.1:8000/api/tasks/task-2/fail",
       expect.objectContaining({
         method: "POST",
@@ -218,7 +285,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      12,
+      14,
       "http://127.0.0.1:8000/api/tasks/task-2/retry",
       expect.objectContaining({
         method: "POST"

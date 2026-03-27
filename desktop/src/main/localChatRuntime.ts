@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
-import { normalizeLocalIntent } from "./localIntentResolver";
 import type { LocalChatDetail, LocalChatStore } from "./localChatStore";
+import { createLocalConversationRouter, type LocalConversationResolution } from "./localConversationRouter";
 import type { ExecutableTask, TaskExecutionResult } from "./taskExecutor";
 
 type SendLocalChatMessageInput = {
@@ -18,7 +18,7 @@ type LocalChatRuntimeOptions = {
     draft: CodexWritePreviewDraft
   ) => Promise<void> | void;
   getWorkspaceRootForChat?: (chatId: string) => string | null | undefined;
-  resolveIntent?: (text: string) => string;
+  resolveInput?: (text: string) => Promise<LocalConversationResolution> | LocalConversationResolution;
   generateTaskId?: () => string;
   logActivity?: (input: {
     kind: "local_request" | "local_result";
@@ -34,7 +34,7 @@ export function createLocalChatRuntime({
   executeTask,
   persistLocalApproval,
   getWorkspaceRootForChat,
-  resolveIntent = normalizeLocalIntent,
+  resolveInput = createLocalConversationRouter().resolve,
   generateTaskId = () => crypto.randomUUID(),
   logActivity
 }: LocalChatRuntimeOptions) {
@@ -58,11 +58,26 @@ export function createLocalChatRuntime({
         chatId
       });
 
+      const resolvedInput = await resolveInput(normalizedText);
+
+      if (resolvedInput.kind === "reply") {
+        logActivity?.({
+          kind: "local_result",
+          status: "success",
+          title: "Local assistant reply",
+          detail: resolvedInput.text,
+          chatId
+        });
+        return chatStore.appendMessage(chatId, {
+          role: "assistant",
+          text: resolvedInput.text
+        });
+      }
+
       const workspaceRoot = getWorkspaceRootForChat?.(chatId);
-      const resolvedIntent = resolveIntent(normalizedText);
       const executionResult = await executeTask({
         task_id: generateTaskId(),
-        intent: resolvedIntent,
+        intent: resolvedInput.intent,
         workspace_root: workspaceRoot ?? undefined
       });
 

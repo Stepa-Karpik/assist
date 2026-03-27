@@ -10,14 +10,24 @@ describe("desktop renderer feedback", () => {
   const confirmTotpEnrollment = vi.fn();
   const saveCodexConfig = vi.fn();
   const saveChatWorkspaceBinding = vi.fn();
+  const getAppsState = vi.fn();
+  const getAssistantProcesses = vi.fn();
+  const refreshDiscoveredApps = vi.fn();
+  const saveAppRegistryEntry = vi.fn();
+  const removeAppRegistryEntry = vi.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     getTaskSnapshot.mockReset();
     saveAuthConfig.mockReset();
     createTotpEnrollment.mockReset();
     confirmTotpEnrollment.mockReset();
     saveCodexConfig.mockReset();
     saveChatWorkspaceBinding.mockReset();
+    getAppsState.mockReset();
+    getAssistantProcesses.mockReset();
+    refreshDiscoveredApps.mockReset();
+    saveAppRegistryEntry.mockReset();
+    removeAppRegistryEntry.mockReset();
 
     getTaskSnapshot.mockResolvedValue([
       {
@@ -70,10 +80,28 @@ describe("desktop renderer feedback", () => {
         "5001": "default-workspace"
       }
     });
+    getAppsState.mockResolvedValue({
+      items: [
+        {
+          appId: "osu",
+          displayName: "osu! lazer",
+          launchPath: "C:\\Games\\osu!\\osu!.exe",
+          aliases: ["osu", "осу"],
+          linked: true,
+          source: "manual"
+        }
+      ]
+    });
+    getAssistantProcesses.mockResolvedValue([]);
+    refreshDiscoveredApps.mockResolvedValue(await getAppsState());
+    saveAppRegistryEntry.mockResolvedValue(await getAppsState());
+    removeAppRegistryEntry.mockResolvedValue(await getAppsState());
 
     window.karpik = {
       view: "main",
       getActivityLog: vi.fn(async () => []),
+      getAppsState,
+      getAssistantProcesses,
       getAppPreferences: vi.fn(async () => ({
         launchAtLogin: false,
         notificationsEnabled: true,
@@ -182,6 +210,7 @@ describe("desktop renderer feedback", () => {
         trustedTelegramUserIds: []
       })),
       installUpdate: vi.fn(async () => undefined),
+      refreshDiscoveredApps,
       readKnowledgeEntry: vi.fn(async () => null),
       rejectLocalApproval: vi.fn(async () => undefined),
       retryTask: vi.fn(async () => undefined),
@@ -218,8 +247,10 @@ describe("desktop renderer feedback", () => {
         startHiddenOnLaunch: Boolean(payload.startHiddenOnLaunch),
         closeToTrayOnClose: Boolean(payload.closeToTrayOnClose)
       })),
+      saveAppRegistryEntry,
       saveChatWorkspaceBinding,
-      saveCodexConfig
+      saveCodexConfig,
+      removeAppRegistryEntry
     };
   });
 

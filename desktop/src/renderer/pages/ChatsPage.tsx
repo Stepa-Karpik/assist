@@ -149,7 +149,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
       }
 
       if (!window.karpik?.getLocalChatDetail) {
-        setError("API локальных чатов недоступен в этом окружении.");
+        setError("Local chat API недоступен в этом окружении.");
         return;
       }
 
@@ -189,7 +189,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
   async function handleCreateDesktopChat() {
     if (!window.karpik?.createDesktopChat) {
-      setError("API локальных чатов недоступен в этом окружении.");
+      setError("Local chat API недоступен в этом окружении.");
       return;
     }
 
@@ -329,7 +329,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
                   <div className="empty-panel">
                     <strong>Диалог пуст</strong>
                     <p className="muted-text">
-                      Напиши сообщение вроде «привет», «скинь скриншот» или «обнови README».
+                      Напиши что-то вроде «привет», «скинь скриншот» или «обнови README».
                     </p>
                   </div>
                 ) : null}

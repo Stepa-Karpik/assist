@@ -81,10 +81,10 @@ export function createMainWindow({ startHidden = false }: { startHidden?: boolea
   return window;
 }
 
-export function createQuickPopupWindow(mainWindow: BrowserWindow): BrowserWindow {
+export function createQuickPopupWindow(_mainWindow: BrowserWindow): BrowserWindow {
   const popup = new BrowserWindow({
-    width: 420,
-    height: 470,
+    width: 380,
+    height: 392,
     show: false,
     frame: false,
     resizable: false,
@@ -94,7 +94,6 @@ export function createQuickPopupWindow(mainWindow: BrowserWindow): BrowserWindow
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    parent: mainWindow,
     title: "Karpik Quick Access",
     backgroundColor: "#07101d",
     webPreferences: {

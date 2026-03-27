@@ -121,7 +121,7 @@ export function ServicesPage() {
           <p className="eyebrow">Сервисы</p>
           <h2>Runtime и интеграции</h2>
           <p className="muted-text">
-            Снимок desktop runtime, server heartbeat, готовность auth и канал обновлений.
+            Снимок desktop runtime, server heartbeat, readiness auth и канал обновлений.
           </p>
         </div>
       </div>

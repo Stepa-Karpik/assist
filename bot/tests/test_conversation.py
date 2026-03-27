@@ -19,6 +19,26 @@ class FakeIntentResolver:
         return self.next_result
 
 
+@dataclass
+class FakeAppCatalogEntry:
+    app_id: str
+    display_name: str
+    aliases: tuple[str, ...]
+    linked: bool = True
+
+
+@dataclass
+class FakeChatResponder:
+    reply_text: str
+
+    def __post_init__(self) -> None:
+        self.calls: list[str] = []
+
+    def reply(self, text: str) -> str:
+        self.calls.append(text)
+        return self.reply_text
+
+
 class FakeTaskClient:
     def __init__(
         self,
@@ -30,6 +50,7 @@ class FakeTaskClient:
         queue_result: list[TaskSummaryResult] | None = None,
         recent_result: list[TaskSummaryResult] | None = None,
         cancel_result: TaskStatusResult | None = None,
+        app_catalog: list[FakeAppCatalogEntry] | None = None,
     ) -> None:
         self.task_result = task_result or TaskWorkflowResult(status="ignored")
         self.auth_result = auth_result or TaskWorkflowResult(status="ignored")
@@ -38,6 +59,7 @@ class FakeTaskClient:
         self.queue_result = queue_result or []
         self.recent_result = recent_result or []
         self.cancel_result = cancel_result or TaskStatusResult(found=False)
+        self.app_catalog = app_catalog or []
         self.task_calls: list[dict[str, object]] = []
         self.auth_calls: list[dict[str, object]] = []
         self.decision_calls: list[dict[str, object]] = []
@@ -107,6 +129,9 @@ class FakeTaskClient:
             }
         )
         return self.cancel_result
+
+    def fetch_app_catalog(self) -> list[FakeAppCatalogEntry]:
+        return self.app_catalog
 
 
 def test_ambiguous_screenshot_message_returns_inline_screen_buttons() -> None:
@@ -334,3 +359,236 @@ def test_text_message_can_cancel_task_from_natural_language() -> None:
             "task_id": "task-77",
         }
     ]
+
+
+def test_text_message_lists_linked_apps_with_inline_buttons() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(
+        app_catalog=[
+            FakeAppCatalogEntry(
+                app_id="app-osu",
+                display_name="osu! lazer",
+                aliases=("osu", "осу", "osu lazer"),
+                linked=True,
+            ),
+            FakeAppCatalogEntry(
+                app_id="app-code",
+                display_name="Visual Studio Code",
+                aliases=("code", "код"),
+                linked=True,
+            ),
+            FakeAppCatalogEntry(
+                app_id="app-discovered",
+                display_name="Some Discovered App",
+                aliases=("some app",),
+                linked=False,
+            ),
+        ]
+    )
+
+    reply = process_text_message(
+        "приложения",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+
+    assert reply is not None
+    assert "Связанные приложения" in (reply.text or "")
+    assert reply.buttons == (
+        BotButton(text="osu! lazer", callback_data="launch-app:app-osu"),
+        BotButton(text="Visual Studio Code", callback_data="launch-app:app-code"),
+    )
+
+
+def test_text_message_launches_unique_app_match_as_medium_task() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(
+        task_result=TaskWorkflowResult(status="queued", task_id="task-app-1"),
+        app_catalog=[
+            FakeAppCatalogEntry(
+                app_id="app-osu",
+                display_name="osu! lazer",
+                aliases=("osu", "осу", "osu lazer", "осу лазер"),
+                linked=True,
+            )
+        ],
+    )
+
+    reply = process_text_message(
+        "запусти осу",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+
+    assert reply == BotReply(text="Задача task-app-1 поставлена в очередь.")
+    assert client.task_calls == [
+        {
+            "telegram_user_id": 42,
+            "chat_id": 5001,
+            "risk": "medium",
+            "intent": "launch-app app-osu",
+        }
+    ]
+
+
+def test_text_message_creates_pending_app_selection_when_multiple_candidates_found() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(
+        app_catalog=[
+            FakeAppCatalogEntry(
+                app_id="app-osu",
+                display_name="osu! lazer",
+                aliases=("osu", "осу"),
+                linked=True,
+            ),
+            FakeAppCatalogEntry(
+                app_id="app-osu-dev",
+                display_name="osu! dev",
+                aliases=("osu", "осу", "osu dev"),
+                linked=False,
+            ),
+        ]
+    )
+
+    reply = process_text_message(
+        "запусти osu",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+
+    assert reply is not None
+    assert "1." in (reply.text or "")
+    assert "2." in (reply.text or "")
+    assert client.task_calls == []
+
+
+def test_numeric_reply_launches_selected_pending_app_candidate() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(
+        task_result=TaskWorkflowResult(status="queued", task_id="task-app-2"),
+        app_catalog=[
+            FakeAppCatalogEntry(
+                app_id="app-osu",
+                display_name="osu! lazer",
+                aliases=("osu", "осу"),
+                linked=True,
+            ),
+            FakeAppCatalogEntry(
+                app_id="app-osu-dev",
+                display_name="osu! dev",
+                aliases=("osu", "осу", "osu dev"),
+                linked=False,
+            ),
+        ],
+    )
+
+    first_reply = process_text_message(
+        "запусти osu",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+    assert first_reply is not None
+
+    second_reply = process_text_message(
+        "2",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+
+    assert second_reply == BotReply(text="Задача task-app-2 поставлена в очередь.")
+    assert client.task_calls == [
+        {
+            "telegram_user_id": 42,
+            "chat_id": 5001,
+            "risk": "medium",
+            "intent": "launch-app app-osu-dev",
+        }
+    ]
+
+
+def test_text_message_opens_confident_site_request_as_medium_task() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(task_result=TaskWorkflowResult(status="queued", task_id="task-site-1"))
+
+    reply = process_text_message(
+        "открой ютуб",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="ignored")),
+    )
+
+    assert reply == BotReply(text="Задача task-site-1 поставлена в очередь.")
+    assert client.task_calls == [
+        {
+            "telegram_user_id": 42,
+            "chat_id": 5001,
+            "risk": "medium",
+            "intent": "open-site https://youtube.com",
+        }
+    ]
+
+
+def test_generic_message_uses_chat_responder_when_codex_is_not_forced() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient()
+    chat_responder = FakeChatResponder("Привет. Чем помочь?")
+
+    reply = process_text_message(
+        "привет",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(IntentResolution(kind="task", risk="high", intent="codex привет")),
+        chat_responder=chat_responder,
+    )
+
+    assert reply == BotReply(text="Привет. Чем помочь?")
+    assert client.task_calls == []
+    assert chat_responder.calls == ["привет"]
+
+
+def test_explicit_codex_message_still_creates_task_even_with_chat_responder() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(task_result=TaskWorkflowResult(status="queued", task_id="task-codex-1"))
+    chat_responder = FakeChatResponder("unused")
+
+    reply = process_text_message(
+        "кодекс, объясни стек",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(
+            IntentResolution(kind="task", risk="high", intent="codex кодекс, объясни стек")
+        ),
+        chat_responder=chat_responder,
+    )
+
+    assert reply == BotReply(text="Задача task-codex-1 поставлена в очередь.")
+    assert client.task_calls == [
+        {
+            "telegram_user_id": 42,
+            "chat_id": 5001,
+            "risk": "high",
+            "intent": "codex кодекс, объясни стек",
+        }
+    ]
+    assert chat_responder.calls == []

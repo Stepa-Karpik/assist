@@ -3,8 +3,11 @@ import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, Notification, Tr
 import QRCode from "qrcode";
 
 import { ActivityLogStore } from "./activityLogStore";
+import { AppRegistryStore, type AppRegistryInput } from "./appRegistryStore";
 import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
+import { AssistantProcessStore } from "./assistantProcessStore";
 import { type AuthConfigInput, AuthStore } from "./authStore";
+import { discoverApps } from "./appDiscovery";
 import { ensureRuntimeFolders } from "./bootstrapFolders";
 import {
   type CodexChatBindingInput,
@@ -13,10 +16,12 @@ import {
 } from "./codexSettingsStore";
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
+import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { getDataRoot } from "./dataRoot";
 import { createKnowledgeStore } from "./knowledgeStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
+import { createLocalConversationRouter } from "./localConversationRouter";
 import { createLocalChatRuntime } from "./localChatRuntime";
 import { PairingStore } from "./pairingStore";
 import { createQuickAccessRuntime } from "./quickAccessRuntime";
@@ -26,6 +31,7 @@ import {
   type DevicePresenceResponse,
   type PairingEventListResponse,
   type RemoteTaskRecord,
+  type RemoteAppCatalogItem,
   createSyncClient
 } from "./syncClient";
 import { createTaskExecutor } from "./taskExecutor";
@@ -46,6 +52,7 @@ let taskPollInFlight = false;
 let isAppQuitting = false;
 let ipcHandlersRegistered = false;
 let appPreferencesStore: AppPreferencesStore | null = null;
+let appRegistryStore: AppRegistryStore | null = null;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
@@ -58,6 +65,7 @@ let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let updateService: ReturnType<typeof createUpdateService> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 let taskActivityInitialized = false;
+const assistantProcessStore = new AssistantProcessStore();
 const taskRuntimeState = {
   activeExecutions: new Map()
 };
@@ -81,6 +89,39 @@ if (started) {
 
 function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
+}
+
+function buildRemoteAppCatalogItems(): RemoteAppCatalogItem[] {
+  if (appRegistryStore === null) {
+    return [];
+  }
+
+  return appRegistryStore.getState().items.map((item) => ({
+    appId: item.appId,
+    displayName: item.displayName,
+    aliases: [...item.aliases],
+    linked: item.linked,
+    source: item.source
+  }));
+}
+
+async function syncAppCatalogState() {
+  const response = await syncClient.syncAppCatalog(buildRemoteAppCatalogItems());
+
+  if (!response.ok) {
+    logResponseError("Syncing app catalog", response);
+  }
+}
+
+async function refreshDiscoveredApps() {
+  if (appRegistryStore === null) {
+    return appRegistryStore;
+  }
+
+  const discoveredApps = await discoverApps();
+  appRegistryStore.replaceDiscoveredApps(discoveredApps);
+  await syncAppCatalogState();
+  return appRegistryStore.getState();
 }
 
 async function syncAuthConfigState() {
@@ -460,11 +501,44 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
+  ipcMain.handle("apps:get-state", () => appRegistryStore?.getState() ?? { items: [] });
+  ipcMain.handle("apps:get-active-processes", () => assistantProcessStore.listActive());
   ipcMain.handle("activity-log:get", () => activityLogStore?.list() ?? []);
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
   ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listSections() ?? []);
+  ipcMain.handle(
+    "apps:save",
+    async (_event, payload: AppRegistryInput) => {
+      if (appRegistryStore === null) {
+        throw new Error("App registry is not initialized");
+      }
+
+      const state = appRegistryStore.saveApp(payload);
+      await syncAppCatalogState();
+      return state;
+    }
+  );
+  ipcMain.handle(
+    "apps:remove",
+    async (_event, appId: string) => {
+      if (appRegistryStore === null) {
+        throw new Error("App registry is not initialized");
+      }
+
+      const state = appRegistryStore.removeApp(appId);
+      await syncAppCatalogState();
+      return state;
+    }
+  );
+  ipcMain.handle(
+    "apps:refresh-discovered",
+    async () => {
+      const state = await refreshDiscoveredApps();
+      return state ?? { items: [] };
+    }
+  );
   ipcMain.handle(
     "knowledge:read-entry",
     (_event, payload: { sectionId: "master_info" | "knowledge" | "notes" | "websites"; relativePath: string }) =>
@@ -681,6 +755,9 @@ async function bootstrap() {
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
   });
+  appRegistryStore = new AppRegistryStore({
+    settingsRoot: runtimeFolders.settings
+  });
   appPreferencesStore.applyLoginItemSettings(app);
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets,
@@ -724,8 +801,19 @@ async function bootstrap() {
       runtimeFolders.userRoot,
     generateCodexWritePreview: createCodexWritePreviewGenerator({
       stateRoot: runtimeFolders.state
-    }).generatePreview
+    }).generatePreview,
+    getRegisteredApp: (appId) => appRegistryStore?.getApp(appId) ?? null,
+    findAssistantProcessByQuery: (query) => assistantProcessStore.findActiveByQuery(query),
+    registerAssistantProcess: (record) => assistantProcessStore.register(record),
+    markAssistantProcessExited: (taskId) => assistantProcessStore.markExited(taskId),
+    markAssistantProcessCancelled: (taskId) => assistantProcessStore.markCancelled(taskId),
   });
+  const localChatResponder =
+    process.env.DEEPSEEK_API_KEY && process.env.DEEPSEEK_API_KEY.trim().length > 0
+      ? createDeepSeekChatResponder({
+          apiKey: process.env.DEEPSEEK_API_KEY
+        })
+      : null;
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
     executeTask: (task) => taskExecutor!.execute(task),
@@ -733,6 +821,9 @@ async function bootstrap() {
       localApprovalStore?.saveDraft(intent, draft);
     },
     getWorkspaceRootForChat: getWorkspaceRootForLocalChat,
+    resolveInput: createLocalConversationRouter({
+      chatResponder: localChatResponder
+    }).resolve,
     logActivity: (input) => {
       activityLogStore?.append(input);
     }
@@ -750,6 +841,9 @@ async function bootstrap() {
     updater: autoUpdater as unknown as UpdaterAdapter
   });
   registerIpcHandlers();
+  await refreshDiscoveredApps().catch((error: unknown) => {
+    console.error("Failed to discover apps", error);
+  });
 
   const startHidden = process.argv.includes("--start-hidden");
   mainWindow = createMainWindow({

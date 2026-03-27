@@ -1,7 +1,12 @@
 import json
 
 import app.intent_resolver as intent_resolver
-from app.intent_resolver import DeepSeekIntentResolver, RuleBasedIntentResolver
+from app.intent_resolver import (
+    DeepSeekIntentResolver,
+    RuleBasedIntentResolver,
+    message_explicitly_requests_codex,
+    message_requires_codex,
+)
 
 
 class FakeDeepSeekResponse:
@@ -92,6 +97,18 @@ def test_resolver_falls_back_to_codex_for_generic_creative_request() -> None:
     assert result.kind == "task"
     assert result.risk == "high"
     assert result.intent == "codex придумай три названия для новой фичи"
+
+
+def test_explicit_codex_marker_is_detected() -> None:
+    assert message_explicitly_requests_codex("кодекс, объясни стек") is True
+    assert message_explicitly_requests_codex("через codex посмотри ошибку") is True
+    assert message_explicitly_requests_codex("привет") is False
+
+
+def test_file_or_project_sensitive_message_requires_codex() -> None:
+    assert message_requires_codex("объясни ошибку в файле main.py") is True
+    assert message_requires_codex("посмотри проект assist") is True
+    assert message_requires_codex("придумай три названия") is False
 
 
 def test_deepseek_resolver_maps_free_form_status_request(monkeypatch) -> None:
