@@ -136,7 +136,7 @@ class InMemoryTaskStore:
     def retry_task(self, task_id: str) -> TaskRecord | None:
         task = self.get_task(task_id)
 
-        if task is None or task.status not in {"failed", "blocked", "stalled"}:
+        if task is None or task.status not in {"failed", "blocked", "stalled", "cancelled"}:
             return None
 
         task.status = "queued"
@@ -151,6 +151,52 @@ class InMemoryTaskStore:
         task.artifact_base64 = None
         self._persist()
         return task
+
+    def cancel_task(
+        self, task_id: str, error_text: str = "Cancelled by operator."
+    ) -> TaskRecord | None:
+        task = self.get_task(task_id)
+
+        if task is None:
+            return None
+
+        if task.status in {"queued", "awaiting_auth"}:
+            task.status = "cancelled"
+            task.finished_at = datetime.now(UTC)
+            task.result_text = None
+            task.error_text = error_text
+            task.artifact_kind = None
+            task.artifact_mime_type = None
+            task.artifact_file_name = None
+            task.artifact_base64 = None
+            self._persist()
+            return task
+
+        if task.status in {"running", "awaiting_local_approval"}:
+            task.status = "cancel_requested"
+            task.finished_at = None
+            task.result_text = None
+            task.error_text = None
+            task.artifact_kind = None
+            task.artifact_mime_type = None
+            task.artifact_file_name = None
+            task.artifact_base64 = None
+            self._persist()
+            return task
+
+        if task.status == "cancel_requested":
+            task.status = "cancelled"
+            task.finished_at = datetime.now(UTC)
+            task.result_text = None
+            task.error_text = error_text
+            task.artifact_kind = None
+            task.artifact_mime_type = None
+            task.artifact_file_name = None
+            task.artifact_base64 = None
+            self._persist()
+            return task
+
+        return None
 
     def await_local_approval(self, task_id: str, result_text: str) -> TaskRecord | None:
         task = self.get_task(task_id)

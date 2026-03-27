@@ -46,6 +46,8 @@ type TaskSnapshotItem = {
     | "queued"
     | "awaiting_auth"
     | "awaiting_local_approval"
+    | "cancel_requested"
+    | "cancelled"
     | "blocked"
     | "running"
     | "done"
@@ -201,6 +203,7 @@ declare global {
         relativePath: string;
       }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
+      cancelTask: (taskId: string) => Promise<void>;
       retryTask: (taskId: string) => Promise<void>;
       sendLocalChatMessage: (payload: {
         chatId: string;

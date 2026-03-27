@@ -129,6 +129,25 @@ def test_blocked_telegram_task_creates_failed_delivery_event() -> None:
     assert response.json()["items"][0]["error_text"] == "Rejected locally."
 
 
+def test_cancelled_telegram_task_creates_failed_delivery_event() -> None:
+    task_id = create_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(f"/api/tasks/{task_id}/cancel")
+    client.post(
+        f"/api/tasks/{task_id}/cancel",
+        json={"error_text": "Cancelled by operator."},
+    )
+
+    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["task_id"] == task_id
+    assert response.json()["items"][0]["kind"] == "task_failed"
+    assert response.json()["items"][0]["error_text"] == "Cancelled by operator."
+
+
 def test_desktop_origin_task_does_not_create_delivery_event() -> None:
     task_id = create_desktop_task()
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type LocalChatItem = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getLocalChats"]>
@@ -9,21 +9,23 @@ type LocalChatDetail = NonNullable<
 >;
 
 function buildArtifactDataUrl(message: LocalChatDetail["messages"][number]): string | null {
-  if (
-    message.artifactKind !== "image_base64" ||
-    !message.artifactMimeType ||
-    !message.artifactBase64
-  ) {
+  if (message.artifactKind !== "image_base64" || !message.artifactMimeType || !message.artifactBase64) {
     return null;
   }
 
   return `data:${message.artifactMimeType};base64,${message.artifactBase64}`;
 }
 
-type ChatsPageProps = {
-  selectedChatId?: string | null;
-  onSelectChat?: (chatId: string | null) => void;
-};
+function formatMessageTime(value: string): string {
+  try {
+    return new Date(value).toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return value;
+  }
+}
 
 function sortChats(chats: LocalChatItem[]): LocalChatItem[] {
   return [...chats].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -45,6 +47,23 @@ function createEmptyDetail(chat: LocalChatItem): LocalChatDetail {
   };
 }
 
+function buildChatSubtitle(chat: LocalChatItem): string {
+  if (chat.referenceLabel) {
+    return chat.referenceLabel;
+  }
+
+  if (chat.workspaceId) {
+    return `Workspace: ${chat.workspaceId}`;
+  }
+
+  return chat.source === "local_continuation_chat" ? "Продолжение Telegram-диалога" : "Локальный диалог";
+}
+
+type ChatsPageProps = {
+  selectedChatId?: string | null;
+  onSelectChat?: (chatId: string | null) => void;
+};
+
 export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
   const [localChats, setLocalChats] = useState<LocalChatItem[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(selectedChatId ?? null);
@@ -54,6 +73,11 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const activeChatSummary = useMemo(
+    () => localChats.find((chat) => chat.chatId === activeChatId) ?? null,
+    [activeChatId, localChats]
+  );
 
   useEffect(() => {
     let isSubscribed = true;
@@ -68,17 +92,13 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
         const sortedChats = sortChats(chats);
         setLocalChats(sortedChats);
-        setActiveChatId((currentChatId) => {
-          const preferredChatId =
-            selectedChatId && sortedChats.some((chat) => chat.chatId === selectedChatId)
-              ? selectedChatId
-              : currentChatId && sortedChats.some((chat) => chat.chatId === currentChatId)
-                ? currentChatId
-                : sortedChats[0]?.chatId ?? null;
-
-          onSelectChat?.(preferredChatId);
-          return preferredChatId;
-        });
+        const preferredChatId =
+          selectedChatId && sortedChats.some((chat) => chat.chatId === selectedChatId)
+            ? selectedChatId
+            : activeChatId && sortedChats.some((chat) => chat.chatId === activeChatId)
+              ? activeChatId
+              : sortedChats[0]?.chatId ?? null;
+        setActiveChatId(preferredChatId);
       } catch {
         if (isSubscribed) {
           setError("Не удалось загрузить локальные чаты.");
@@ -95,7 +115,11 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     return () => {
       isSubscribed = false;
     };
-  }, [onSelectChat, selectedChatId]);
+  }, [activeChatId, selectedChatId]);
+
+  useEffect(() => {
+    onSelectChat?.(activeChatId ?? null);
+  }, [activeChatId, onSelectChat]);
 
   useEffect(() => {
     if (selectedChatId === undefined) {
@@ -125,7 +149,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
       }
 
       if (!window.karpik?.getLocalChatDetail) {
-        setError("Local chat detail API недоступен в этом окружении.");
+        setError("API локальных чатов недоступен в этом окружении.");
         return;
       }
 
@@ -165,14 +189,16 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
   async function handleCreateDesktopChat() {
     if (!window.karpik?.createDesktopChat) {
-      setError("Local chat API недоступен в этом окружении.");
+      setError("API локальных чатов недоступен в этом окружении.");
       return;
     }
 
     setError(null);
 
     try {
-      const nextChat = await window.karpik.createDesktopChat();
+      const nextChat = await window.karpik.createDesktopChat({
+        title: "Новый локальный чат"
+      });
       setLocalChats((currentChats) => upsertChatSummary(currentChats, nextChat));
       setActiveChatId(nextChat.chatId);
       setActiveChat(createEmptyDetail(nextChat));
@@ -184,7 +210,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
   async function handleSendLocalRequest() {
     if (!window.karpik?.sendLocalChatMessage || activeChatId === null) {
-      setError("Local execution API недоступен в этом окружении.");
+      setError("API локального выполнения недоступен в этом окружении.");
       return;
     }
 
@@ -225,130 +251,146 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
   }
 
   return (
-    <div className="page-shell">
-      <p className="eyebrow">Чаты</p>
-      <h2>Local Desktop Chats</h2>
-      <p className="muted-text">
-        Здесь видны только локальные чаты, включая continuations, созданные из Telegram.
-      </p>
+    <div className="page-shell page-shell--full">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Чаты</p>
+          <h2>Локальный операторский диалог</h2>
+          <p className="muted-text">
+            Сообщения пользователя справа, ответы ассистента слева. Telegram continuation-чаты живут здесь же.
+          </p>
+        </div>
+        <button
+          className="ghost-button ghost-button--primary ghost-button--wide"
+          onClick={() => {
+            void handleCreateDesktopChat();
+          }}
+          type="button"
+        >
+          Новый локальный чат
+        </button>
+      </div>
 
       {error !== null ? <p className="task-error">{error}</p> : null}
 
-      <div className="local-chats-layout">
-        <section className="local-chat-sidebar">
-          <button
-            className="ghost-button"
-            onClick={() => {
-              void handleCreateDesktopChat();
-            }}
-            type="button"
-          >
-            Новый локальный чат
-          </button>
-
+      <div className="messenger-layout">
+        <aside className="chat-list-shell">
           {isLoading ? <p className="muted-text">Загружаем локальные чаты...</p> : null}
 
           {!isLoading && localChats.length === 0 ? (
-            <p className="muted-text">Локальных чатов пока нет.</p>
-          ) : null}
-
-          {localChats.length > 0 ? (
-            <div className="task-list" aria-live="polite">
-              {localChats.map((chat) => (
-                <button
-                  className={`task-card local-chat-summary${
-                    chat.chatId === activeChatId ? " active" : ""
-                  }`}
-                  key={chat.chatId}
-                  onClick={() => {
-                    handleSelectChat(chat.chatId);
-                  }}
-                  type="button"
-                >
-                  <div className="task-card-header">
-                    <strong>{chat.title}</strong>
-                    <span className="task-status">{chat.source}</span>
-                  </div>
-                  {chat.referenceLabel ? <p className="task-result">{chat.referenceLabel}</p> : null}
-                  {chat.workspaceId ? <p className="muted-text">Workspace: {chat.workspaceId}</p> : null}
-                  <p className="muted-text">Messages: {chat.messageCount}</p>
-                </button>
-              ))}
+            <div className="empty-panel">
+              <strong>Локальных чатов пока нет.</strong>
+              <p className="muted-text">Создай первый локальный чат и отправь обычное сообщение.</p>
             </div>
           ) : null}
-        </section>
 
-        <section className="local-chat-detail">
+          {localChats.map((chat) => (
+            <button
+              className={`chat-list-item${chat.chatId === activeChatId ? " active" : ""}`}
+              key={chat.chatId}
+              onClick={() => {
+                handleSelectChat(chat.chatId);
+              }}
+              type="button"
+            >
+              <div className="chat-list-item__top">
+                <strong>{chat.title}</strong>
+                <span className="task-status">{chat.messageCount}</span>
+              </div>
+              <p className="chat-list-item__meta">{buildChatSubtitle(chat)}</p>
+            </button>
+          ))}
+        </aside>
+
+        <section className="chat-thread-shell">
           {isDetailLoading ? <p className="muted-text">Загружаем чат...</p> : null}
 
           {!isDetailLoading && activeChat === null ? (
-            <p className="muted-text">Выбери локальный чат, чтобы продолжить работу.</p>
+            <div className="empty-panel">
+              <strong>Выбери чат</strong>
+              <p className="muted-text">Слева доступны локальные и continuation-чаты.</p>
+            </div>
           ) : null}
 
           {activeChat !== null ? (
             <>
-              <div className="task-card">
-                <strong>{activeChat.title}</strong>
-              </div>
+              <header className="chat-thread-header">
+                <div>
+                  <strong>{activeChat.title}</strong>
+                  <p className="muted-text">
+                    {activeChat.referenceLabel ?? buildChatSubtitle(activeChatSummary ?? activeChat)}
+                  </p>
+                </div>
+                {activeChat.workspaceId ? <span className="workspace-pill">{activeChat.workspaceId}</span> : null}
+              </header>
 
-              <div className="local-chat-messages" aria-live="polite">
+              <div className="chat-thread" aria-live="polite">
                 {activeChat.messages.length === 0 ? (
-                  <p className="muted-text">Сообщений пока нет.</p>
+                  <div className="empty-panel">
+                    <strong>Диалог пуст</strong>
+                    <p className="muted-text">
+                      Напиши сообщение вроде «привет», «скинь скриншот» или «обнови README».
+                    </p>
+                  </div>
                 ) : null}
 
-                {activeChat.messages.map((message) => (
-                  <article
-                    className={`task-card local-chat-message local-chat-message-${message.role}`}
-                    key={message.messageId}
-                  >
-                    <div className="task-card-header">
-                      <strong>{message.role}</strong>
-                      <span className="task-status">{message.createdAt}</span>
-                    </div>
-                    <p>{message.text}</p>
-                    {buildArtifactDataUrl(message) !== null ? (
-                      <figure>
-                        <img
-                          alt={message.artifactFileName ?? "local-artifact"}
-                          src={buildArtifactDataUrl(message) ?? undefined}
-                        />
-                        {message.artifactFileName ? (
-                          <figcaption className="muted-text">{message.artifactFileName}</figcaption>
+                {activeChat.messages.map((message) => {
+                  const imageUrl = buildArtifactDataUrl(message);
+                  return (
+                    <div className={`chat-message-row chat-message-row--${message.role}`} key={message.messageId}>
+                      <article className={`chat-bubble chat-bubble--${message.role}`}>
+                        <div className="chat-bubble__meta">
+                          <span>
+                            {message.role === "user"
+                              ? "Ты"
+                              : message.role === "assistant"
+                                ? "Ассистент"
+                                : "System"}
+                          </span>
+                          <span>{formatMessageTime(message.createdAt)}</span>
+                        </div>
+                        <p>{message.text}</p>
+                        {imageUrl !== null ? (
+                          <figure className="chat-bubble__figure">
+                            <img alt={message.artifactFileName ?? "artifact"} src={imageUrl} />
+                            {message.artifactFileName ? <figcaption>{message.artifactFileName}</figcaption> : null}
+                          </figure>
                         ) : null}
-                      </figure>
-                    ) : null}
-                  </article>
-                ))}
+                      </article>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="task-card local-chat-composer">
+              <div className="chat-composer">
                 <label className="section-label" htmlFor="local-chat-request">
-                  Local request
+                  Новый запрос
                 </label>
-                <input
-                  className="quick-input"
-                  id="local-chat-request"
-                  onChange={(event) => setRequestText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleSendLocalRequest();
-                    }
-                  }}
-                  placeholder="status, read docs/note.txt, codex summarize the workspace"
-                  type="text"
-                  value={requestText}
-                />
-                <div className="local-chat-actions">
+                <div className="chat-composer__row">
+                  <input
+                    aria-label="Local request"
+                    className="quick-input"
+                    id="local-chat-request"
+                    onChange={(event) => setRequestText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSendLocalRequest();
+                      }
+                    }}
+                    placeholder="Напиши обычным языком: например, «привет» или «скинь скриншот второго экрана»"
+                    type="text"
+                    value={requestText}
+                  />
                   <button
-                    className="ghost-button"
+                    className="ghost-button ghost-button--primary ghost-button--wide"
                     disabled={isSending || requestText.trim().length === 0}
                     onClick={() => {
                       void handleSendLocalRequest();
                     }}
                     type="button"
                   >
-                    {isSending ? "Sending..." : "Send"}
+                    {isSending ? "Отправляем..." : "Отправить"}
                   </button>
                 </div>
               </div>

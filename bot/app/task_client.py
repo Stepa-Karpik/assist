@@ -25,12 +25,29 @@ TaskLifecycleStatus = Literal[
     "queued",
     "awaiting_auth",
     "awaiting_local_approval",
+    "cancel_requested",
+    "cancelled",
     "blocked",
     "running",
     "done",
     "failed",
     "stalled",
 ]
+
+ACTIVE_TASK_STATUSES: tuple[TaskLifecycleStatus, ...] = (
+    "queued",
+    "awaiting_auth",
+    "awaiting_local_approval",
+    "cancel_requested",
+    "running",
+    "stalled",
+)
+ATTENTION_TASK_STATUSES: tuple[TaskLifecycleStatus, ...] = (
+    "awaiting_auth",
+    "awaiting_local_approval",
+    "cancel_requested",
+    "stalled",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +67,25 @@ class TaskStatusResult:
     status: TaskLifecycleStatus | None = None
     result_text: str | None = None
     error_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSummaryResult:
+    task_id: str
+    status: TaskLifecycleStatus
+    intent: str
+    result_text: str | None = None
+    error_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceStatusResult:
+    found: bool
+    device_id: str | None = None
+    is_online: bool | None = None
+    last_seen_at: str | None = None
+    pending_count: int = 0
+    attention_count: int = 0
 
 
 def normalize_workflow_result(value: object) -> TaskWorkflowStatus:
@@ -77,6 +113,8 @@ def normalize_task_status(value: object) -> TaskLifecycleStatus | None:
         "queued",
         "awaiting_auth",
         "awaiting_local_approval",
+        "cancel_requested",
+        "cancelled",
         "blocked",
         "running",
         "done",
@@ -100,12 +138,7 @@ def extract_task_id(parsed: dict[str, object]) -> str | None:
     return task_id if isinstance(task_id, str) else None
 
 
-def parse_workflow_result(body: str) -> TaskWorkflowResult:
-    try:
-        parsed = json.loads(body) if body else {}
-    except json.JSONDecodeError:
-        return TaskWorkflowResult(status="ignored")
-
+def parse_workflow_result(parsed: object) -> TaskWorkflowResult:
     if not isinstance(parsed, dict):
         return TaskWorkflowResult(status="ignored")
 
@@ -144,6 +177,26 @@ def parse_task_status_item(value: object) -> TaskStatusResult:
         status=status,
         result_text=result_text if isinstance(result_text, str) else None,
         error_text=error_text if isinstance(error_text, str) else None,
+    )
+
+
+def parse_task_summary_item(value: object) -> TaskSummaryResult | None:
+    if not isinstance(value, dict):
+        return None
+
+    task_id = value.get("task_id")
+    status = normalize_task_status(value.get("status"))
+    intent = value.get("intent")
+
+    if not isinstance(task_id, str) or status is None or not isinstance(intent, str):
+        return None
+
+    return TaskSummaryResult(
+        task_id=task_id,
+        status=status,
+        intent=intent,
+        result_text=value.get("result_text") if isinstance(value.get("result_text"), str) else None,
+        error_text=value.get("error_text") if isinstance(value.get("error_text"), str) else None,
     )
 
 
@@ -206,33 +259,94 @@ class TaskServerClient:
         return self._post("/api/challenges/decision", payload)
 
     def fetch_task(self, task_id: str) -> TaskStatusResult:
-        parsed = self._get_json(f"/api/tasks/{task_id}")
-        return parse_task_status_item(parsed)
+        return parse_task_status_item(self._get_json(f"/api/tasks/{task_id}"))
 
     def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
-        query = urlencode(
-            {
-                "device_id": self.device_id,
-                "include_history": "true",
-                "chat_id": str(chat_id),
-            }
+        items = self._fetch_task_history(chat_id=chat_id)
+
+        if len(items) == 0:
+            return TaskStatusResult(found=False)
+
+        return TaskStatusResult(
+            found=True,
+            task_id=items[0].task_id,
+            status=items[0].status,
+            result_text=items[0].result_text,
+            error_text=items[0].error_text,
         )
-        parsed = self._get_json(f"/api/tasks?{query}")
+
+    def fetch_active_queue(self) -> list[TaskSummaryResult]:
+        return [
+            item
+            for item in self._fetch_task_history()
+            if item.status in ACTIVE_TASK_STATUSES
+        ]
+
+    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]:
+        return self._fetch_task_history()[:limit]
+
+    def fetch_device_status(self) -> DeviceStatusResult:
+        parsed = self._get_json(f"/api/devices/{self.device_id}")
 
         if not isinstance(parsed, dict):
-            return TaskStatusResult(found=False)
+            return DeviceStatusResult(found=False)
+
+        device_id = parsed.get("device_id")
+        is_online = parsed.get("is_online")
+        last_seen_at = parsed.get("last_seen_at")
+
+        if not isinstance(device_id, str) or not isinstance(is_online, bool):
+            return DeviceStatusResult(found=False)
+
+        queue = self.fetch_active_queue()
+        attention_count = sum(
+            1 for item in queue if item.status in ATTENTION_TASK_STATUSES
+        )
+
+        return DeviceStatusResult(
+            found=True,
+            device_id=device_id,
+            is_online=is_online,
+            last_seen_at=last_seen_at if isinstance(last_seen_at, str) else None,
+            pending_count=len(queue),
+            attention_count=attention_count,
+        )
+
+    def cancel_task(self, task_id: str) -> TaskStatusResult:
+        return parse_task_status_item(self._post_json(f"/api/tasks/{task_id}/cancel", None))
+
+    def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:
+        query = {
+            "device_id": self.device_id,
+            "include_history": "true",
+        }
+
+        if chat_id is not None:
+            query["chat_id"] = str(chat_id)
+
+        parsed = self._get_json(f"/api/tasks?{urlencode(query)}")
+
+        if not isinstance(parsed, dict):
+            return []
 
         items = parsed.get("items")
 
-        if not isinstance(items, list) or len(items) == 0:
-            return TaskStatusResult(found=False)
+        if not isinstance(items, list):
+            return []
 
-        return parse_task_status_item(items[0])
+        return [
+            item
+            for item in (parse_task_summary_item(value) for value in items)
+            if item is not None
+        ]
 
     def _post(self, path: str, payload: dict[str, object]) -> TaskWorkflowResult:
+        return parse_workflow_result(self._post_json(path, payload))
+
+    def _post_json(self, path: str, payload: dict[str, object] | None) -> object | None:
         request = Request(
             url=f"{self.server_url.rstrip('/')}{path}",
-            data=json.dumps(payload).encode("utf-8"),
+            data=None if payload is None else json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -240,10 +354,17 @@ class TaskServerClient:
         try:
             with urlopen(request, timeout=self.wait_seconds + 1) as response:
                 body = response.read().decode("utf-8")
-        except (HTTPError, URLError, TimeoutError, OSError):
-            return TaskWorkflowResult(status="ignored")
+        except HTTPError as error:
+            if error.code == 404:
+                return None
+            return None
+        except (URLError, TimeoutError, OSError):
+            return None
 
-        return parse_workflow_result(body)
+        try:
+            return json.loads(body) if body else None
+        except json.JSONDecodeError:
+            return None
 
     def _get_json(self, path: str) -> object | None:
         request = Request(

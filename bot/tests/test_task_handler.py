@@ -1,23 +1,37 @@
 from app.handlers.task import (
     get_auth_password_prompt_text,
     get_auth_success_text,
+    get_cancel_requested_task_text,
+    get_cancelled_task_text,
     get_confirm_prompt_text,
     get_decline_text,
+    get_device_status_text,
     get_done_task_text,
     get_failed_task_text,
     get_invalid_password_text,
     get_locked_text,
+    get_queue_summary_text,
+    get_recent_commands_text,
     get_queued_task_text,
     get_running_task_text,
     get_setup_required_text,
     get_task_not_found_text,
     resolve_auth_command,
+    resolve_cancel_command,
     resolve_confirm_command,
     resolve_decline_command,
+    resolve_device_command,
+    resolve_last_command,
+    resolve_queue_command,
     resolve_status_command,
     resolve_task_command,
 )
-from app.task_client import TaskStatusResult, TaskWorkflowResult
+from app.task_client import (
+    DeviceStatusResult,
+    TaskStatusResult,
+    TaskSummaryResult,
+    TaskWorkflowResult,
+)
 
 
 class FakeTaskClient:
@@ -29,12 +43,20 @@ class FakeTaskClient:
         decision_result: TaskWorkflowResult | None = None,
         task_status_result: TaskStatusResult | None = None,
         latest_task_result: TaskStatusResult | None = None,
+        device_status_result: DeviceStatusResult | None = None,
+        queue_result: list[TaskSummaryResult] | None = None,
+        recent_result: list[TaskSummaryResult] | None = None,
+        cancel_result: TaskStatusResult | None = None,
     ) -> None:
         self.task_result = task_result or TaskWorkflowResult(status="ignored")
         self.auth_result = auth_result or TaskWorkflowResult(status="ignored")
         self.decision_result = decision_result or TaskWorkflowResult(status="ignored")
         self.task_status_result = task_status_result or TaskStatusResult(found=False)
         self.latest_task_result = latest_task_result or TaskStatusResult(found=False)
+        self.device_status_result = device_status_result or DeviceStatusResult(found=False)
+        self.queue_result = queue_result or []
+        self.recent_result = recent_result or []
+        self.cancel_result = cancel_result or TaskStatusResult(found=False)
 
     def create_task(
         self, telegram_user_id: int, chat_id: int, risk: str, intent: str
@@ -69,6 +91,20 @@ class FakeTaskClient:
     def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
         del chat_id
         return self.latest_task_result
+
+    def fetch_device_status(self) -> DeviceStatusResult:
+        return self.device_status_result
+
+    def fetch_active_queue(self) -> list[TaskSummaryResult]:
+        return self.queue_result
+
+    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]:
+        del limit
+        return self.recent_result
+
+    def cancel_task(self, task_id: str) -> TaskStatusResult:
+        del task_id
+        return self.cancel_result
 
 
 def test_untrusted_task_stays_silent() -> None:
@@ -188,7 +224,8 @@ def test_lockout_and_setup_required_are_reported() -> None:
     locked_client = FakeTaskClient(auth_result=TaskWorkflowResult(status="locked"))
     setup_client = FakeTaskClient(
         task_result=TaskWorkflowResult(
-            status="setup_required", message="Сначала настрой пароль и TOTP в GUI Karpik на ПК."
+            status="setup_required",
+            message="Сначала настрой пароль и TOTP в GUI Karpik на ПК.",
         )
     )
 
@@ -298,3 +335,85 @@ def test_status_reports_not_found_or_stays_silent_for_ignored_chat() -> None:
 
     assert not_found_response == get_task_not_found_text()
     assert ignored_response is None
+
+
+def test_device_queue_and_recent_operator_commands_are_reported() -> None:
+    task_client = FakeTaskClient(
+        device_status_result=DeviceStatusResult(
+            found=True,
+            device_id="stepa-desktop",
+            is_online=True,
+            last_seen_at="2026-03-27T10:00:00Z",
+            pending_count=2,
+            attention_count=1,
+        ),
+        queue_result=[
+            TaskSummaryResult(
+                task_id="task-1",
+                status="running",
+                intent="codex summarize release notes",
+            ),
+            TaskSummaryResult(
+                task_id="task-2",
+                status="awaiting_local_approval",
+                intent="codex-write update README",
+            ),
+        ],
+        recent_result=[
+            TaskSummaryResult(
+                task_id="task-3",
+                status="done",
+                intent="status",
+            ),
+            TaskSummaryResult(
+                task_id="task-2",
+                status="awaiting_local_approval",
+                intent="codex-write update README",
+            ),
+        ],
+    )
+
+    device_response = resolve_device_command(task_client=task_client)
+    queue_response = resolve_queue_command(task_client=task_client)
+    last_response = resolve_last_command(task_client=task_client)
+
+    assert device_response == get_device_status_text(
+        device_id="stepa-desktop",
+        is_online=True,
+        last_seen_at="2026-03-27T10:00:00Z",
+        pending_count=2,
+        attention_count=1,
+    )
+    assert queue_response == get_queue_summary_text(task_client.queue_result)
+    assert last_response == get_recent_commands_text(task_client.recent_result)
+
+
+def test_cancel_command_reports_cancelled_and_not_found_states() -> None:
+    cancelled_client = FakeTaskClient(
+        cancel_result=TaskStatusResult(
+            found=True,
+            task_id="task-9",
+            status="cancelled",
+        )
+    )
+    stopping_client = FakeTaskClient(
+        cancel_result=TaskStatusResult(
+            found=True,
+            task_id="task-7",
+            status="cancel_requested",
+        )
+    )
+    missing_client = FakeTaskClient(cancel_result=TaskStatusResult(found=False))
+
+    assert (
+        resolve_cancel_command("/kill task-9", task_client=cancelled_client)
+        == get_cancelled_task_text("task-9")
+    )
+    assert (
+        resolve_cancel_command("/kill task-7", task_client=stopping_client)
+        == get_cancel_requested_task_text("task-7")
+    )
+    assert (
+        resolve_cancel_command("/kill task-404", task_client=missing_client)
+        == get_task_not_found_text()
+    )

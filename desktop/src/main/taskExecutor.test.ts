@@ -282,6 +282,38 @@ describe("createTaskExecutor", () => {
     });
   });
 
+  it("starts codex tasks as deferred executions with a cancel handle", async () => {
+    const workspaceRoot = createUserRoot();
+    const cancel = vi.fn();
+    const startCodexRun = vi.fn(() => ({
+      result: Promise.resolve("Codex summary"),
+      cancel
+    }));
+    const executor = createTaskExecutor({
+      deviceId: "desktop-local",
+      userRoot: createUserRoot(),
+      getCodexWorkspaceRoot: () => workspaceRoot,
+      startCodexRun
+    });
+
+    const execution = executor.start({
+      task_id: "task-codex-deferred",
+      intent: "codex summarize current status"
+    });
+
+    expect(execution.kind).toBe("deferred");
+    expect(await execution.result).toEqual({
+      ok: true,
+      resultText: "Codex summary"
+    });
+    await execution.cancel?.();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(startCodexRun).toHaveBeenCalledWith({
+      prompt: "summarize current status",
+      workspaceRoot
+    });
+  });
+
   it("routes codex-write tasks into local approval when preview changes exist", async () => {
     const workspaceRoot = createUserRoot();
     const generateCodexWritePreview = vi.fn(async () => ({

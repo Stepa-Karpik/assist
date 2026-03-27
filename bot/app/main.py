@@ -27,7 +27,20 @@ from app.delivery_client import DeliveryServerClient
 from app.handlers.help import get_help_text
 from app.handlers.pair import resolve_pair_command
 from app.handlers.start import get_start_text
-from app.handlers.task import parse_auth_command, parse_status_command, parse_task_command, resolve_status_command
+from app.handlers.task import (
+    is_device_command,
+    is_last_command,
+    is_queue_command,
+    parse_auth_command,
+    parse_cancel_command,
+    parse_status_command,
+    parse_task_command,
+    resolve_cancel_command,
+    resolve_device_command,
+    resolve_last_command,
+    resolve_queue_command,
+    resolve_status_command,
+)
 from app.intent_resolver import DeepSeekIntentResolver, RuleBasedIntentResolver
 from app.pairing_client import PairingServerClient
 from app.task_client import TaskServerClient
@@ -37,14 +50,22 @@ def to_inline_keyboard(reply: BotReply) -> InlineKeyboardMarkup | None:
     if len(reply.buttons) == 0:
         return None
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text=button.text, callback_data=button.callback_data)
-                for button in reply.buttons
-            ]
-        ]
-    )
+    rows: list[list[InlineKeyboardButton]] = []
+    current_row: list[InlineKeyboardButton] = []
+
+    for button in reply.buttons:
+        current_row.append(
+            InlineKeyboardButton(text=button.text, callback_data=button.callback_data)
+        )
+
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+
+    if current_row:
+        rows.append(current_row)
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def create_dispatcher(
@@ -201,6 +222,29 @@ def create_dispatcher(
         if response is not None:
             await message.answer(response)
 
+    @dispatcher.message(Command("pc"))
+    @dispatcher.message(Command("device"))
+    async def device_handler(message: Message) -> None:
+        await message.answer(resolve_device_command(task_client=resolved_task_client))
+
+    @dispatcher.message(Command("queue"))
+    async def queue_handler(message: Message) -> None:
+        await message.answer(resolve_queue_command(task_client=resolved_task_client))
+
+    @dispatcher.message(Command("last"))
+    async def last_handler(message: Message) -> None:
+        await message.answer(resolve_last_command(task_client=resolved_task_client))
+
+    @dispatcher.message(Command("kill"))
+    async def kill_handler(message: Message) -> None:
+        if parse_cancel_command(message.text or "") is None:
+            await message.answer("Используйте /kill <task_id>.")
+            return
+
+        await message.answer(
+            resolve_cancel_command(message.text or "", task_client=resolved_task_client)
+        )
+
     @dispatcher.callback_query()
     async def callback_handler(callback: CallbackQuery) -> None:
         if callback.from_user is None or callback.message is None or callback.data is None:
@@ -227,9 +271,23 @@ def create_dispatcher(
         if message.from_user is None:
             return
 
+        text = message.text or ""
+
+        if is_device_command(text):
+            await message.answer(resolve_device_command(task_client=resolved_task_client))
+            return
+
+        if is_queue_command(text):
+            await message.answer(resolve_queue_command(task_client=resolved_task_client))
+            return
+
+        if is_last_command(text):
+            await message.answer(resolve_last_command(task_client=resolved_task_client))
+            return
+
         response = await asyncio.to_thread(
             process_text_message,
-            message.text or "",
+            text,
             telegram_user_id=message.from_user.id,
             chat_id=message.chat.id,
             task_client=resolved_task_client,

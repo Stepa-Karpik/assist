@@ -12,6 +12,8 @@ TaskStatus = Literal[
     "queued",
     "awaiting_auth",
     "awaiting_local_approval",
+    "cancel_requested",
+    "cancelled",
     "blocked",
     "running",
     "done",
@@ -90,3 +92,7 @@ class TaskFailRequest(BaseModel):
 
 class TaskBlockRequest(BaseModel):
     error_text: str
+
+
+class TaskCancelRequest(BaseModel):
+    error_text: str | None = None

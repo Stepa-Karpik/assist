@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
+import { normalizeLocalIntent } from "./localIntentResolver";
 import type { LocalChatDetail, LocalChatStore } from "./localChatStore";
 import type { ExecutableTask, TaskExecutionResult } from "./taskExecutor";
 
@@ -17,6 +18,7 @@ type LocalChatRuntimeOptions = {
     draft: CodexWritePreviewDraft
   ) => Promise<void> | void;
   getWorkspaceRootForChat?: (chatId: string) => string | null | undefined;
+  resolveIntent?: (text: string) => string;
   generateTaskId?: () => string;
   logActivity?: (input: {
     kind: "local_request" | "local_result";
@@ -32,6 +34,7 @@ export function createLocalChatRuntime({
   executeTask,
   persistLocalApproval,
   getWorkspaceRootForChat,
+  resolveIntent = normalizeLocalIntent,
   generateTaskId = () => crypto.randomUUID(),
   logActivity
 }: LocalChatRuntimeOptions) {
@@ -56,9 +59,10 @@ export function createLocalChatRuntime({
       });
 
       const workspaceRoot = getWorkspaceRootForChat?.(chatId);
+      const resolvedIntent = resolveIntent(normalizedText);
       const executionResult = await executeTask({
         task_id: generateTaskId(),
-        intent: normalizedText,
+        intent: resolvedIntent,
         workspace_root: workspaceRoot ?? undefined
       });
 

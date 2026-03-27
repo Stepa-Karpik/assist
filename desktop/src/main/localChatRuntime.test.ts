@@ -1,8 +1,6 @@
-// @vitest-environment node
-
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -54,13 +52,10 @@ describe("createLocalChatRuntime", () => {
       intent: "status",
       workspace_root: "D:\\Projects\\assist"
     });
-    expect(detail.messages.map((message) => message.text)).toEqual([
-      "status",
-      "desktop-local is online"
-    ]);
+    expect(detail.messages.map((message) => message.text)).toEqual(["status", "desktop-local is online"]);
   });
 
-  it("appends a system message for failed local execution", async () => {
+  it("normalizes free-form screenshot requests before execution", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
       now: () => new Date("2026-03-24T13:05:00.000Z"),
@@ -69,12 +64,13 @@ describe("createLocalChatRuntime", () => {
     chatStore.createDesktopChat({
       title: "Local failure"
     });
+    const executeTask = vi.fn(async () => ({
+      ok: false as const,
+      errorText: "Unable to capture screenshot."
+    }));
     const runtime = createLocalChatRuntime({
       chatStore,
-      executeTask: async () => ({
-        ok: false as const,
-        errorText: "Unsupported task intent."
-      }),
+      executeTask,
       generateTaskId: () => "local-task-2"
     });
 
@@ -83,9 +79,49 @@ describe("createLocalChatRuntime", () => {
       text: "screenshot primary"
     });
 
+    expect(executeTask).toHaveBeenCalledWith({
+      task_id: "local-task-2",
+      intent: "screenshot screen-1",
+      workspace_root: undefined
+    });
     expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
       "user:screenshot primary",
-      "system:Unsupported task intent."
+      "system:Unable to capture screenshot."
+    ]);
+  });
+
+  it("falls back to codex for generic local chat prompts", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-24T13:06:00.000Z"),
+      generateChatId: () => "local-chat-2b"
+    });
+    chatStore.createDesktopChat({
+      title: "Local codex"
+    });
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      resultText: "Привет. Чем помочь?"
+    }));
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      executeTask,
+      generateTaskId: () => "local-task-2b"
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-2b",
+      text: "привет"
+    });
+
+    expect(executeTask).toHaveBeenCalledWith({
+      task_id: "local-task-2b",
+      intent: "codex привет",
+      workspace_root: undefined
+    });
+    expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      "user:привет",
+      "assistant:Привет. Чем помочь?"
     ]);
   });
 
@@ -139,11 +175,11 @@ describe("createLocalChatRuntime", () => {
   it("stores screenshot artifacts in the assistant message", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
-      now: () => new Date("2026-03-24T13:15:00.000Z"),
+      now: () => new Date("2026-03-24T13:20:00.000Z"),
       generateChatId: () => "local-chat-4"
     });
     chatStore.createDesktopChat({
-      title: "Screenshot chat"
+      title: "Artifacts"
     });
     const runtime = createLocalChatRuntime({
       chatStore,
@@ -165,7 +201,7 @@ describe("createLocalChatRuntime", () => {
       text: "screenshot"
     });
 
-    expect(detail.messages[1]).toEqual(
+    expect(detail.messages.at(-1)).toEqual(
       expect.objectContaining({
         role: "assistant",
         text: "Screenshot captured.",

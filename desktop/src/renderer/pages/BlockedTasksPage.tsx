@@ -11,15 +11,27 @@ type LocalApprovalItem = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getLocalApprovals"]>
 >[number];
 
-const blockedStatuses = new Set<TaskSnapshotItem["status"]>([
+const visibleStatuses = new Set<TaskSnapshotItem["status"]>([
+  "queued",
   "awaiting_auth",
   "awaiting_local_approval",
+  "cancel_requested",
   "blocked",
-  "failed"
+  "running",
+  "failed",
+  "stalled"
 ]);
 
 function requiresAttention(task: TaskSnapshotItem): boolean {
-  return blockedStatuses.has(task.status);
+  return visibleStatuses.has(task.status);
+}
+
+function canCancel(task: TaskSnapshotItem): boolean {
+  return ["queued", "awaiting_auth", "awaiting_local_approval", "running", "stalled"].includes(task.status);
+}
+
+function canRetry(task: TaskSnapshotItem): boolean {
+  return ["blocked", "failed", "cancelled"].includes(task.status);
 }
 
 export function BlockedTasksPage() {
@@ -126,60 +138,79 @@ export function BlockedTasksPage() {
     }
   }
 
+  async function handleCancel(taskId: string) {
+    if (!window.karpik?.cancelTask) {
+      setActionError("API остановки задачи недоступен.");
+      return;
+    }
+
+    setActionError(null);
+    setBusyTaskId(taskId);
+
+    try {
+      await window.karpik.cancelTask(taskId);
+      await refreshBlockedTasks();
+    } catch {
+      setActionError("Не удалось остановить задачу.");
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
   return (
-    <div className="page-shell">
-      <p className="eyebrow">Невыполненное</p>
-      <h2>Заблокированные задачи и локальное подтверждение</h2>
-      <p className="muted-text">
-        Здесь собраны задачи, которые остановились на авторизации, были заблокированы
-        или завершились ошибкой.
-      </p>
+    <div className="page-shell page-shell--full">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Задачи</p>
+          <h2>Активные и проблемные задачи</h2>
+          <p className="muted-text">
+            Здесь можно остановить висящие процессы, подтвердить локальный preview или перезапустить задачу.
+          </p>
+        </div>
+      </div>
 
-      {isLoading ? (
-        <p className="muted-text">Загружаем задачи, требующие внимания...</p>
-      ) : null}
-
+      {isLoading ? <p className="muted-text">Загружаем очередь задач...</p> : null}
       {!isLoading && tasks.length === 0 ? (
-        <p className="muted-text">
-          Сейчас нет заблокированных или требующих внимания задач.
-        </p>
+        <div className="empty-panel">
+          <strong>Чисто</strong>
+          <p className="muted-text">Сейчас нет активных или проблемных задач, требующих ручного действия.</p>
+        </div>
       ) : null}
-
       {actionError !== null ? <p className="task-error">{actionError}</p> : null}
 
       {tasks.length > 0 ? (
         <div className="task-list" aria-live="polite">
           {tasks.map((task) => (
-            <article className="task-card" key={task.task_id}>
+            <article className="task-card task-card--task" key={task.task_id}>
               <div className="task-card-header">
                 <strong>{task.task_id}</strong>
                 <span className="task-status">{formatTaskStatus(task.status)}</span>
               </div>
-              <p>{task.intent}</p>
+
+              <p className="task-title">{task.intent}</p>
               {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
               {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
+
               {buildTaskArtifactDataUrl(task) !== null ? (
-                <figure>
-                  <img
-                    alt={task.artifactFileName ?? "remote-task-artifact"}
-                    src={buildTaskArtifactDataUrl(task) ?? undefined}
-                  />
-                  {task.artifactFileName ? (
-                    <figcaption className="muted-text">{task.artifactFileName}</figcaption>
-                  ) : null}
+                <figure className="task-artifact">
+                  <img alt={task.artifactFileName ?? "remote-task-artifact"} src={buildTaskArtifactDataUrl(task) ?? undefined} />
+                  {task.artifactFileName ? <figcaption>{task.artifactFileName}</figcaption> : null}
                 </figure>
               ) : null}
-              {task.status === "awaiting_local_approval" &&
-              localApprovals[task.task_id] !== undefined ? (
-                <>
+
+              {task.status === "awaiting_local_approval" && localApprovals[task.task_id] !== undefined ? (
+                <div className="task-preview-panel">
                   <p className="task-result">{localApprovals[task.task_id].summaryText}</p>
-                  <p className="muted-text">
-                    Файлы: {localApprovals[task.task_id].changedFiles.join(", ")}
-                  </p>
-                  <pre className="task-result">{localApprovals[task.task_id].previewText}</pre>
-                  <div className="task-card-header">
+                  <p className="muted-text">Файлы: {localApprovals[task.task_id].changedFiles.join(", ")}</p>
+                  <pre className="task-result task-result--pre">{localApprovals[task.task_id].previewText}</pre>
+                </div>
+              ) : null}
+
+              <div className="action-row">
+                {task.status === "awaiting_local_approval" && localApprovals[task.task_id] !== undefined ? (
+                  <>
                     <button
-                      className="ghost-button"
+                      className="ghost-button ghost-button--primary"
                       disabled={busyTaskId === task.task_id}
                       onClick={() => {
                         void handleApprove(task.task_id);
@@ -198,11 +229,23 @@ export function BlockedTasksPage() {
                     >
                       Отклонить
                     </button>
-                  </div>
-                </>
-              ) : null}
-              {task.status !== "awaiting_auth" && task.status !== "awaiting_local_approval" ? (
-                <div className="task-card-header">
+                  </>
+                ) : null}
+
+                {canCancel(task) ? (
+                  <button
+                    className="ghost-button ghost-button--danger"
+                    disabled={busyTaskId === task.task_id}
+                    onClick={() => {
+                      void handleCancel(task.task_id);
+                    }}
+                    type="button"
+                  >
+                    {task.status === "cancel_requested" ? "Останавливаем..." : "Остановить"}
+                  </button>
+                ) : null}
+
+                {canRetry(task) ? (
                   <button
                     className="ghost-button"
                     disabled={busyTaskId === task.task_id}
@@ -213,8 +256,8 @@ export function BlockedTasksPage() {
                   >
                     Повторить
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </article>
           ))}
         </div>

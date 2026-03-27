@@ -143,6 +143,7 @@ describe("desktop renderer feedback", () => {
         message: null
       })),
       approveLocalApproval: vi.fn(async () => undefined),
+      cancelTask: vi.fn(async () => undefined),
       checkForUpdates: vi.fn(async () => ({
         currentVersion: "0.1.2",
         feedUrl: null,
@@ -275,8 +276,8 @@ describe("desktop renderer feedback", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save chat workspace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить workspace" }));
 
-    expect(await screen.findByText("Workspace binding saved for chat 5001.")).toBeInTheDocument();
+    expect(await screen.findByText("Привязка workspace для чата 5001 сохранена.")).toBeInTheDocument();
   });
 });

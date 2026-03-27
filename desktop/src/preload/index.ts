@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("karpik", {
   openPairingSession: () => ipcRenderer.invoke("pairing:open-session"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
+  cancelTask: (taskId: string) => ipcRenderer.invoke("tasks:cancel", taskId),
   retryTask: (taskId: string) => ipcRenderer.invoke("tasks:retry", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),

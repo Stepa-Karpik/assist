@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from app.handlers.task import (
     get_auth_password_prompt_text,
+    get_auth_totp_prompt_text,
     get_auth_success_text,
     get_confirm_prompt_text,
     get_decline_text,
@@ -13,12 +15,36 @@ from app.handlers.task import (
     get_locked_text,
     get_queued_task_text,
     get_setup_required_text,
+    get_task_not_found_text,
+    get_cancel_requested_task_text,
+    get_cancelled_task_text,
+    map_task_status_response,
     map_task_workflow_response,
+    resolve_device_command,
+    resolve_last_command,
+    resolve_queue_command,
 )
-from app.intent_resolver import ClarificationResolution, IntentResolution, SupportsIntentResolver
+from app.intent_resolver import ClarificationResolution, SupportsIntentResolver
 from app.task_client import TaskWorkflowResult
 
 PendingStateKind = Literal["auth_password", "auth_totp", "confirm", "screenshot_scope"]
+
+DEVICE_TEXT_PATTERN = re.compile(
+    r"\b(что\s+с\s+пк|статус\s+пк|как\s+там\s+пк|состояние\s+пк|pc\s+status|device\s+status)\b",
+    re.IGNORECASE,
+)
+QUEUE_TEXT_PATTERN = re.compile(
+    r"\b(что\s+сейчас\s+с\s+задачами|что\s+с\s+задачами|что\s+по\s+задачам|очередь|список\s+очереди|какие\s+задачи)\b",
+    re.IGNORECASE,
+)
+LAST_TEXT_PATTERN = re.compile(
+    r"\b(последние\s+команды|последние\s+5\s+команд|что\s+делали\s+последним|история\s+команд)\b",
+    re.IGNORECASE,
+)
+CANCEL_TEXT_PATTERN = re.compile(
+    r"(?:останови|убей|отмени|прерви|cancel|kill)\s+(?:задачу\s+)?([a-z0-9-]{6,})",
+    re.IGNORECASE,
+)
 
 
 class SupportsTaskWorkflow(Protocol):
@@ -41,6 +67,14 @@ class SupportsTaskWorkflow(Protocol):
         decision: str,
         challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
+
+    def fetch_device_status(self) -> object: ...
+
+    def fetch_active_queue(self) -> object: ...
+
+    def fetch_recent_commands(self, limit: int = 5) -> object: ...
+
+    def cancel_task(self, task_id: str) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +139,10 @@ def build_decision_buttons(challenge_id: str | None) -> tuple[BotButton, ...]:
     )
 
 
+def build_cancel_button(task_id: str) -> tuple[BotButton, ...]:
+    return (BotButton(text="Остановить", callback_data=f"kill:{task_id}"),)
+
+
 def _reply_from_workflow_result(
     result: TaskWorkflowResult,
     *,
@@ -136,7 +174,7 @@ def _reply_from_workflow_result(
 
     if result.status == "totp_required":
         store.set_pending_auth(chat_id=chat_id, step="totp", challenge_id=result.challenge_id)
-        return BotReply(text="Пароль принят. Введите код из приложения-аутентификатора.")
+        return BotReply(text=get_auth_totp_prompt_text())
 
     if result.status == "confirm_required":
         store.set_pending_confirm(chat_id=chat_id, challenge_id=result.challenge_id)
@@ -200,6 +238,38 @@ def _create_task_from_intent(
     return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
 
 
+def _resolve_operator_text(text: str, *, task_client: SupportsTaskWorkflow) -> BotReply | None:
+    normalized = " ".join(text.strip().split()).lower()
+
+    if DEVICE_TEXT_PATTERN.search(normalized):
+        return BotReply(text=resolve_device_command(task_client=task_client))
+
+    if QUEUE_TEXT_PATTERN.search(normalized):
+        return BotReply(text=resolve_queue_command(task_client=task_client))
+
+    if LAST_TEXT_PATTERN.search(normalized):
+        return BotReply(text=resolve_last_command(task_client=task_client))
+
+    cancel_match = CANCEL_TEXT_PATTERN.search(normalized)
+    if cancel_match is None:
+        return None
+
+    task_id = cancel_match.group(1)
+    result = task_client.cancel_task(task_id)
+
+    if not getattr(result, "found", False):
+        return BotReply(text=get_task_not_found_text())
+
+    if getattr(result, "status", None) == "cancel_requested":
+        return BotReply(text=get_cancel_requested_task_text(task_id))
+
+    if getattr(result, "status", None) == "cancelled":
+        return BotReply(text=get_cancelled_task_text(task_id))
+
+    status_text = map_task_status_response(result)
+    return BotReply(text=status_text) if status_text is not None else None
+
+
 def process_text_message(
     text: str,
     *,
@@ -219,6 +289,10 @@ def process_text_message(
             challenge_id=current_state.challenge_id,
         )
         return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
+
+    operator_reply = _resolve_operator_text(text, task_client=task_client)
+    if operator_reply is not None:
+        return operator_reply
 
     resolution = resolver.resolve(text)
 
@@ -312,6 +386,22 @@ def process_callback_query(
             challenge_id=challenge_id,
         )
         return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
+
+    if callback_data.startswith("kill:"):
+        task_id = callback_data.split(":", 1)[1]
+        result = task_client.cancel_task(task_id)
+
+        if not getattr(result, "found", False):
+            return BotReply(text=get_task_not_found_text())
+
+        if getattr(result, "status", None) == "cancel_requested":
+            return BotReply(text=get_cancel_requested_task_text(task_id))
+
+        if getattr(result, "status", None) == "cancelled":
+            return BotReply(text=get_cancelled_task_text(task_id))
+
+        status_text = map_task_status_response(result)
+        return BotReply(text=status_text) if status_text is not None else None
 
     return None
 

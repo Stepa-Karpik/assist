@@ -12,9 +12,13 @@ export function formatTaskStatus(status: TaskSnapshotItem["status"]): string {
     case "queued":
       return "В очереди";
     case "awaiting_auth":
-      return "Ждёт auth";
+      return "Ждёт авторизации";
     case "awaiting_local_approval":
       return "Ждёт локального подтверждения";
+    case "cancel_requested":
+      return "Останавливается";
+    case "cancelled":
+      return "Остановлена";
     case "blocked":
       return "Заблокирована";
     case "running":
@@ -31,11 +35,7 @@ export function formatTaskStatus(status: TaskSnapshotItem["status"]): string {
 }
 
 export function buildTaskArtifactDataUrl(task: TaskSnapshotItem): string | null {
-  if (
-    task.artifactKind !== "image_base64" ||
-    !task.artifactMimeType ||
-    !task.artifactBase64
-  ) {
+  if (task.artifactKind !== "image_base64" || !task.artifactMimeType || !task.artifactBase64) {
     return null;
   }
 

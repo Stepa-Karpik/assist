@@ -1,4 +1,6 @@
-import { Menu, Tray, nativeImage, type BrowserWindow } from "electron";
+import { Menu, Tray, nativeImage, screen, type BrowserWindow } from "electron";
+
+import { calculateQuickPopupBounds } from "./windows";
 
 function getTrayIcon() {
   const svg = `
@@ -19,10 +21,29 @@ type TrayWindows = {
   quickPopup: BrowserWindow;
 };
 
+function placeQuickPopup(tray: Tray, quickPopup: BrowserWindow) {
+  const trayBounds = tray.getBounds();
+  const popupBounds = quickPopup.getBounds();
+  const display = screen.getDisplayNearestPoint({
+    x: trayBounds.x + Math.round(trayBounds.width / 2),
+    y: trayBounds.y + Math.round(trayBounds.height / 2)
+  });
+
+  quickPopup.setBounds(
+    calculateQuickPopupBounds({
+      trayBounds,
+      workArea: display.workArea,
+      popupWidth: popupBounds.width,
+      popupHeight: popupBounds.height
+    })
+  );
+}
+
 export function createAppTray({ mainWindow, quickPopup }: TrayWindows): Tray {
   const tray = new Tray(getTrayIcon());
 
   const showMainWindow = () => {
+    quickPopup.hide();
     mainWindow.show();
     mainWindow.focus();
   };
@@ -31,18 +52,24 @@ export function createAppTray({ mainWindow, quickPopup }: TrayWindows): Tray {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
-        label: "Open Window",
+        label: "Открыть окно",
         click: showMainWindow
       },
       {
         type: "separator"
       },
       {
-        label: "Close",
+        label: "Выход",
         role: "quit"
       }
     ])
   );
+
+  quickPopup.on("blur", () => {
+    if (quickPopup.isVisible()) {
+      quickPopup.hide();
+    }
+  });
 
   tray.on("click", () => {
     if (quickPopup.isVisible()) {
@@ -50,6 +77,7 @@ export function createAppTray({ mainWindow, quickPopup }: TrayWindows): Tray {
       return;
     }
 
+    placeQuickPopup(tray, quickPopup);
     quickPopup.show();
     quickPopup.focus();
   });

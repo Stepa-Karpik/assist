@@ -245,3 +245,68 @@ def test_task_history_returns_recent_items_and_chat_filtered_view() -> None:
     assert chat_response.status_code == 200
     assert [item["task_id"] for item in chat_response.json()["items"]] == [first_task_id]
     assert chat_response.json()["items"][0]["result_text"] == "desktop-local is online"
+
+
+def test_queued_task_can_be_cancelled_immediately() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    cancel_response = client.post(f"/api/tasks/{task_id}/cancel")
+    detail_response = client.get(f"/api/tasks/{task_id}")
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
+    assert cancel_response.json()["error_text"] == "Cancelled by operator."
+    assert cancel_response.json()["finished_at"] is not None
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["status"] == "cancelled"
+
+
+def test_running_task_moves_to_cancel_requested_before_desktop_confirms_stop() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    cancel_response = client.post(f"/api/tasks/{task_id}/cancel")
+    detail_response = client.get(f"/api/tasks/{task_id}")
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancel_requested"
+    assert cancel_response.json()["finished_at"] is None
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["status"] == "cancel_requested"
+
+
+def test_cancel_requested_task_can_be_finalized_as_cancelled() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(f"/api/tasks/{task_id}/cancel")
+    cancel_response = client.post(
+        f"/api/tasks/{task_id}/cancel",
+        json={"error_text": "Cancelled after stop request."},
+    )
+    detail_response = client.get(f"/api/tasks/{task_id}")
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
+    assert cancel_response.json()["error_text"] == "Cancelled after stop request."
+    assert cancel_response.json()["finished_at"] is not None
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["status"] == "cancelled"
+
+
+def test_done_task_cannot_be_cancelled() -> None:
+    task_id = create_low_risk_telegram_task()
+
+    client.post(f"/api/tasks/{task_id}/start")
+    client.post(
+        f"/api/tasks/{task_id}/complete",
+        json={"result_text": "desktop-local is online"},
+    )
+
+    cancel_response = client.post(f"/api/tasks/{task_id}/cancel")
+
+    assert cancel_response.status_code == 409
+    assert cancel_response.json()["detail"] == "Task cannot be cancelled"

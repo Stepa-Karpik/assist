@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createCodexRunner, type CodexRunRequest } from "./codexRunner";
+import {
+  createCodexRunStarter,
+  createCodexRunner,
+  type CodexExecutionHandle,
+  type CodexRunRequest
+} from "./codexRunner";
 
 export type CodexWritePreviewChange = {
   kind: "write" | "delete";
@@ -40,8 +45,14 @@ type PreviewBuilderRequest = {
 type PreviewGeneratorOptions = {
   stateRoot?: string;
   runCodex?: (request: CodexRunRequest) => Promise<string>;
+  startCodexRun?: (request: CodexRunRequest) => CodexExecutionHandle;
   buildPreviewText?: (request: PreviewBuilderRequest) => Promise<string> | string;
   now?: () => number;
+};
+
+export type CodexWritePreviewHandle = {
+  result: Promise<CodexWritePreviewResult>;
+  cancel: () => void;
 };
 
 type FileHashMap = Map<string, string>;
@@ -154,12 +165,99 @@ async function createChangeList(
 export function createCodexWritePreviewGenerator({
   stateRoot = path.join(os.tmpdir(), "karpik-codex-previews"),
   runCodex = createCodexRunner(),
+  startCodexRun,
   buildPreviewText = buildDefaultPreviewText,
   now = Date.now
 }: PreviewGeneratorOptions = {}) {
   const previewsRoot = path.join(stateRoot, "codex-previews");
+  const startCodexRunImpl =
+    startCodexRun ??
+    ((request: CodexRunRequest): CodexExecutionHandle => ({
+      result: runCodex(request),
+      cancel: () => undefined
+    }));
 
   return {
+    startPreview({
+      taskId,
+      prompt,
+      workspaceRoot
+    }: {
+      taskId: string;
+      prompt: string;
+      workspaceRoot: string;
+    }): CodexWritePreviewHandle {
+      let cancelled = false;
+      let activeCodexRun: CodexExecutionHandle | null = null;
+      const result = (async (): Promise<CodexWritePreviewResult> => {
+        await fs.mkdir(previewsRoot, { recursive: true });
+        const previewRoot = path.join(previewsRoot, `${taskId}-${now()}`);
+        await fs.cp(workspaceRoot, previewRoot, {
+          recursive: true,
+          force: true,
+          errorOnExist: false
+        });
+
+        try {
+          if (cancelled) {
+            throw new Error("Cancelled by operator.");
+          }
+
+          activeCodexRun = startCodexRunImpl({
+            prompt,
+            workspaceRoot: previewRoot,
+            sandboxMode: "workspace-write"
+          });
+          const summaryText = await activeCodexRun.result;
+          const changes = await createChangeList(workspaceRoot, previewRoot);
+
+          if (changes.length === 0) {
+            await fs.rm(previewRoot, {
+              recursive: true,
+              force: true
+            });
+            return {
+              kind: "no_changes",
+              summaryText
+            };
+          }
+
+          const previewText = await buildPreviewText({
+            workspaceRoot,
+            previewRoot,
+            changes
+          });
+
+          return {
+            kind: "awaiting_local_approval",
+            draft: {
+              taskId,
+              workspaceRoot,
+              previewRoot,
+              summaryText,
+              previewText,
+              changedFiles: changes.map((change) => change.relativePath),
+              changes
+            }
+          };
+        } catch (error) {
+          await fs.rm(previewRoot, {
+            recursive: true,
+            force: true
+          });
+          throw error;
+        }
+      })();
+
+      return {
+        result,
+        cancel: () => {
+          cancelled = true;
+          activeCodexRun?.cancel();
+        }
+      };
+    },
+
     async generatePreview({
       taskId,
       prompt,

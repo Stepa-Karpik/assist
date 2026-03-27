@@ -23,6 +23,10 @@ const STOP_WORDS = new Set([
   "отправь",
   "файл",
   "документ",
+  "презентацию",
+  "презентация",
+  "презу",
+  "слайды",
   "с",
   "со",
   "из",
@@ -144,8 +148,7 @@ function parseQuery(value: string) {
   const rawQuery = separatorIndex >= 0 ? trimmed.slice(separatorIndex + 2).trim() : trimmed;
   const loweredQuery = rawQuery.toLowerCase();
   const exactFileName = path.basename(rawQuery).trim().toLowerCase();
-  const prefersPresentation =
-    loweredQuery.includes("presentation") || loweredQuery.includes("презентац");
+  const prefersPresentation = /(presentation|презентац|презу|слайд)/i.test(loweredQuery);
   const tokens = rawQuery
     .split(/[\s._-]+/)
     .map((token) => token.trim())
@@ -154,7 +157,6 @@ function parseQuery(value: string) {
 
   return {
     locationHint,
-    rawQuery,
     exactFileName,
     prefersPresentation,
     normalizedTokens: tokens.map(normalizeToken).filter((token) => token.length > 0)
@@ -228,11 +230,11 @@ function scoreCandidate(
   let score = 0;
 
   if (exactFileName.length > 0 && normalizedBaseName === exactFileName) {
-    score += 1000;
+    score += 1_000;
   }
 
   if (prefersPresentation && [".ppt", ".pptx"].includes(path.extname(baseName).toLowerCase())) {
-    score += 200;
+    score += 220;
   }
 
   for (const token of normalizedTokens) {
@@ -241,29 +243,29 @@ function scoreCandidate(
     }
 
     if (normalizedStem === token) {
-      score += 250;
+      score += 260;
       continue;
     }
 
     if (normalizedStem.includes(token) || token.includes(normalizedStem)) {
-      score += 120;
+      score += 130;
       continue;
     }
 
     if (normalizedParts.some((part) => part === token)) {
-      score += 100;
+      score += 110;
       continue;
     }
 
     const distance = levenshtein(normalizedStem, token);
 
     if (distance <= 1) {
-      score += 90;
+      score += 95;
       continue;
     }
 
     if (distance <= 2) {
-      score += 50;
+      score += 55;
     }
   }
 

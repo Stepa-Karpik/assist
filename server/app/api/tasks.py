@@ -4,6 +4,7 @@ from app.models.task import (
     RequiredAuth,
     TaskAwaitingLocalApprovalRequest,
     TaskBlockRequest,
+    TaskCancelRequest,
     TaskCompleteRequest,
     TaskCreateRequest,
     TaskFailRequest,
@@ -225,6 +226,29 @@ def retry_task(task_id: str, request: Request) -> TaskRecord:
             status_code=status.HTTP_409_CONFLICT,
             detail="Task cannot be retried",
         )
+
+    return task
+
+
+@router.post("/{task_id}/cancel", response_model=TaskRecord)
+def cancel_task(
+    task_id: str,
+    request: Request,
+    payload: TaskCancelRequest | None = None,
+) -> TaskRecord:
+    task = request.app.state.task_store.cancel_task(
+        task_id,
+        payload.error_text if payload is not None and payload.error_text else "Cancelled by operator.",
+    )
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be cancelled",
+        )
+
+    if task.status == "cancelled":
+        request.app.state.delivery_store.create_for_task(task)
 
     return task
 

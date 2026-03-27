@@ -21,6 +21,8 @@ export type RemoteTaskStatus =
   | "queued"
   | "awaiting_auth"
   | "awaiting_local_approval"
+  | "cancel_requested"
+  | "cancelled"
   | "blocked"
   | "running"
   | "done"
@@ -285,6 +287,18 @@ export function createSyncClient({
     retryTask(taskId: string) {
       return fetchImpl(`${baseUrl}/api/tasks/${taskId}/retry`, {
         method: "POST"
+      });
+    },
+
+    cancelTask(taskId: string, errorText = "Cancelled by operator.") {
+      return fetchImpl(`${baseUrl}/api/tasks/${taskId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          error_text: errorText
+        })
       });
     },
 

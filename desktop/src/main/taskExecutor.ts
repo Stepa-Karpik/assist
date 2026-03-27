@@ -2,9 +2,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createCodexRunner, type CodexRunRequest } from "./codexRunner";
+import {
+  createCodexRunner,
+  type CodexExecutionHandle,
+  type CodexRunRequest
+} from "./codexRunner";
 import {
   createCodexWritePreviewGenerator,
+  type CodexWritePreviewHandle,
   type CodexWritePreviewDraft,
   type CodexWritePreviewResult
 } from "./codexWritePreview";
@@ -42,12 +47,24 @@ export type TaskExecutionResult =
       draft: CodexWritePreviewDraft;
     };
 
+export type TaskExecutionHandle = {
+  kind: "immediate" | "deferred";
+  result: Promise<TaskExecutionResult>;
+  cancel?: () => Promise<void> | void;
+};
+
 type TaskExecutorOptions = {
   deviceId: string;
   userRoot: string;
   getCodexWorkspaceRoot?: () => string;
   resolveCodexWorkspace?: (task: ExecutableTask) => string;
+  startCodexRun?: (request: CodexRunRequest) => CodexExecutionHandle;
   runCodex?: (request: CodexRunRequest) => Promise<string>;
+  startCodexWritePreview?: (request: {
+    taskId: string;
+    prompt: string;
+    workspaceRoot: string;
+  }) => CodexWritePreviewHandle;
   generateCodexWritePreview?: (request: {
     taskId: string;
     prompt: string;
@@ -121,20 +138,57 @@ function parseScreenshotTarget(intent: string): ScreenshotTarget {
   return /screen-2/i.test(intent) ? "screen-2" : "screen-1";
 }
 
+function createImmediateHandle(result: TaskExecutionResult | Promise<TaskExecutionResult>): TaskExecutionHandle {
+  return {
+    kind: "immediate",
+    result: Promise.resolve(result),
+    cancel: () => undefined
+  };
+}
+
+async function workspaceExists(workspaceRoot: string): Promise<boolean> {
+  try {
+    const workspaceStat = await fs.stat(workspaceRoot);
+    return workspaceStat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export function createTaskExecutor({
   deviceId,
   userRoot,
   getCodexWorkspaceRoot,
   resolveCodexWorkspace,
-  runCodex = createCodexRunner(),
-  generateCodexWritePreview = createCodexWritePreviewGenerator({
-    stateRoot: path.join(os.tmpdir(), "karpik-codex-previews"),
-    runCodex
-  }).generatePreview,
+  startCodexRun,
+  runCodex,
+  startCodexWritePreview,
+  generateCodexWritePreview,
   captureScreenshot = createScreenshotCapture(deviceId),
   maxResultLength = 1500
 }: TaskExecutorOptions) {
   const normalizedUserRoot = path.resolve(userRoot);
+  const runCodexImpl = runCodex ?? createCodexRunner();
+  const startCodexRunImpl =
+    startCodexRun ??
+    ((request: CodexRunRequest) => ({
+      result: runCodexImpl(request),
+      cancel: () => undefined
+    }));
+  const codexWritePreviewGenerator = createCodexWritePreviewGenerator({
+    stateRoot: path.join(os.tmpdir(), "karpik-codex-previews"),
+    startCodexRun: startCodexRunImpl,
+    runCodex: runCodexImpl
+  });
+  const startCodexWritePreviewImpl =
+    startCodexWritePreview ??
+    ((request: { taskId: string; prompt: string; workspaceRoot: string }) =>
+      generateCodexWritePreview === undefined
+        ? codexWritePreviewGenerator.startPreview(request)
+        : {
+            result: generateCodexWritePreview(request),
+            cancel: () => undefined
+          });
   const resolveCodexWorkspaceRoot =
     resolveCodexWorkspace ??
     (() => getCodexWorkspaceRoot?.() ?? normalizedUserRoot);
@@ -149,68 +203,68 @@ export function createTaskExecutor({
   }
 
   return {
-    async execute(task: ExecutableTask): Promise<TaskExecutionResult> {
+    start(task: ExecutableTask): TaskExecutionHandle {
       const normalizedIntent = task.intent.trim();
 
       if (normalizedIntent.toLowerCase() === "status") {
-        return {
+        return createImmediateHandle({
           ok: true,
           resultText: `${deviceId} is online`
-        };
+        });
       }
 
       if (/^screenshot(?:\s+.+)?$/i.test(normalizedIntent)) {
-        try {
-          const screenshot = await captureScreenshot(parseScreenshotTarget(normalizedIntent));
-
-          return {
-            ok: true,
-            resultText: "Screenshot captured.",
-            artifact: {
-              kind: "image_base64",
-              mimeType: screenshot.mimeType,
-              fileName: screenshot.fileName,
-              contentBase64: screenshot.contentBase64
-            }
-          };
-        } catch (error: unknown) {
-          return {
-            ok: false,
-            errorText:
-              error instanceof Error && error.message
-                ? error.message
-                : "Unable to capture screenshot."
-          };
-        }
+        return createImmediateHandle(
+          captureScreenshot(parseScreenshotTarget(normalizedIntent))
+            .then((screenshot) => ({
+              ok: true as const,
+              resultText: "Screenshot captured.",
+              artifact: {
+                kind: "image_base64" as const,
+                mimeType: screenshot.mimeType,
+                fileName: screenshot.fileName,
+                contentBase64: screenshot.contentBase64
+              }
+            }))
+            .catch((error: unknown) => ({
+              ok: false as const,
+              errorText:
+                error instanceof Error && error.message
+                  ? error.message
+                  : "Unable to capture screenshot."
+            }))
+        );
       }
 
       const sendFileMatch = /^send-file\s+(.+)$/i.exec(normalizedIntent);
 
       if (sendFileMatch !== null) {
         const workspaceRoot = getWorkspaceRoot(task);
-        const artifact = await resolveFileArtifact({
-          query: sendFileMatch[1],
-          userHome: os.homedir(),
-          additionalRoots: [normalizedUserRoot, workspaceRoot]
-        });
+        return createImmediateHandle(
+          resolveFileArtifact({
+            query: sendFileMatch[1],
+            userHome: os.homedir(),
+            additionalRoots: [normalizedUserRoot, workspaceRoot]
+          }).then((artifact) => {
+            if (artifact === null) {
+              return {
+                ok: false as const,
+                errorText: "File not found."
+              };
+            }
 
-        if (artifact === null) {
-          return {
-            ok: false,
-            errorText: "File not found."
-          };
-        }
-
-        return {
-          ok: true,
-          resultText: `Prepared file: ${artifact.fileName}`,
-          artifact: {
-            kind: "file_base64",
-            mimeType: artifact.mimeType,
-            fileName: artifact.fileName,
-            contentBase64: artifact.contentBase64
-          }
-        };
+            return {
+              ok: true as const,
+              resultText: `Prepared file: ${artifact.fileName}`,
+              artifact: {
+                kind: "file_base64" as const,
+                mimeType: artifact.mimeType,
+                fileName: artifact.fileName,
+                contentBase64: artifact.contentBase64
+              }
+            };
+          })
+        );
       }
 
       const codexWriteMatch = /^codex-write(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);
@@ -219,59 +273,66 @@ export function createTaskExecutor({
         const prompt = codexWriteMatch[1]?.trim();
 
         if (!prompt) {
-          return {
+          return createImmediateHandle({
             ok: false,
             errorText: "Codex prompt is empty."
-          };
+          });
         }
 
         const workspaceRoot = getWorkspaceRoot(task);
+        let cancelled = false;
+        let previewHandle: CodexWritePreviewHandle | null = null;
 
-        try {
-          const workspaceStat = await fs.stat(workspaceRoot);
+        return {
+          kind: "deferred",
+          result: (async () => {
+            if (!(await workspaceExists(workspaceRoot))) {
+              return {
+                ok: false as const,
+                errorText: "Codex workspace does not exist."
+              };
+            }
 
-          if (!workspaceStat.isDirectory()) {
-            return {
-              ok: false,
-              errorText: "Codex workspace does not exist."
-            };
+            if (cancelled) {
+              return {
+                ok: false as const,
+                errorText: "Cancelled by operator."
+              };
+            }
+
+            previewHandle = startCodexWritePreviewImpl({
+              taskId: task.task_id,
+              prompt,
+              workspaceRoot
+            });
+
+            return previewHandle.result.then((previewResult) => {
+              if (previewResult.kind === "no_changes") {
+                return {
+                  ok: true as const,
+                  resultText: trimResultText(previewResult.summaryText, maxResultLength)
+                };
+              }
+
+              return {
+                ok: true as const,
+                requiresLocalApproval: true as const,
+                waitingText: buildLocalApprovalWaitingText(previewResult.draft.changedFiles),
+                draft: previewResult.draft
+              };
+            });
+          })().catch((error: unknown) => ({
+              ok: false as const,
+              errorText:
+                error instanceof Error && error.message
+                  ? error.message
+                  : "Codex execution failed."
+            })),
+          cancel: () => {
+            cancelled = true;
+            previewHandle?.cancel();
           }
-        } catch {
-          return {
-            ok: false,
-            errorText: "Codex workspace does not exist."
-          };
-        }
-
-        try {
-          const previewResult = await generateCodexWritePreview({
-            taskId: task.task_id,
-            prompt,
-            workspaceRoot
-          });
-
-          if (previewResult.kind === "no_changes") {
-            return {
-              ok: true,
-              resultText: trimResultText(previewResult.summaryText, maxResultLength)
-            };
-          }
-
-          return {
-            ok: true,
-            requiresLocalApproval: true,
-            waitingText: buildLocalApprovalWaitingText(previewResult.draft.changedFiles),
-            draft: previewResult.draft
-          };
-        } catch (error: unknown) {
-          return {
-            ok: false,
-            errorText:
-              error instanceof Error && error.message
-                ? error.message
-                : "Codex execution failed."
-          };
-        }
+        };
       }
 
       const codexMatch = /^codex(?:\s+([\s\S]+))?$/i.exec(normalizedIntent);
@@ -280,49 +341,54 @@ export function createTaskExecutor({
         const prompt = codexMatch[1]?.trim();
 
         if (!prompt) {
-          return {
+          return createImmediateHandle({
             ok: false,
             errorText: "Codex prompt is empty."
-          };
+          });
         }
 
         const workspaceRoot = getWorkspaceRoot(task);
+        let cancelled = false;
+        let codexHandle: CodexExecutionHandle | null = null;
 
-        try {
-          const workspaceStat = await fs.stat(workspaceRoot);
+        return {
+          kind: "deferred",
+          result: (async () => {
+            if (!(await workspaceExists(workspaceRoot))) {
+              return {
+                ok: false as const,
+                errorText: "Codex workspace does not exist."
+              };
+            }
 
-          if (!workspaceStat.isDirectory()) {
-            return {
-              ok: false,
-              errorText: "Codex workspace does not exist."
-            };
+            if (cancelled) {
+              return {
+                ok: false as const,
+                errorText: "Cancelled by operator."
+              };
+            }
+
+            codexHandle = startCodexRunImpl({
+              prompt,
+              workspaceRoot
+            });
+
+            return codexHandle.result.then((resultText) => ({
+              ok: true as const,
+              resultText: trimResultText(resultText, maxResultLength)
+            }));
+          })().catch((error: unknown) => ({
+              ok: false as const,
+              errorText:
+                error instanceof Error && error.message
+                  ? error.message
+                  : "Codex execution failed."
+            })),
+          cancel: () => {
+            cancelled = true;
+            codexHandle?.cancel();
           }
-        } catch {
-          return {
-            ok: false,
-            errorText: "Codex workspace does not exist."
-          };
-        }
-
-        try {
-          const resultText = await runCodex({
-            prompt,
-            workspaceRoot
-          });
-
-          return {
-            ok: true,
-            resultText: trimResultText(resultText, maxResultLength)
-          };
-        } catch (error: unknown) {
-          return {
-            ok: false,
-            errorText:
-              error instanceof Error && error.message
-                ? error.message
-                : "Codex execution failed."
-          };
-        }
+        };
       }
 
       const readMatch = /^read\s+(.+)$/i.exec(normalizedIntent);
@@ -331,31 +397,32 @@ export function createTaskExecutor({
         const targetPath = resolveReadListTarget(normalizedUserRoot, readMatch[1]);
 
         if (targetPath === null) {
-          return {
+          return createImmediateHandle({
             ok: false,
             errorText: "Path is outside the allowed runtime area."
-          };
+          });
         }
 
-        try {
-          const contents = await fs.readFile(targetPath, "utf8");
-          return {
-            ok: true,
-            resultText: trimResultText(contents, maxResultLength)
-          };
-        } catch (error: unknown) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return {
-              ok: false,
-              errorText: "File not found."
-            };
-          }
+        return createImmediateHandle(
+          fs.readFile(targetPath, "utf8")
+            .then((contents) => ({
+              ok: true as const,
+              resultText: trimResultText(contents, maxResultLength)
+            }))
+            .catch((error: unknown) => {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+                return {
+                  ok: false as const,
+                  errorText: "File not found."
+                };
+              }
 
-          return {
-            ok: false,
-            errorText: "Unable to read file."
-          };
-        }
+              return {
+                ok: false as const,
+                errorText: "Unable to read file."
+              };
+            })
+        );
       }
 
       const listMatch = /^list\s+(.+)$/i.exec(normalizedIntent);
@@ -364,31 +431,32 @@ export function createTaskExecutor({
         const targetPath = resolveReadListTarget(normalizedUserRoot, listMatch[1]);
 
         if (targetPath === null) {
-          return {
+          return createImmediateHandle({
             ok: false,
             errorText: "Path is outside the allowed runtime area."
-          };
+          });
         }
 
-        try {
-          const items = (await fs.readdir(targetPath)).sort();
-          return {
-            ok: true,
-            resultText: trimResultText(items.join("\n"), maxResultLength)
-          };
-        } catch (error: unknown) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return {
-              ok: false,
-              errorText: "Directory not found."
-            };
-          }
+        return createImmediateHandle(
+          fs.readdir(targetPath)
+            .then((items) => ({
+              ok: true as const,
+              resultText: trimResultText(items.sort().join("\n"), maxResultLength)
+            }))
+            .catch((error: unknown) => {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+                return {
+                  ok: false as const,
+                  errorText: "Directory not found."
+                };
+              }
 
-          return {
-            ok: false,
-            errorText: "Unable to list directory."
-          };
-        }
+              return {
+                ok: false as const,
+                errorText: "Unable to list directory."
+              };
+            })
+        );
       }
 
       const writeNoteMatch = /^write-note\s+([^:]+?)\s*::\s*([\s\S]+)$/i.exec(normalizedIntent);
@@ -397,25 +465,30 @@ export function createTaskExecutor({
         const noteName = writeNoteMatch[1].trim();
 
         if (!isSafeNoteName(noteName)) {
-          return {
+          return createImmediateHandle({
             ok: false,
             errorText: "Invalid note name."
-          };
+          });
         }
 
-        await fs.mkdir(notesRoot, { recursive: true });
-        await fs.writeFile(path.join(notesRoot, noteName), writeNoteMatch[2], "utf8");
-
-        return {
-          ok: true,
-          resultText: path.posix.join("docs", "notes", noteName)
-        };
+        return createImmediateHandle(
+          fs.mkdir(notesRoot, { recursive: true })
+            .then(() => fs.writeFile(path.join(notesRoot, noteName), writeNoteMatch[2], "utf8"))
+            .then(() => ({
+              ok: true as const,
+              resultText: path.posix.join("docs", "notes", noteName)
+            }))
+        );
       }
 
-      return {
+      return createImmediateHandle({
         ok: false,
         errorText: "Unsupported task intent."
-      };
+      });
+    },
+
+    async execute(task: ExecutableTask): Promise<TaskExecutionResult> {
+      return this.start(task).result;
     }
   };
 }

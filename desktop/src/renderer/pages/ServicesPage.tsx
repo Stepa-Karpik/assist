@@ -92,9 +92,7 @@ export function ServicesPage() {
       setIsCheckingUpdates(true);
       const nextState = await (window.karpik?.checkForUpdates?.() ?? Promise.resolve(emptyUpdateState));
       setUpdateState((currentState) =>
-        currentState.phase === "downloaded" && nextState.phase === "checking"
-          ? currentState
-          : nextState
+        currentState.phase === "downloaded" && nextState.phase === "checking" ? currentState : nextState
       );
       setError(null);
     } catch {
@@ -117,18 +115,22 @@ export function ServicesPage() {
   }
 
   return (
-    <div className="page-shell">
-      <p className="eyebrow">Сервисы</p>
-      <h2>Connected Integrations</h2>
-      <p className="muted-text">
-        Desktop runtime snapshot: device, server endpoint, auth readiness, workspace routing, local chat activity and updates.
-      </p>
+    <div className="page-shell page-shell--full">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Сервисы</p>
+          <h2>Runtime и интеграции</h2>
+          <p className="muted-text">
+            Снимок desktop runtime, server heartbeat, готовность auth и канал обновлений.
+          </p>
+        </div>
+      </div>
 
       {isLoading ? <p className="muted-text">Загружаем runtime status...</p> : null}
       {error !== null ? <p className="task-error">{error}</p> : null}
 
       {!isLoading ? (
-        <div className="task-list">
+        <div className="service-grid">
           <article className="task-card">
             <div className="task-card-header">
               <strong>Runtime</strong>
@@ -182,22 +184,22 @@ export function ServicesPage() {
               <button
                 aria-busy={isCheckingUpdates}
                 className={`ghost-button${isCheckingUpdates ? " is-busy" : ""}`}
-                type="button"
+                disabled={isCheckingUpdates || !updateState.isSupported}
                 onClick={() => {
                   void handleCheckForUpdates();
                 }}
-                disabled={isCheckingUpdates || !updateState.isSupported}
+                type="button"
               >
                 {isCheckingUpdates ? "Проверяем..." : "Проверить обновления"}
               </button>
               <button
                 aria-busy={isInstallingUpdate}
                 className={`ghost-button${isInstallingUpdate ? " is-busy" : ""}`}
-                type="button"
+                disabled={isInstallingUpdate || updateState.phase !== "downloaded"}
                 onClick={() => {
                   void handleInstallUpdate();
                 }}
-                disabled={isInstallingUpdate || updateState.phase !== "downloaded"}
+                type="button"
               >
                 {isInstallingUpdate ? "Запускаем..." : "Установить обновление"}
               </button>

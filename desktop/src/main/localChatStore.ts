@@ -71,6 +71,8 @@ type MirrorRemoteTaskUpdateInput = {
     | "queued"
     | "awaiting_auth"
     | "awaiting_local_approval"
+    | "cancel_requested"
+    | "cancelled"
     | "blocked"
     | "running"
     | "done"
@@ -132,10 +134,7 @@ function normalizeArtifactFields(value: Partial<LocalChatMessage> | undefined) {
 }
 
 function normalizeRemoteTaskFields(value: Partial<LocalChatMessage> | undefined) {
-  if (
-    typeof value?.remoteTaskId === "string" &&
-    typeof value?.remoteTaskSignature === "string"
-  ) {
+  if (typeof value?.remoteTaskId === "string" && typeof value?.remoteTaskSignature === "string") {
     return {
       remoteTaskId: value.remoteTaskId,
       remoteTaskSignature: value.remoteTaskSignature
@@ -143,6 +142,22 @@ function normalizeRemoteTaskFields(value: Partial<LocalChatMessage> | undefined)
   }
 
   return {};
+}
+
+function repairLegacyTitle(value: string): string {
+  return value === "РќРѕРІС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С‡Р°С‚" ? "Новый локальный чат" : value;
+}
+
+function repairLegacyReferenceLabel(value: string | null, telegramChatId: number | null): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (value.startsWith("РЎСЃС‹Р»Р°РµС‚СЃСЏ") && telegramChatId !== null) {
+    return `Ссылается на Telegram chat ${telegramChatId}`;
+  }
+
+  return value;
 }
 
 function normalizeMessage(value: Partial<LocalChatMessage> | undefined): LocalChatMessage | null {
@@ -187,23 +202,27 @@ function buildRemoteTaskMirrorText(input: MirrorRemoteTaskUpdateInput): string {
   const statusLine = (() => {
     switch (input.status) {
       case "done":
-        return `Telegram task ${input.taskId} completed.`;
+        return `Telegram-задача ${input.taskId} завершена.`;
+      case "cancelled":
+        return `Telegram-задача ${input.taskId} остановлена.`;
       case "failed":
-        return `Telegram task ${input.taskId} failed.`;
+        return `Telegram-задача ${input.taskId} завершилась ошибкой.`;
       case "blocked":
-        return `Telegram task ${input.taskId} was blocked.`;
+        return `Telegram-задача ${input.taskId} заблокирована.`;
+      case "cancel_requested":
+        return `Telegram-задача ${input.taskId} останавливается.`;
       case "awaiting_auth":
-        return `Telegram task ${input.taskId} awaits auth.`;
+        return `Telegram-задача ${input.taskId} ждёт авторизации.`;
       case "awaiting_local_approval":
-        return `Telegram task ${input.taskId} awaits local approval.`;
+        return `Telegram-задача ${input.taskId} ждёт локального подтверждения.`;
       case "stalled":
-        return `Telegram task ${input.taskId} stalled.`;
+        return `Telegram-задача ${input.taskId} зависла.`;
       case "running":
-        return `Telegram task ${input.taskId} is running.`;
+        return `Telegram-задача ${input.taskId} выполняется.`;
       case "queued":
-        return `Telegram task ${input.taskId} is queued.`;
+        return `Telegram-задача ${input.taskId} стоит в очереди.`;
       default:
-        return `Telegram task ${input.taskId} updated.`;
+        return `Telegram-задача ${input.taskId} обновлена.`;
     }
   })();
   const detailLine = input.resultText ?? input.errorText ?? null;
@@ -232,16 +251,20 @@ function normalizeChat(value: PersistedLocalChatRecord): LocalChatDetail | null 
     typeof value.updatedAt === "string" && value.updatedAt.length > 0
       ? value.updatedAt
       : messages.at(-1)?.createdAt ?? value.createdAt;
+  const telegramChatId = typeof value.telegramChatId === "number" ? value.telegramChatId : null;
 
   return {
     chatId: value.chatId,
     source: value.source,
-    title: value.title,
+    title: repairLegacyTitle(value.title),
     createdAt: value.createdAt,
     updatedAt,
     messageCount: messages.length,
-    referenceLabel: typeof value.referenceLabel === "string" ? value.referenceLabel : null,
-    telegramChatId: typeof value.telegramChatId === "number" ? value.telegramChatId : null,
+    referenceLabel: repairLegacyReferenceLabel(
+      typeof value.referenceLabel === "string" ? value.referenceLabel : null,
+      telegramChatId
+    ),
+    telegramChatId,
     workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : null,
     messages
   };
@@ -306,9 +329,7 @@ export class LocalChatStore {
   }: CreateContinuationChatInput): LocalChatRecord {
     const timestamp = this.now().toISOString();
     const existingChat = this.chats.find(
-      (chat) =>
-        chat.source === "local_continuation_chat" &&
-        chat.telegramChatId === telegramChatId
+      (chat) => chat.source === "local_continuation_chat" && chat.telegramChatId === telegramChatId
     );
 
     if (existingChat !== undefined) {
@@ -377,10 +398,7 @@ export class LocalChatStore {
       messages: [...chat.messages, nextMessage]
     };
 
-    this.chats = sortChats([
-      nextChat,
-      ...this.chats.filter((candidate) => candidate.chatId !== chatId)
-    ]);
+    this.chats = sortChats([nextChat, ...this.chats.filter((candidate) => candidate.chatId !== chatId)]);
     this.persist();
     return cloneDetail(nextChat);
   }
@@ -388,8 +406,7 @@ export class LocalChatStore {
   mirrorRemoteTaskUpdate(input: MirrorRemoteTaskUpdateInput): LocalChatDetail | null {
     const chat = this.chats.find(
       (candidate) =>
-        candidate.source === "local_continuation_chat" &&
-        candidate.telegramChatId === input.telegramChatId
+        candidate.source === "local_continuation_chat" && candidate.telegramChatId === input.telegramChatId
     );
 
     if (chat === undefined) {

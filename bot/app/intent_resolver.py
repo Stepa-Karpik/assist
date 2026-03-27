@@ -111,7 +111,7 @@ class RuleBasedIntentResolver:
         if self._looks_like_status(lowered):
             return IntentResolution(kind="task", risk="low", intent="status")
 
-        screenshot_resolution = self._resolve_screenshot(normalized, lowered)
+        screenshot_resolution = self._resolve_screenshot(lowered)
         if screenshot_resolution is not None:
             return screenshot_resolution
 
@@ -145,6 +145,7 @@ class RuleBasedIntentResolver:
                 "что сейчас с задач",
                 "что с задач",
                 "что по задач",
+                "какие задачи",
                 "как там задачи",
                 "как дела у задач",
             },
@@ -153,9 +154,7 @@ class RuleBasedIntentResolver:
 
         return "задач" in lowered and "сейчас" in lowered
 
-    def _resolve_screenshot(
-        self, normalized: str, lowered: str
-    ) -> IntentResolution | None:
+    def _resolve_screenshot(self, lowered: str) -> IntentResolution | None:
         if not contains_any(
             lowered,
             {"скрин", "screenshot", "screen", "экран", "экрана"},

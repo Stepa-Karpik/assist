@@ -348,7 +348,7 @@ describe("LocalChatStore", () => {
     expect(firstMirror?.messages[0]).toEqual({
       messageId: expect.any(String),
       role: "system",
-      text: "Telegram task task-shot completed.\nscreenshot\nScreenshot captured.",
+      text: "Telegram-задача task-shot завершена.\nscreenshot\nScreenshot captured.",
       createdAt: "2026-03-24T12:10:00.000Z",
       artifactKind: "image_base64",
       artifactMimeType: "image/png",

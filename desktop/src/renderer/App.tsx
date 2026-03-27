@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Sidebar, type NavigationItem } from "./layout/Sidebar";
 import { BlockedTasksPage } from "./pages/BlockedTasksPage";
 import { ChatsPage } from "./pages/ChatsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LogsPage } from "./pages/LogsPage";
-import type { TaskSnapshot } from "./pages/taskSnapshot";
+import { formatTaskStatus, type TaskSnapshot } from "./pages/taskSnapshot";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TelegramChatsPage } from "./pages/TelegramChatsPage";
@@ -17,14 +17,6 @@ type QuickProgressState = {
   percentage: number;
   summaryText: string;
 };
-
-function ProgressBar({ percentage }: { percentage: number }) {
-  return (
-    <div className="progress-shell" aria-label="Global progress">
-      <div className="progress-fill" style={{ width: `${percentage}%` }} />
-    </div>
-  );
-}
 
 type QuickAccessState = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getQuickAccessState"]>
@@ -41,7 +33,9 @@ const emptyTaskSnapshot: TaskSnapshot = [];
 
 function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState {
   const activeTasks = taskSnapshot.filter((task) =>
-    ["queued", "awaiting_auth", "running", "awaiting_local_approval", "stalled"].includes(task.status)
+    ["queued", "awaiting_auth", "running", "awaiting_local_approval", "stalled", "cancel_requested"].includes(
+      task.status
+    )
   );
   const awaitingApprovalCount = taskSnapshot.filter(
     (task) => task.status === "awaiting_local_approval"
@@ -56,7 +50,7 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
       awaitingApprovalCount,
       blockedTaskCount,
       percentage: 100,
-      summaryText: "No active tasks right now."
+      summaryText: "Сейчас активных задач нет."
     };
   }
 
@@ -64,6 +58,8 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
     queued: 10,
     awaiting_auth: 25,
     awaiting_local_approval: 90,
+    cancel_requested: 95,
+    cancelled: 100,
     blocked: 100,
     running: 70,
     done: 100,
@@ -83,6 +79,14 @@ function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState
   };
 }
 
+function ProgressBar({ percentage }: { percentage: number }) {
+  return (
+    <div className="progress-shell" aria-label="Global progress">
+      <div className="progress-fill" style={{ width: `${percentage}%` }} />
+    </div>
+  );
+}
+
 function QuickPopupView() {
   const [quickState, setQuickState] = useState<NonNullable<QuickAccessState>>(emptyQuickAccessState);
   const [taskSnapshot, setTaskSnapshot] = useState<TaskSnapshot>(emptyTaskSnapshot);
@@ -94,6 +98,20 @@ function QuickPopupView() {
   const quickProgress = buildQuickProgressState(taskSnapshot);
   const selectedTargetChat =
     quickState.recentChats.find((chat) => chat.chatId === selectedTargetChatId) ?? quickState.targetChat;
+
+  const activeTasks = useMemo(
+    () =>
+      taskSnapshot
+        .filter((task) =>
+          ["queued", "awaiting_auth", "awaiting_local_approval", "running", "cancel_requested"].includes(
+            task.status
+          )
+        )
+        .slice(0, 2),
+    [taskSnapshot]
+  );
+
+  const recentActivity = useMemo(() => quickState.recentActivity.slice(0, 2), [quickState.recentActivity]);
 
   useEffect(() => {
     setSelectedTargetChatId((currentChatId) => {
@@ -115,13 +133,15 @@ function QuickPopupView() {
           window.karpik?.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
         ]);
 
-        if (isSubscribed && nextState !== null) {
-          setQuickState(nextState);
-          setTaskSnapshot(nextTaskSnapshot);
+        if (!isSubscribed || nextState === null) {
+          return;
         }
+
+        setQuickState(nextState);
+        setTaskSnapshot(nextTaskSnapshot);
       } catch {
         if (isSubscribed) {
-          setError("Не удалось загрузить quick access state.");
+          setError("Не удалось загрузить quick access.");
         }
       }
     }
@@ -163,7 +183,7 @@ function QuickPopupView() {
       setResponseText(result.detail.messages.at(-1)?.text ?? null);
       setRequestText("");
     } catch {
-      setError("Не удалось выполнить quick request.");
+      setError("Не удалось выполнить быстрый запрос.");
     } finally {
       setIsSubmitting(false);
     }
@@ -171,14 +191,16 @@ function QuickPopupView() {
 
   async function handleCreateDesktopChat() {
     if (!window.karpik?.createDesktopChat) {
-      setError("Local chat API недоступен в этом окружении.");
+      setError("API локальных чатов недоступен в этом окружении.");
       return;
     }
 
     setError(null);
 
     try {
-      const createdChat = await window.karpik.createDesktopChat();
+      const createdChat = await window.karpik.createDesktopChat({
+        title: "Новый локальный чат"
+      });
       const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
       setQuickState(nextState ?? emptyQuickAccessState);
       setSelectedTargetChatId(createdChat.chatId);
@@ -191,14 +213,15 @@ function QuickPopupView() {
 
   return (
     <main className="quick-popup">
-      <div className="quick-header">
+      <header className="quick-popup__header">
         <div>
           <p className="eyebrow">Karpik</p>
           <h1>Quick Access</h1>
+          <p className="muted-text">Локальный чат, очередь и свежая активность без лишнего шума.</p>
         </div>
         <button
           aria-label="New local chat"
-          className="ghost-button"
+          className="ghost-button ghost-button--primary"
           onClick={() => {
             void handleCreateDesktopChat();
           }}
@@ -206,92 +229,129 @@ function QuickPopupView() {
         >
           +
         </button>
-      </div>
+      </header>
 
-      <section className="quick-card">
-        <p className="section-label">Current progress</p>
+      <section className="quick-panel quick-panel--stats">
+        <div className="quick-stat">
+          <span>Активно</span>
+          <strong>{quickProgress.activeTaskCount}</strong>
+        </div>
+        <div className="quick-stat">
+          <span>На ревью</span>
+          <strong>{quickProgress.awaitingApprovalCount}</strong>
+        </div>
+        <div className="quick-stat">
+          <span>Сбои</span>
+          <strong>{quickProgress.blockedTaskCount}</strong>
+        </div>
+      </section>
+
+      <section className="quick-panel">
+        <div className="quick-panel__header">
+          <strong>Прогресс</strong>
+          <span>{quickProgress.percentage}%</span>
+        </div>
         <ProgressBar percentage={quickProgress.percentage} />
         <p className="muted-text">{quickProgress.summaryText}</p>
-        <p className="muted-text">Active tasks: {quickProgress.activeTaskCount}</p>
-        <p className="muted-text">Needs review: {quickProgress.awaitingApprovalCount}</p>
-        <p className="muted-text">Blocked or failed: {quickProgress.blockedTaskCount}</p>
       </section>
 
-      <section className="quick-card">
-        <p className="section-label">Target chat</p>
-        <p className="muted-text">
-          {selectedTargetChat?.title ?? "Новый локальный чат будет создан автоматически"}
-        </p>
-        {quickState.targetChat && selectedTargetChat?.chatId !== quickState.targetChat.chatId ? (
-          <p className="muted-text">Last active chat: {quickState.targetChat.title}</p>
-        ) : null}
-        <p className="muted-text">Local chats: {quickState.localChatCount}</p>
-        {quickState.recentChats.length > 0 ? (
-          <>
-            <label className="section-label" htmlFor="quick-target-chat">
-              Target local chat
-            </label>
-            <select
-              className="quick-input"
-              id="quick-target-chat"
-              onChange={(event) => setSelectedTargetChatId(event.target.value || null)}
-              value={selectedTargetChatId ?? ""}
-            >
-              {quickState.recentChats.map((chat) => (
-                <option key={chat.chatId} value={chat.chatId}>
-                  {chat.title}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : null}
-      </section>
-
-      <section className="quick-card">
-        <p className="section-label">Recent activity</p>
-        {quickState.recentActivity.length === 0 ? (
-          <p className="muted-text">No recent runtime activity yet.</p>
-        ) : (
-          quickState.recentActivity.map((entry) => (
-            <article className="task-card" key={entry.entryId}>
-              <div className="task-card-header">
-                <strong>{entry.title}</strong>
-                <span>{entry.status}</span>
-              </div>
-              {entry.detail ? <p className="muted-text">{entry.detail}</p> : null}
-            </article>
-          ))
-        )}
-      </section>
-
-      <section className="quick-card">
-        <label className="section-label" htmlFor="quick-task">
-          Quick request
+      <section className="quick-panel">
+        <div className="quick-panel__header">
+          <strong>Целевой чат</strong>
+          <span>Local chats: {quickState.localChatCount}</span>
+        </div>
+        <label className="section-label" htmlFor="quick-target-chat">
+          Выбор локального чата
         </label>
-        <input
-          className="quick-input"
-          id="quick-task"
-          onChange={(event) => setRequestText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void handleSubmit();
-            }
-          }}
-          placeholder="Send to the selected local chat"
-          type="text"
-          value={requestText}
-        />
-        <div className="local-chat-actions">
+        <p className="muted-text">
+          {selectedTargetChat?.title ?? "При первом сообщении будет создан новый локальный чат."}
+        </p>
+        {quickState.recentChats.length > 0 ? (
+          <select
+            aria-label="Target local chat"
+            className="quick-input"
+            id="quick-target-chat"
+            onChange={(event) => setSelectedTargetChatId(event.target.value || null)}
+            value={selectedTargetChatId ?? ""}
+          >
+            {quickState.recentChats.map((chat) => (
+              <option key={chat.chatId} value={chat.chatId}>
+                {chat.title}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </section>
+
+      <section className="quick-panel quick-panel--split">
+        <div>
+          <div className="quick-panel__header">
+            <strong>Очередь</strong>
+            <span>{activeTasks.length}</span>
+          </div>
+          {activeTasks.length === 0 ? (
+            <p className="muted-text">Пусто</p>
+          ) : (
+            <div className="quick-mini-list">
+              {activeTasks.map((task) => (
+                <article className="quick-mini-card" key={task.task_id}>
+                  <strong>{formatTaskStatus(task.status)}</strong>
+                  <p>{task.intent}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="quick-panel__header">
+            <strong>Активность</strong>
+            <span>{recentActivity.length}</span>
+          </div>
+          {recentActivity.length === 0 ? (
+            <p className="muted-text">Пока пусто</p>
+          ) : (
+            <div className="quick-mini-list">
+              {recentActivity.map((entry) => (
+                <article className={`quick-mini-card status-${entry.status}`} key={entry.entryId}>
+                  <strong>{entry.title}</strong>
+                  {entry.detail ? <p>{entry.detail}</p> : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="quick-panel quick-panel--composer">
+        <label className="section-label" htmlFor="quick-task">
+          Быстрый запрос
+        </label>
+        <div className="quick-composer-row">
+          <input
+            aria-label="Quick request"
+            className="quick-input"
+            id="quick-task"
+            onChange={(event) => setRequestText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void handleSubmit();
+              }
+            }}
+            placeholder="Напиши задачу обычным языком"
+            type="text"
+            value={requestText}
+          />
           <button
-            className="ghost-button"
+            className="ghost-button ghost-button--primary"
             disabled={isSubmitting || requestText.trim().length === 0}
             onClick={() => {
               void handleSubmit();
             }}
             type="button"
           >
-            {isSubmitting ? "Sending..." : "Send"}
+            {isSubmitting ? "..." : "Send"}
           </button>
         </div>
         {responseText ? <p className="task-result">{responseText}</p> : null}
@@ -317,17 +377,10 @@ function MainWindowView() {
 
   return (
     <main className="desktop-layout">
-      <Sidebar
-        activeSection={activeSection}
-        items={navigationItems}
-        onSelect={setActiveSection}
-      />
+      <Sidebar activeSection={activeSection} items={navigationItems} onSelect={setActiveSection} />
       <section className="content-panel">
         {activeSection === "chats" && (
-          <ChatsPage
-            onSelectChat={setSelectedLocalChatId}
-            selectedChatId={selectedLocalChatId}
-          />
+          <ChatsPage onSelectChat={setSelectedLocalChatId} selectedChatId={selectedLocalChatId} />
         )}
         {activeSection === "telegram" && (
           <TelegramChatsPage

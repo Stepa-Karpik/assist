@@ -22,7 +22,7 @@ class InMemoryDeliveryStore:
             task.source != "telegram"
             or task.chat_id is None
             or task.telegram_user_id is None
-            or task.status not in {"done", "failed", "blocked"}
+            or task.status not in {"done", "failed", "blocked", "cancelled"}
         ):
             return None
 

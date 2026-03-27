@@ -201,6 +201,7 @@ const getLocalApprovals = vi.fn<
 >(async () => []);
 const approveLocalApproval = vi.fn(async () => undefined);
 const rejectLocalApproval = vi.fn(async () => undefined);
+const cancelTask = vi.fn(async () => undefined);
 const retryTask = vi.fn(async () => undefined);
 const getActivityLog = vi.fn<() => Promise<ActivityLogEntry[]>>(async () => []);
 const getQuickAccessState = vi.fn<
@@ -448,6 +449,7 @@ describe("App navigation", () => {
       openPairingSession,
       approveLocalApproval,
       rejectLocalApproval,
+      cancelTask,
       retryTask,
       readKnowledgeEntry,
       createDesktopChat,
@@ -483,6 +485,7 @@ describe("App navigation", () => {
     openPairingSession.mockClear();
     approveLocalApproval.mockClear();
     rejectLocalApproval.mockClear();
+    cancelTask.mockClear();
     retryTask.mockClear();
     readKnowledgeEntry.mockClear();
     createDesktopChat.mockClear();
@@ -517,7 +520,7 @@ describe("App navigation", () => {
 
     expect(createDesktopChat).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Новый локальный чат")).toBeInTheDocument();
-    expect(await screen.findByText("desktop_chat")).toBeInTheDocument();
+    expect((await screen.findAllByText("Локальный диалог")).length).toBeGreaterThan(0);
   });
 
   it("shows local chat detail and sends a local request", async () => {
@@ -549,7 +552,7 @@ describe("App navigation", () => {
     fireEvent.change(await screen.findByLabelText("Local request"), {
       target: { value: "status" }
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Отправить" }));
 
     expect(sendLocalChatMessage).toHaveBeenCalledWith({
       chatId: "local-chat-10",
@@ -753,7 +756,7 @@ describe("App navigation", () => {
     fireEvent.change(await screen.findByLabelText("Workspace for chat 5001"), {
       target: { value: "default-workspace" }
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Save chat workspace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить workspace" }));
 
     expect(saveChatWorkspaceBinding).toHaveBeenCalledWith({
       chatId: 5001,
@@ -784,8 +787,8 @@ describe("App navigation", () => {
       title: "Telegram 5001",
       workspaceId: "assist-repo"
     });
-    expect(await screen.findByText("Telegram 5001")).toBeInTheDocument();
-    expect(await screen.findByText("Ссылается на Telegram chat 5001")).toBeInTheDocument();
+    expect((await screen.findAllByText("Telegram 5001")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Ссылается на Telegram chat 5001")).length).toBeGreaterThan(0);
   });
 
   it("shows blocked and failed tasks in the blocked page", async () => {
@@ -846,7 +849,8 @@ describe("App navigation", () => {
 
     expect(retryTask).toHaveBeenCalledWith("task-2");
     await waitFor(() => {
-      expect(screen.queryByText("task-2")).not.toBeInTheDocument();
+      expect(screen.getByText("task-2")).toBeInTheDocument();
+      expect(screen.getByText("В очереди")).toBeInTheDocument();
     });
   });
 

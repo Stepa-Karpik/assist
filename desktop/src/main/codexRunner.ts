@@ -20,6 +20,12 @@ type SpawnResult = {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  cancelled: boolean;
+};
+
+export type CodexExecutionHandle = {
+  result: Promise<string>;
+  cancel: () => void;
 };
 
 function getDefaultCodexExecutable(): string {
@@ -43,8 +49,10 @@ function runCommand(
   codexExecutable: string,
   args: string[],
   timeoutMs: number
-): Promise<SpawnResult> {
-  return new Promise((resolve, reject) => {
+): { result: Promise<SpawnResult>; cancel: () => void } {
+  let cancel: () => void = () => {};
+
+  const result = new Promise<SpawnResult>((resolve, reject) => {
     const child = spawn(codexExecutable, args, {
       shell: process.platform === "win32",
       windowsHide: true
@@ -52,10 +60,16 @@ function runCommand(
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
     let timedOut = false;
+    let cancelled = false;
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, timeoutMs);
+
+    cancel = () => {
+      cancelled = true;
+      child.kill();
+    };
 
     child.stdout.on("data", (chunk) => {
       stdoutChunks.push(String(chunk));
@@ -78,10 +92,92 @@ function runCommand(
         exitCode,
         stdout: stdoutChunks.join(""),
         stderr: stderrChunks.join(""),
-        timedOut
+        timedOut,
+        cancelled
       });
     });
   });
+
+  return {
+    result,
+    cancel
+  };
+}
+
+export function createCodexRunStarter({
+  codexExecutable = getDefaultCodexExecutable(),
+  timeoutMs = 120_000,
+  tempRoot = os.tmpdir()
+}: CodexRunnerOptions = {}): (request: CodexRunRequest) => CodexExecutionHandle {
+  return function startCodex({
+    prompt,
+    workspaceRoot,
+    sandboxMode = "read-only"
+  }: CodexRunRequest): CodexExecutionHandle {
+    let cancelCommand: () => void = () => {};
+    const result = (async () => {
+      const tempDirectory = await fs.mkdtemp(path.join(tempRoot, "karpik-codex-"));
+      const outputPath = path.join(tempDirectory, "last-message.txt");
+
+      try {
+        const command = runCommand(
+          codexExecutable,
+          [
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--sandbox",
+            sandboxMode,
+            "--full-auto",
+            "-C",
+            workspaceRoot,
+            "-o",
+            outputPath,
+            prompt
+          ],
+          timeoutMs
+        );
+        cancelCommand = command.cancel;
+        const commandResult = await command.result;
+
+        if (commandResult.cancelled) {
+          throw new Error("Cancelled by operator.");
+        }
+
+        if (commandResult.timedOut) {
+          throw new Error("Codex execution timed out.");
+        }
+
+        if (commandResult.exitCode !== 0) {
+          throw new Error(
+            normalizeText(commandResult.stderr) ??
+              normalizeText(commandResult.stdout) ??
+              "Codex execution failed."
+          );
+        }
+
+        const outputText = normalizeText(await fs.readFile(outputPath, "utf8"));
+
+        if (outputText === null) {
+          throw new Error("Codex returned an empty response.");
+        }
+
+        return outputText;
+      } finally {
+        await fs.rm(tempDirectory, {
+          recursive: true,
+          force: true
+        });
+      }
+    })();
+
+    return {
+      result,
+      cancel: () => {
+        cancelCommand();
+      }
+    };
+  };
 }
 
 export function createCodexRunner({
@@ -89,57 +185,13 @@ export function createCodexRunner({
   timeoutMs = 120_000,
   tempRoot = os.tmpdir()
 }: CodexRunnerOptions = {}) {
-  return async function runCodex({
-    prompt,
-    workspaceRoot,
-    sandboxMode = "read-only"
-  }: CodexRunRequest): Promise<string> {
-    const tempDirectory = await fs.mkdtemp(path.join(tempRoot, "karpik-codex-"));
-    const outputPath = path.join(tempDirectory, "last-message.txt");
+  const startCodex = createCodexRunStarter({
+    codexExecutable,
+    timeoutMs,
+    tempRoot
+  });
 
-    try {
-      const result = await runCommand(
-        codexExecutable,
-        [
-          "exec",
-          "--ephemeral",
-          "--skip-git-repo-check",
-          "--sandbox",
-          sandboxMode,
-          "--full-auto",
-          "-C",
-          workspaceRoot,
-          "-o",
-          outputPath,
-          prompt
-        ],
-        timeoutMs
-      );
-
-      if (result.timedOut) {
-        throw new Error("Codex execution timed out.");
-      }
-
-      if (result.exitCode !== 0) {
-        throw new Error(
-          normalizeText(result.stderr) ??
-            normalizeText(result.stdout) ??
-            "Codex execution failed."
-        );
-      }
-
-      const outputText = normalizeText(await fs.readFile(outputPath, "utf8"));
-
-      if (outputText === null) {
-        throw new Error("Codex returned an empty response.");
-      }
-
-      return outputText;
-    } finally {
-      await fs.rm(tempDirectory, {
-        recursive: true,
-        force: true
-      });
-    }
+  return async function runCodex(request: CodexRunRequest): Promise<string> {
+    return startCodex(request).result;
   };
 }

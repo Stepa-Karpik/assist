@@ -13,11 +13,16 @@ export function Sidebar({ items, activeSection, onSelect }: SidebarProps) {
   return (
     <aside className="sidebar-shell">
       <div className="sidebar-brand">
-        <p className="eyebrow">Karpik</p>
-        <h1 className="sidebar-title">Control Plane</h1>
-        <p className="muted-text">
-          Desktop chats, Telegram intake, blocked tasks, and local review.
-        </p>
+        <div className="brand-mark" aria-hidden="true">
+          K
+        </div>
+        <div>
+          <p className="eyebrow">Karpik</p>
+          <h1 className="sidebar-title">Operator Console</h1>
+          <p className="muted-text">
+            Telegram intake, локальные чаты, codex review и контроль исполнения.
+          </p>
+        </div>
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
@@ -28,7 +33,7 @@ export function Sidebar({ items, activeSection, onSelect }: SidebarProps) {
             onClick={() => onSelect(item.id)}
             type="button"
           >
-            {item.label}
+            <span className="nav-label">{item.label}</span>
           </button>
         ))}
       </nav>

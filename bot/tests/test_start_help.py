@@ -15,6 +15,10 @@ def test_help_text_lists_natural_language_examples_and_manual_fallbacks() -> Non
 
     assert "скинь скриншот" in help_text
     assert "скинь файл с рабочего стола hack.pptx" in help_text
+    assert "/pc" in help_text
+    assert "/queue" in help_text
+    assert "/last" in help_text
+    assert "/kill <task_id>" in help_text
     assert "/task low screenshot screen-1" in help_text
     assert "/task medium send-file desktop::hack.pptx" in help_text
     assert "/status [task_id]" in help_text

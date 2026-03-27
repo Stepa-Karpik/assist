@@ -58,6 +58,9 @@ let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let updateService: ReturnType<typeof createUpdateService> | null = null;
 let taskSnapshot: RemoteTaskRecord[] = [];
 let taskActivityInitialized = false;
+const taskRuntimeState = {
+  activeExecutions: new Map()
+};
 const pairingStore = new PairingStore();
 const authPollIntervalMs = 2_000;
 const deviceHeartbeatIntervalMs = 15_000;
@@ -187,13 +190,14 @@ async function pollTaskState() {
   try {
     const nextSnapshot = await runTaskSyncCycle({
       client: syncClient,
-      executeTask: (task) => taskExecutor!.execute(task),
+      startTaskExecution: (task) => taskExecutor!.start(task),
       persistLocalApproval: async (task, draft) => {
         localApprovalStore?.saveDraft(task.intent, draft);
       },
       discardLocalApproval: async (draft) => {
         await localApprovalStore?.discardDraft(draft);
-      }
+      },
+      runtimeState: taskRuntimeState
     });
     updateTaskSnapshot(nextSnapshot);
   } finally {
@@ -638,6 +642,15 @@ function registerIpcHandlers() {
 
     if (!response.ok) {
       throw new Error(`Failed to retry task: ${response.status}`);
+    }
+
+    await refreshTaskSnapshot();
+  });
+  ipcMain.handle("tasks:cancel", async (_event, taskId: string) => {
+    const response = await syncClient.cancelTask(taskId);
+
+    if (!response.ok) {
+      throw new Error(`Failed to cancel task: ${response.status}`);
     }
 
     await refreshTaskSnapshot();
