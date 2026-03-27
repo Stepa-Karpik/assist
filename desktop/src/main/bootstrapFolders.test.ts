@@ -17,6 +17,8 @@ describe("getRuntimeFolderMap", () => {
     expect(folders.userServices).toBe(path.join(root, "docs", "user", "services"));
     expect(folders.userWebsites).toBe(path.join(root, "docs", "user", "websites"));
     expect(folders.userDocs).toBe(path.join(root, "docs", "user", "docs"));
+    expect(folders.state).toBe(path.join(root, "state"));
+    expect(folders.settings).toBe(path.join(root, "settings"));
     expect(folders.secrets).toBe(path.join(root, "secrets"));
   });
 });

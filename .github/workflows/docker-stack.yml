@@ -1,0 +1,40 @@
+name: Docker Stack CI
+
+on:
+  push:
+    branches:
+      - main
+      - task-6-bot-bootstrap
+  pull_request:
+
+jobs:
+  docker-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate base compose config
+        run: docker compose --env-file .env.example config
+
+      - name: Validate telegram profile compose config
+        run: docker compose --env-file .env.example --profile telegram config
+
+      - name: Build and start stack
+        run: docker compose --env-file .env.example up -d --build
+
+      - name: Wait for published health endpoints
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null && curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then
+              exit 0
+            fi
+            docker compose ps
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Stop stack
+        if: always()
+        run: docker compose --env-file .env.example down --volumes --remove-orphans

@@ -1,0 +1,12 @@
+.git
+.worktrees
+desktop/node_modules
+desktop/out
+server/.venv
+server/.pytest_cache
+server/.tmp
+bot/.venv
+bot/.pytest_cache
+bot/pytest-cache-files-*
+__pycache__
+*.pyc
