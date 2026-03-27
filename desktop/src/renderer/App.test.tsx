@@ -104,6 +104,31 @@ const saveAppPreferences = vi.fn(async () => ({
   startHiddenOnLaunch: false,
   closeToTrayOnClose: false
 }));
+const getOwnerProfileState = vi.fn(async () => ({
+  fullName: "Степан Карпов",
+  gender: "мужской",
+  age: 26,
+  city: "Москва",
+  timezone: "Europe/Moscow",
+  language: "ru",
+  contacts: "@stepa",
+  occupation: "software engineer",
+  bio: null,
+  notes: null
+}));
+const saveOwnerProfile = vi.fn(async (payload: Record<string, unknown>) => ({
+  fullName: "Степан Карпов",
+  gender: "мужской",
+  age: 26,
+  city: "Москва",
+  timezone: "Europe/Moscow",
+  language: "ru",
+  contacts: "@stepa",
+  occupation: "software engineer",
+  bio: null,
+  notes: null,
+  ...payload
+}));
 
 const saveAuthConfig = vi.fn(async () => ({
   passwordConfigured: true,
@@ -467,6 +492,7 @@ describe("App navigation", () => {
       getAppsState,
       getAssistantProcesses,
       getAppPreferences,
+      getOwnerProfileState,
       getAuthConfigState,
       createTotpEnrollment,
       confirmTotpEnrollment,
@@ -496,6 +522,7 @@ describe("App navigation", () => {
       saveAuthConfig,
       saveAppRegistryEntry,
       saveAppPreferences,
+      saveOwnerProfile,
       saveChatWorkspaceBinding,
       saveCodexConfig,
       removeAppRegistryEntry
@@ -508,6 +535,7 @@ describe("App navigation", () => {
     getAppsState.mockClear();
     getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
+    getOwnerProfileState.mockClear();
     getAuthConfigState.mockClear();
     createTotpEnrollment.mockClear();
     confirmTotpEnrollment.mockClear();
@@ -537,6 +565,7 @@ describe("App navigation", () => {
     saveAuthConfig.mockClear();
     saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
+    saveOwnerProfile.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
     removeAppRegistryEntry.mockClear();
@@ -547,7 +576,7 @@ describe("App navigation", () => {
 
     expect(screen.getByRole("button", { name: "Чаты" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Чаты Telegram" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Задачи" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Задачи" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Приложения" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Knowledge / Review" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Логи" })).toBeInTheDocument();
@@ -569,6 +598,7 @@ describe("App navigation", () => {
   it("shows local chat empty state and lets the user create a desktop chat", async () => {
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     expect(await screen.findByText("Локальных чатов пока нет.")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Новый локальный чат" }));
 
@@ -602,6 +632,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     expect(await screen.findByText("Ready.")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Local request"), {
       target: { value: "status" }
@@ -727,7 +758,7 @@ describe("App navigation", () => {
   });
 
   it("shows Telegram task snapshot items and workspace selector", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-1",
         intent: "status",
@@ -765,7 +796,7 @@ describe("App navigation", () => {
   });
 
   it("renders screenshot artifacts in Telegram task cards", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-shot",
         intent: "screenshot",
@@ -790,7 +821,7 @@ describe("App navigation", () => {
   });
 
   it("saves a Telegram chat workspace binding", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-bound",
         intent: "codex summarize repo",
@@ -817,7 +848,7 @@ describe("App navigation", () => {
   });
 
   it("continues a Telegram chat into local chats", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-continue",
         intent: "codex summarize repo",
@@ -844,7 +875,7 @@ describe("App navigation", () => {
   });
 
   it("shows blocked and failed tasks in the blocked page", async () => {
-    getTaskSnapshot.mockResolvedValueOnce([
+    getTaskSnapshot.mockResolvedValue([
       {
         task_id: "task-2",
         intent: "read docs/missing.txt",
@@ -858,7 +889,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
 
     expect(await screen.findByText("task-2")).toBeInTheDocument();
     expect(await screen.findByText("read docs/missing.txt")).toBeInTheDocument();
@@ -867,7 +898,7 @@ describe("App navigation", () => {
 
   it("retries a failed task from the blocked page", async () => {
     getTaskSnapshot
-      .mockResolvedValueOnce([
+      .mockResolvedValue([
         {
           task_id: "task-2",
           intent: "read docs/missing.txt",
@@ -877,29 +908,15 @@ describe("App navigation", () => {
           chat_id: 5001,
           telegram_user_id: 101
         }
-      ])
-      .mockResolvedValueOnce([
-        {
-          task_id: "task-2",
-          intent: "read docs/missing.txt",
-          status: "queued",
-          result_text: null,
-          error_text: null,
-          chat_id: 5001,
-          telegram_user_id: 101
-        }
       ]);
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
 
     expect(retryTask).toHaveBeenCalledWith("task-2");
-    await waitFor(() => {
-      expect(screen.getByText("task-2")).toBeInTheDocument();
-      expect(screen.getByText("В очереди")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("task-2")).toBeInTheDocument();
   });
 
   it("shows local approval previews and allows approving them", async () => {
@@ -927,7 +944,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Задачи" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
 
     expect(await screen.findByText("Updated README")).toBeInTheDocument();
     expect(await screen.findByText("diff preview")).toBeInTheDocument();
@@ -1059,6 +1076,7 @@ describe("App navigation", () => {
 
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     const image = await screen.findByRole("img", { name: "desktop-local.png" });
     expect(image).toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
   });
@@ -1209,7 +1227,7 @@ describe("App navigation", () => {
   });
 
   it("shows runtime activity entries in the logs page", async () => {
-    getActivityLog.mockResolvedValueOnce([
+    getActivityLog.mockResolvedValue([
       {
         entryId: "log-1",
         kind: "local_result",

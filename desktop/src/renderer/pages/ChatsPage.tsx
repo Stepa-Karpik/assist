@@ -257,7 +257,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
           <p className="eyebrow">Чаты</p>
           <h2>Локальный операторский диалог</h2>
           <p className="muted-text">
-            Сообщения пользователя справа, ответы ассистента слева. Telegram continuation-чаты живут здесь же.
+            Сообщения пользователя справа, ответы ассистента слева. Continuation-чаты из Telegram живут здесь же.
           </p>
         </div>
         <button
@@ -327,9 +327,9 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
               <div className="chat-thread" aria-live="polite">
                 {activeChat.messages.length === 0 ? (
                   <div className="empty-panel">
-                    <strong>Диалог пуст</strong>
+                    <strong>Локальный диалог</strong>
                     <p className="muted-text">
-                      Напиши что-то вроде «привет», «скинь скриншот» или «обнови README».
+                      Диалог пуст. Напиши что-то вроде «привет», «скинь скриншот» или «обнови README».
                     </p>
                   </div>
                 ) : null}
@@ -345,7 +345,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
                               ? "Ты"
                               : message.role === "assistant"
                                 ? "Ассистент"
-                                : "System"}
+                                : "Система"}
                           </span>
                           <span>{formatMessageTime(message.createdAt)}</span>
                         </div>

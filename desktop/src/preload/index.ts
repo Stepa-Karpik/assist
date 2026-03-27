@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getAppsState: () => ipcRenderer.invoke("apps:get-state"),
   getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
+  getOwnerProfileState: () => ipcRenderer.invoke("profile:get-state"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   createTotpEnrollment: () => ipcRenderer.invoke("auth:create-totp-enrollment"),
   confirmTotpEnrollment: (payload: { code: string }) =>
@@ -52,6 +53,18 @@ contextBridge.exposeInMainWorld("karpik", {
     startHiddenOnLaunch?: boolean;
     closeToTrayOnClose?: boolean;
   }) => ipcRenderer.invoke("app-preferences:save", payload),
+  saveOwnerProfile: (payload: {
+    fullName?: string | null;
+    gender?: string | null;
+    age?: number | null;
+    city?: string | null;
+    timezone?: string | null;
+    language?: string | null;
+    contacts?: string | null;
+    occupation?: string | null;
+    bio?: string | null;
+    notes?: string | null;
+  }) => ipcRenderer.invoke("profile:save", payload),
   saveAppRegistryEntry: (payload: {
     appId?: string;
     displayName: string;

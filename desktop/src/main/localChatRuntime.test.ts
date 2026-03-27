@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LocalChatStore } from "./localChatStore";
+import { createLocalConversationRouter } from "./localConversationRouter";
 import { createLocalChatRuntime } from "./localChatRuntime";
 
 const tempRoots: string[] = [];
@@ -115,6 +116,47 @@ describe("createLocalChatRuntime", () => {
     });
 
     expect(executeTask).not.toHaveBeenCalled();
+    expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      "user:привет",
+      "assistant:Привет. Чем помочь?"
+    ]);
+  });
+
+  it("passes owner profile context only into the local chat responder", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-24T13:07:00.000Z"),
+      generateChatId: () => "local-chat-context"
+    });
+    chatStore.createDesktopChat({
+      title: "Local assistant context"
+    });
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      resultText: "unused"
+    }));
+    const chatResponder = {
+      reply: vi.fn(async () => "Привет. Чем помочь?")
+    };
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      executeTask,
+      generateTaskId: () => "local-task-context",
+      resolveInput: createLocalConversationRouter({
+        chatResponder,
+        getOwnerProfileContext: () => "Владелец: Степан Карпов\nГород: Москва"
+      }).resolve
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-context",
+      text: "привет"
+    });
+
+    expect(executeTask).not.toHaveBeenCalled();
+    expect(chatResponder.reply).toHaveBeenCalledWith("привет", {
+      ownerProfileContext: "Владелец: Степан Карпов\nГород: Москва"
+    });
     expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
       "user:привет",
       "assistant:Привет. Чем помочь?"

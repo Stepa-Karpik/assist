@@ -92,8 +92,7 @@ export function KnowledgePage() {
       }
 
       try {
-        const nextPreview =
-          (await window.karpik?.readKnowledgeEntry?.(selection)) ?? null;
+        const nextPreview = (await window.karpik?.readKnowledgeEntry?.(selection)) ?? null;
 
         if (isSubscribed) {
           setPreview(nextPreview);

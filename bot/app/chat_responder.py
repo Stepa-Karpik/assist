@@ -6,23 +6,35 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
+FALLBACK_REPLY = (
+    "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+)
+
+
 @dataclass(frozen=True, slots=True)
 class DeepSeekChatResponder:
     api_key: str
     model: str = "deepseek-chat"
     timeout_seconds: float = 10.0
 
-    def reply(self, text: str) -> str:
+    def reply(self, text: str, owner_profile_context: str | None = None) -> str:
+        system_prompt = (
+            "You are Karpik, a concise Russian-speaking desktop assistant. "
+            "Answer in Russian. Be direct and helpful. "
+            "Do not mention DeepSeek or that you are a separate model."
+        )
+        if owner_profile_context is not None and owner_profile_context.strip():
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                f"Owner profile context:\n{owner_profile_context.strip()}"
+            )
+
         request_body = {
             "model": self.model,
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You are Karpik, a concise Russian-speaking desktop assistant. "
-                        "Answer in Russian. Be direct and helpful. "
-                        "Do not mention DeepSeek or that you are a separate model."
-                    ),
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
@@ -45,15 +57,15 @@ class DeepSeekChatResponder:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 body = response.read().decode("utf-8")
         except (HTTPError, URLError, TimeoutError, OSError):
-            return "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+            return FALLBACK_REPLY
 
         try:
             parsed = json.loads(body)
             content = parsed["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-            return "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+            return FALLBACK_REPLY
 
         if not isinstance(content, str) or not content.strip():
-            return "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+            return FALLBACK_REPLY
 
         return content.strip()

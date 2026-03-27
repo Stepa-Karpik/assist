@@ -23,6 +23,11 @@ import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
 import { createLocalChatRuntime } from "./localChatRuntime";
+import {
+  OwnerProfileStore,
+  buildOwnerProfileContext,
+  type OwnerProfileInput
+} from "./ownerProfileStore";
 import { PairingStore } from "./pairingStore";
 import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
@@ -60,6 +65,7 @@ let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let ownerProfileStore: OwnerProfileStore | null = null;
 let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let updateService: ReturnType<typeof createUpdateService> | null = null;
@@ -183,6 +189,18 @@ async function syncAuthConfigState() {
 
   if (!response.ok) {
     logResponseError("Syncing auth config state", response);
+  }
+}
+
+async function syncOwnerProfileState() {
+  if (ownerProfileStore === null) {
+    return;
+  }
+
+  const response = await syncClient.syncOwnerProfile(ownerProfileStore.getState());
+
+  if (!response.ok) {
+    logResponseError("Syncing owner profile state", response);
   }
 }
 
@@ -585,6 +603,7 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
+  ipcMain.handle("profile:get-state", () => ownerProfileStore?.getState());
   ipcMain.handle("apps:get-state", () => appRegistryStore?.getState() ?? { items: [] });
   ipcMain.handle("apps:get-active-processes", () => assistantProcessStore.listActive());
   ipcMain.handle("activity-log:get", () => activityLogStore?.list() ?? []);
@@ -702,6 +721,15 @@ function registerIpcHandlers() {
       return state;
     }
   );
+  ipcMain.handle("profile:save", async (_event, payload: OwnerProfileInput) => {
+    if (ownerProfileStore === null) {
+      throw new Error("Owner profile store is not initialized");
+    }
+
+    const state = ownerProfileStore.save(payload);
+    await syncOwnerProfileState();
+    return state;
+  });
   ipcMain.handle("codex:save-config", (_event, payload: CodexConfigInput) => {
     if (codexSettingsStore === null) {
       throw new Error("Codex settings store is not initialized");
@@ -840,6 +868,9 @@ async function bootstrap() {
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
   });
+  ownerProfileStore = new OwnerProfileStore({
+    settingsRoot: runtimeFolders.settings
+  });
   appRegistryStore = new AppRegistryStore({
     settingsRoot: runtimeFolders.settings
   });
@@ -907,7 +938,15 @@ async function bootstrap() {
     },
     getWorkspaceRootForChat: getWorkspaceRootForLocalChat,
     resolveInput: createLocalConversationRouter({
-      chatResponder: localChatResponder
+      chatResponder: localChatResponder,
+      getOwnerProfileContext: () => {
+        if (ownerProfileStore === null) {
+          return null;
+        }
+
+        const context = buildOwnerProfileContext(ownerProfileStore.getState());
+        return context.length > 0 ? context : null;
+      }
     }).resolve,
     logActivity: (input) => {
       activityLogStore?.append(input);
@@ -954,6 +993,9 @@ async function bootstrap() {
 
   void syncAuthConfigState().catch((error: unknown) => {
     console.error("Failed to sync auth config state", error);
+  });
+  void syncOwnerProfileState().catch((error: unknown) => {
+    console.error("Failed to sync owner profile state", error);
   });
 }
 

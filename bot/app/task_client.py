@@ -97,6 +97,41 @@ class DeviceStatusResult:
     attention_count: int = 0
 
 
+def build_owner_profile_context(parsed: object) -> str | None:
+    if not isinstance(parsed, dict):
+        return None
+
+    profile = parsed.get("profile")
+    if not isinstance(profile, dict):
+        return None
+
+    entries: list[tuple[str, object]] = [
+        ("Владелец", profile.get("full_name")),
+        ("Пол", profile.get("gender")),
+        ("Возраст", profile.get("age")),
+        ("Город", profile.get("city")),
+        ("Часовой пояс", profile.get("timezone")),
+        ("Язык", profile.get("language")),
+        ("Контакты", profile.get("contacts")),
+        ("Род деятельности", profile.get("occupation")),
+        ("Биография", profile.get("bio")),
+        ("Заметки", profile.get("notes")),
+    ]
+
+    lines: list[str] = []
+    for label, value in entries:
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                lines.append(f"{label}: {normalized}")
+            continue
+
+        if isinstance(value, int):
+            lines.append(f"{label}: {value}")
+
+    return "\n".join(lines) if lines else None
+
+
 def normalize_workflow_result(value: object) -> TaskWorkflowStatus:
     if value in {
         "queued",
@@ -367,6 +402,10 @@ class TaskServerClient:
             for item in (parse_app_catalog_item(value) for value in items)
             if item is not None
         ]
+
+    def fetch_owner_profile_context(self) -> str | None:
+        parsed = self._get_json(f"/api/profile?{urlencode({'device_id': self.device_id})}")
+        return build_owner_profile_context(parsed)
 
     def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:
         query = {

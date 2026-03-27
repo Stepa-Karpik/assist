@@ -32,10 +32,15 @@ class FakeChatResponder:
     reply_text: str
 
     def __post_init__(self) -> None:
-        self.calls: list[str] = []
+        self.calls: list[dict[str, str | None]] = []
 
-    def reply(self, text: str) -> str:
-        self.calls.append(text)
+    def reply(self, text: str, owner_profile_context: str | None = None) -> str:
+        self.calls.append(
+            {
+                "text": text,
+                "owner_profile_context": owner_profile_context,
+            }
+        )
         return self.reply_text
 
 
@@ -51,6 +56,7 @@ class FakeTaskClient:
         recent_result: list[TaskSummaryResult] | None = None,
         cancel_result: TaskStatusResult | None = None,
         app_catalog: list[FakeAppCatalogEntry] | None = None,
+        owner_profile_context: str | None = None,
     ) -> None:
         self.task_result = task_result or TaskWorkflowResult(status="ignored")
         self.auth_result = auth_result or TaskWorkflowResult(status="ignored")
@@ -60,6 +66,7 @@ class FakeTaskClient:
         self.recent_result = recent_result or []
         self.cancel_result = cancel_result or TaskStatusResult(found=False)
         self.app_catalog = app_catalog or []
+        self.owner_profile_context = owner_profile_context
         self.task_calls: list[dict[str, object]] = []
         self.auth_calls: list[dict[str, object]] = []
         self.decision_calls: list[dict[str, object]] = []
@@ -133,10 +140,13 @@ class FakeTaskClient:
     def fetch_app_catalog(self) -> list[FakeAppCatalogEntry]:
         return self.app_catalog
 
+    def fetch_owner_profile_context(self) -> str | None:
+        return self.owner_profile_context
+
 
 def test_ambiguous_screenshot_message_returns_inline_screen_buttons() -> None:
     store = BotConversationStore()
-    client = FakeTaskClient()
+    client = FakeTaskClient(owner_profile_context="Владелец: Степан Карпов")
     resolver = FakeIntentResolver(
         IntentResolution(
             kind="clarification",
@@ -547,7 +557,7 @@ def test_text_message_opens_confident_site_request_as_medium_task() -> None:
 
 def test_generic_message_uses_chat_responder_when_codex_is_not_forced() -> None:
     store = BotConversationStore()
-    client = FakeTaskClient()
+    client = FakeTaskClient(owner_profile_context="Владелец: Степан Карпов")
     chat_responder = FakeChatResponder("Привет. Чем помочь?")
 
     reply = process_text_message(
@@ -562,7 +572,12 @@ def test_generic_message_uses_chat_responder_when_codex_is_not_forced() -> None:
 
     assert reply == BotReply(text="Привет. Чем помочь?")
     assert client.task_calls == []
-    assert chat_responder.calls == ["привет"]
+    assert chat_responder.calls == [
+        {
+            "text": "привет",
+            "owner_profile_context": "Владелец: Степан Карпов",
+        }
+    ]
 
 
 def test_explicit_codex_message_still_creates_task_even_with_chat_responder() -> None:

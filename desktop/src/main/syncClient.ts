@@ -43,6 +43,37 @@ export type AuthConfigState = {
   totpConfigured: boolean;
 };
 
+export type OwnerProfileState = {
+  fullName: string | null;
+  gender: string | null;
+  age: number | null;
+  city: string | null;
+  timezone: string | null;
+  language: string | null;
+  contacts: string | null;
+  occupation: string | null;
+  bio: string | null;
+  notes: string | null;
+};
+
+export type OwnerProfileSyncPayload = {
+  device_id: string;
+  profile: {
+    full_name: string | null;
+    gender: string | null;
+    age: number | null;
+    city: string | null;
+    timezone: string | null;
+    language: string | null;
+    contacts: string | null;
+    occupation: string | null;
+    bio: string | null;
+    notes: string | null;
+  };
+};
+
+export type OwnerProfileResponse = OwnerProfileSyncPayload;
+
 export type RemoteTaskStatus =
   | "queued"
   | "awaiting_auth"
@@ -235,6 +266,27 @@ export function buildAuthConfigStatusPayload(
   };
 }
 
+export function buildOwnerProfileSyncPayload(
+  deviceId: string,
+  profile: OwnerProfileState
+): OwnerProfileSyncPayload {
+  return {
+    device_id: deviceId,
+    profile: {
+      full_name: profile.fullName,
+      gender: profile.gender,
+      age: profile.age,
+      city: profile.city,
+      timezone: profile.timezone,
+      language: profile.language,
+      contacts: profile.contacts,
+      occupation: profile.occupation,
+      bio: profile.bio,
+      notes: profile.notes
+    }
+  };
+}
+
 export function buildAppCatalogSyncPayload(
   deviceId: string,
   items: RemoteAppCatalogItem[]
@@ -299,6 +351,26 @@ export function createSyncClient({
     fetchDevicePresence() {
       return fetchImpl(`${baseUrl}/api/devices/${deviceId}`, {
         method: "GET"
+      });
+    },
+
+    fetchOwnerProfile() {
+      const params = new URLSearchParams({
+        device_id: deviceId
+      });
+
+      return fetchImpl(`${baseUrl}/api/profile?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    syncOwnerProfile(profile: OwnerProfileState) {
+      return fetchImpl(`${baseUrl}/api/profile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(buildOwnerProfileSyncPayload(deviceId, profile))
       });
     },
 

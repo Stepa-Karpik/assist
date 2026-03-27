@@ -15,12 +15,18 @@ export type LocalConversationResolution =
     };
 
 type LocalChatResponder = {
-  reply: (text: string) => Promise<string> | string;
+  reply: (
+    text: string,
+    options?: {
+      ownerProfileContext?: string | null;
+    }
+  ) => Promise<string> | string;
 };
 
 type LocalConversationRouterOptions = {
   chatResponder?: LocalChatResponder | null;
   resolveIntent?: (text: string) => string;
+  getOwnerProfileContext?: () => string | null | undefined;
 };
 
 function buildFallbackReply(text: string): string {
@@ -50,7 +56,8 @@ function buildFallbackReply(text: string): string {
 
 export function createLocalConversationRouter({
   chatResponder = null,
-  resolveIntent = normalizeLocalIntent
+  resolveIntent = normalizeLocalIntent,
+  getOwnerProfileContext
 }: LocalConversationRouterOptions = {}) {
   return {
     async resolve(text: string): Promise<LocalConversationResolution> {
@@ -65,7 +72,9 @@ export function createLocalConversationRouter({
         const replyText =
           chatResponder === null
             ? buildFallbackReply(text)
-            : await chatResponder.reply(normalizedText);
+            : await chatResponder.reply(normalizedText, {
+                ownerProfileContext: getOwnerProfileContext?.() ?? null
+              });
 
         return {
           kind: "reply",

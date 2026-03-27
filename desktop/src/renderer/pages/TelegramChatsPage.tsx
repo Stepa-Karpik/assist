@@ -151,7 +151,7 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       }));
       setWorkspaceFeedbackByChat((current) => ({
         ...current,
-        [String(chatId)]: `Привязка workspace для чата ${chatId} сохранена.`
+        [String(chatId)]: `Workspace для чата ${chatId} сохранён.`
       }));
     } catch {
       setError("Не удалось сохранить привязку чата к workspace.");
@@ -227,9 +227,9 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
       <div className="page-header">
         <div>
           <p className="eyebrow">Чаты Telegram</p>
-          <h2>Удалённые очереди и routing по workspace</h2>
+          <h2>Удалённые диалоги и routing по workspace</h2>
           <p className="muted-text">
-            Здесь видны последние Telegram-задачи, их статусы и привязка чатов к workspace.
+            Здесь видны последние Telegram-задачи, их статусы и привязка удалённых чатов к локальным workspace.
           </p>
         </div>
       </div>
@@ -255,7 +255,7 @@ export function TelegramChatsPage({ onContinueToLocalChats }: TelegramChatsPageP
               <article className="task-card task-card--chat" key={chatGroup.chatId}>
                 <div className="task-card-header">
                   <div>
-                    <strong>Chat {chatGroup.chatId}</strong>
+                    <strong>{`Chat ${chatGroup.chatId}`}</strong>
                     <p className="muted-text">Задач в истории: {chatGroup.tasks.length}</p>
                   </div>
                   <span className="task-status">Telegram</span>

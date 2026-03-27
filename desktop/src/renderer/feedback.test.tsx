@@ -5,7 +5,9 @@ import App from "./App";
 
 describe("desktop renderer feedback", () => {
   const getTaskSnapshot = vi.fn();
+  const getOwnerProfileState = vi.fn();
   const saveAuthConfig = vi.fn();
+  const saveOwnerProfile = vi.fn();
   const createTotpEnrollment = vi.fn();
   const confirmTotpEnrollment = vi.fn();
   const saveCodexConfig = vi.fn();
@@ -18,7 +20,9 @@ describe("desktop renderer feedback", () => {
 
   beforeEach(async () => {
     getTaskSnapshot.mockReset();
+    getOwnerProfileState.mockReset();
     saveAuthConfig.mockReset();
+    saveOwnerProfile.mockReset();
     createTotpEnrollment.mockReset();
     confirmTotpEnrollment.mockReset();
     saveCodexConfig.mockReset();
@@ -40,6 +44,18 @@ describe("desktop renderer feedback", () => {
         telegram_user_id: 101
       }
     ]);
+    getOwnerProfileState.mockResolvedValue({
+      fullName: "Степан Карпов",
+      gender: "мужской",
+      age: 26,
+      city: "Москва",
+      timezone: "Europe/Moscow",
+      language: "ru",
+      contacts: "@stepa",
+      occupation: "software engineer",
+      bio: null,
+      notes: null
+    });
     saveAuthConfig.mockResolvedValue({
       passwordConfigured: true,
       totpConfigured: true
@@ -108,6 +124,7 @@ describe("desktop renderer feedback", () => {
         startHiddenOnLaunch: true,
         closeToTrayOnClose: true
       })),
+      getOwnerProfileState,
       getAuthConfigState: vi.fn(async () => ({
         passwordConfigured: false,
         totpConfigured: false
@@ -241,6 +258,7 @@ describe("desktop renderer feedback", () => {
         }
       })),
       saveAuthConfig,
+      saveOwnerProfile,
       saveAppPreferences: vi.fn(async (payload) => ({
         launchAtLogin: Boolean(payload.launchAtLogin),
         notificationsEnabled: Boolean(payload.notificationsEnabled),
@@ -309,6 +327,6 @@ describe("desktop renderer feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
     fireEvent.click(await screen.findByRole("button", { name: "Сохранить workspace" }));
 
-    expect(await screen.findByText("Привязка workspace для чата 5001 сохранена.")).toBeInTheDocument();
+    expect(await screen.findByText("Workspace для чата 5001 сохранён.")).toBeInTheDocument();
   });
 });

@@ -4,23 +4,20 @@ import { Sidebar, type NavigationItem } from "./layout/Sidebar";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { BlockedTasksPage } from "./pages/BlockedTasksPage";
 import { ChatsPage } from "./pages/ChatsPage";
+import { HomePage } from "./pages/HomePage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LogsPage } from "./pages/LogsPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TelegramChatsPage } from "./pages/TelegramChatsPage";
 import { formatTaskStatus, type TaskSnapshot } from "./pages/taskSnapshot";
 
-type QuickProgressState = {
-  activeTaskCount: number;
-  awaitingApprovalCount: number;
-  blockedTaskCount: number;
-  percentage: number;
-  summaryText: string;
-};
-
 type QuickAccessState = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getQuickAccessState"]>
+>;
+type OwnerProfileState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getOwnerProfileState"]>
 >;
 
 const emptyQuickAccessState: NonNullable<QuickAccessState> = {
@@ -32,60 +29,36 @@ const emptyQuickAccessState: NonNullable<QuickAccessState> = {
 
 const emptyTaskSnapshot: TaskSnapshot = [];
 
-function buildQuickProgressState(taskSnapshot: TaskSnapshot): QuickProgressState {
-  const activeTasks = taskSnapshot.filter((task) =>
-    ["queued", "awaiting_auth", "running", "awaiting_local_approval", "stalled", "cancel_requested"].includes(
-      task.status
-    )
-  );
-  const awaitingApprovalCount = taskSnapshot.filter(
-    (task) => task.status === "awaiting_local_approval"
-  ).length;
-  const blockedTaskCount = taskSnapshot.filter(
-    (task) => task.status === "blocked" || task.status === "failed"
-  ).length;
+const navigationItems: NavigationItem[] = [
+  { id: "home", label: "Главная" },
+  { id: "chats", label: "Чаты" },
+  { id: "telegram", label: "Чаты Telegram" },
+  { id: "blocked", label: "Задачи" },
+  { id: "applications", label: "Приложения" },
+  { id: "knowledge", label: "Knowledge / Review" },
+  { id: "logs", label: "Логи" },
+  { id: "services", label: "Сервисы" },
+  { id: "profile", label: "Профиль" },
+  { id: "settings", label: "Настройки" }
+];
+
+function estimateActiveTaskProgress(snapshot: TaskSnapshot): number | null {
+  const progressByStatus: Record<string, number> = {
+    queued: 0.1,
+    awaiting_auth: 0.45,
+    running: 0.65,
+    awaiting_local_approval: 0.95,
+    cancel_requested: 0.9
+  };
+  const activeTasks = snapshot.filter((task) => task.status in progressByStatus);
 
   if (activeTasks.length === 0) {
-    return {
-      activeTaskCount: 0,
-      awaitingApprovalCount,
-      blockedTaskCount,
-      percentage: 100,
-      summaryText: "Сейчас нет активных задач."
-    };
+    return null;
   }
 
-  const progressWeights: Record<TaskSnapshot[number]["status"], number> = {
-    queued: 10,
-    awaiting_auth: 25,
-    awaiting_local_approval: 90,
-    cancel_requested: 95,
-    cancelled: 100,
-    blocked: 100,
-    running: 70,
-    done: 100,
-    failed: 100,
-    stalled: 60
-  };
-  const averageProgress = Math.round(
-    activeTasks.reduce((total, task) => total + progressWeights[task.status], 0) / activeTasks.length
-  );
-
-  return {
-    activeTaskCount: activeTasks.length,
-    awaitingApprovalCount,
-    blockedTaskCount,
-    percentage: averageProgress,
-    summaryText: `Грубая оценка прогресса по активным задачам: ${averageProgress}%`
-  };
-}
-
-function ProgressBar({ percentage }: { percentage: number }) {
-  return (
-    <div className="progress-shell" aria-label="Global progress">
-      <div className="progress-fill" style={{ width: `${percentage}%` }} />
-    </div>
-  );
+  const averageProgress =
+    activeTasks.reduce((sum, task) => sum + progressByStatus[task.status], 0) / activeTasks.length;
+  return Math.round(averageProgress * 100);
 }
 
 function QuickPopupView() {
@@ -94,65 +67,74 @@ function QuickPopupView() {
   const [selectedTargetChatId, setSelectedTargetChatId] = useState<string | null>(null);
   const [requestText, setRequestText] = useState("");
   const [responseText, setResponseText] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
 
-  const quickProgress = buildQuickProgressState(taskSnapshot);
-  const selectedTargetChat =
-    quickState.recentChats.find((chat) => chat.chatId === selectedTargetChatId) ?? quickState.targetChat;
-  const activeTasks = useMemo(
+  const activeTask = useMemo(
     () =>
-      taskSnapshot
-        .filter((task) =>
-          ["queued", "awaiting_auth", "awaiting_local_approval", "running", "cancel_requested"].includes(
-            task.status
-          )
-        )
-        .slice(0, 1),
+      taskSnapshot.find((task) =>
+        ["queued", "running", "awaiting_auth", "awaiting_local_approval", "cancel_requested"].includes(task.status)
+      ) ?? null,
     [taskSnapshot]
   );
-  const recentActivity = useMemo(() => quickState.recentActivity.slice(0, 1), [quickState.recentActivity]);
+  const recentActivity = quickState.recentActivity[0] ?? null;
+  const selectedTargetChat =
+    quickState.recentChats.find((chat) => chat.chatId === selectedTargetChatId) ?? quickState.targetChat;
+  const activeTaskProgress = estimateActiveTaskProgress(taskSnapshot);
 
-  useEffect(() => {
+  async function loadQuickState() {
+    const [nextState, nextTaskSnapshot] = await Promise.all([
+      window.karpik?.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState),
+      window.karpik?.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
+    ]);
+
+    setQuickState(nextState ?? emptyQuickAccessState);
+    setTaskSnapshot(nextTaskSnapshot);
     setSelectedTargetChatId((currentChatId) => {
-      if (currentChatId && quickState.recentChats.some((chat) => chat.chatId === currentChatId)) {
+      if (currentChatId && nextState?.recentChats.some((chat) => chat.chatId === currentChatId)) {
         return currentChatId;
       }
 
-      return quickState.targetChat?.chatId ?? quickState.recentChats[0]?.chatId ?? null;
+      return nextState?.targetChat?.chatId ?? nextState?.recentChats[0]?.chatId ?? null;
     });
-  }, [quickState]);
+  }
 
   useEffect(() => {
     let isSubscribed = true;
 
-    async function loadQuickState() {
-      try {
-        const [nextState, nextTaskSnapshot] = await Promise.all([
-          window.karpik?.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState),
-          window.karpik?.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
-        ]);
-
-        if (!isSubscribed || nextState === null) {
-          return;
-        }
-
-        setQuickState(nextState);
-        setTaskSnapshot(nextTaskSnapshot);
-        setError(null);
-      } catch {
-        if (isSubscribed) {
-          setError("Не удалось загрузить быстрый доступ.");
-        }
+    void loadQuickState().catch(() => {
+      if (isSubscribed) {
+        setError("Не удалось загрузить быстрый доступ.");
       }
-    }
-
-    void loadQuickState();
+    });
 
     return () => {
       isSubscribed = false;
     };
   }, []);
+
+  async function handleCreateChat() {
+    if (!window.karpik?.createDesktopChat) {
+      setError("Local chat API недоступен в этом окружении.");
+      return;
+    }
+
+    setIsCreatingChat(true);
+    setError(null);
+
+    try {
+      const nextChat = await window.karpik.createDesktopChat({
+        title: "Новый локальный чат"
+      });
+      await loadQuickState();
+      setSelectedTargetChatId(nextChat.chatId);
+    } catch {
+      setError("Не удалось создать локальный чат.");
+    } finally {
+      setIsCreatingChat(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!window.karpik?.submitQuickRequest) {
@@ -166,187 +148,136 @@ function QuickPopupView() {
       return;
     }
 
-    setError(null);
     setIsSubmitting(true);
+    setError(null);
 
     try {
       const result = await window.karpik.submitQuickRequest({
         chatId: selectedTargetChatId ?? undefined,
         text: normalizedRequest
       });
-      const [nextState, nextTaskSnapshot] = await Promise.all([
-        window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState),
-        window.karpik.getTaskSnapshot?.() ?? Promise.resolve(emptyTaskSnapshot)
-      ]);
 
-      setQuickState(nextState ?? emptyQuickAccessState);
-      setTaskSnapshot(nextTaskSnapshot);
       setResponseText(result.detail.messages.at(-1)?.text ?? null);
       setRequestText("");
+      await loadQuickState();
     } catch {
-      setError("Не удалось выполнить быстрый запрос.");
+      setError("Не удалось отправить быстрый запрос.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  async function handleCreateDesktopChat() {
-    if (!window.karpik?.createDesktopChat) {
-      setError("API локальных чатов недоступен в этом окружении.");
-      return;
-    }
-
-    setError(null);
-
-    try {
-      const createdChat = await window.karpik.createDesktopChat({
-        title: "Новый локальный чат"
-      });
-      const nextState = await (window.karpik.getQuickAccessState?.() ?? Promise.resolve(emptyQuickAccessState));
-      setQuickState(nextState ?? emptyQuickAccessState);
-      setSelectedTargetChatId(createdChat.chatId);
-      setResponseText(null);
-      setRequestText("");
-    } catch {
-      setError("Не удалось создать локальный чат.");
-    }
-  }
-
   return (
     <main className="quick-popup">
-      <header className="quick-popup__header">
-        <div>
-          <p className="eyebrow">Karpik</p>
-          <h1>Быстрый доступ</h1>
-          <p className="muted-text">
-            Последний чат, очередь и короткий запрос без открытия основного окна.
-          </p>
-        </div>
-        <button
-          aria-label="New local chat"
-          className="ghost-button ghost-button--primary quick-popup__new-chat"
-          onClick={() => {
-            void handleCreateDesktopChat();
-          }}
-          type="button"
-        >
-          +
-        </button>
-      </header>
-
-      <section className="quick-panel quick-panel--stats">
-        <div className="quick-stat">
-          <span>Активно</span>
-          <strong>{quickProgress.activeTaskCount}</strong>
-        </div>
-        <div className="quick-stat">
-          <span>На ревью</span>
-          <strong>{quickProgress.awaitingApprovalCount}</strong>
-        </div>
-        <div className="quick-stat">
-          <span>Сбои</span>
-          <strong>{quickProgress.blockedTaskCount}</strong>
-        </div>
-      </section>
-
-      <section className="quick-panel quick-panel--compact">
-        <div className="quick-panel__header">
-          <strong>Глобальный прогресс</strong>
-          <span>{quickProgress.percentage}%</span>
-        </div>
-        <ProgressBar percentage={quickProgress.percentage} />
-        <p className="muted-text">{quickProgress.summaryText}</p>
-      </section>
-
-      <section className="quick-panel quick-panel--compact">
-        <div className="quick-panel__header">
-          <strong>Целевой чат</strong>
-          <span>Всего: {quickState.localChatCount}</span>
-        </div>
-        <p className="muted-text">
-          {selectedTargetChat?.title ?? "Если чат не выбран, первый запрос создаст новый локальный диалог."}
-        </p>
-        {quickState.recentChats.length > 0 ? (
-          <select
-            aria-label="Target local chat"
-            className="quick-input"
-            id="quick-target-chat"
-            onChange={(event) => setSelectedTargetChatId(event.target.value || null)}
-            value={selectedTargetChatId ?? ""}
-          >
-            {quickState.recentChats.map((chat) => (
-              <option key={chat.chatId} value={chat.chatId}>
-                {chat.title}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </section>
-
-      <section className="quick-panel quick-panel--feed">
-        <div>
-          <div className="quick-panel__header">
-            <strong>Очередь</strong>
-            <span>{activeTasks.length}</span>
+      <section className="quick-popup__card">
+        <header className="quick-popup__header">
+          <div>
+            <p className="eyebrow">Karpik</p>
+            <h1>Быстрый доступ</h1>
           </div>
-          {activeTasks.length === 0 ? (
-            <p className="muted-text">Пусто</p>
-          ) : (
-            <article className="quick-mini-card">
-              <strong>{formatTaskStatus(activeTasks[0].status)}</strong>
-              <p>{activeTasks[0].intent}</p>
-            </article>
-          )}
-        </div>
-
-        <div>
-          <div className="quick-panel__header">
-            <strong>Последнее событие</strong>
-            <span>{recentActivity.length}</span>
-          </div>
-          {recentActivity.length === 0 ? (
-            <p className="muted-text">Пока пусто</p>
-          ) : (
-            <article className={`quick-mini-card status-${recentActivity[0].status}`}>
-              <strong>{recentActivity[0].title}</strong>
-              {recentActivity[0].detail ? <p>{recentActivity[0].detail}</p> : null}
-            </article>
-          )}
-        </div>
-      </section>
-
-      <section className="quick-panel quick-panel--composer">
-        <label className="section-label" htmlFor="quick-task">
-          Быстрый запрос
-        </label>
-        <div className="quick-composer-row">
-          <input
-            aria-label="Quick request"
-            className="quick-input"
-            id="quick-task"
-            onChange={(event) => setRequestText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void handleSubmit();
-              }
-            }}
-            placeholder="Напиши задачу обычным языком"
-            type="text"
-            value={requestText}
-          />
           <button
-            aria-label="Send"
-            className="ghost-button ghost-button--primary"
-            disabled={isSubmitting || requestText.trim().length === 0}
+            aria-label="New local chat"
+            className="quick-popup__header-action"
+            disabled={isCreatingChat}
             onClick={() => {
-              void handleSubmit();
+              void handleCreateChat();
             }}
             type="button"
           >
-            {isSubmitting ? "..." : "Отправить"}
+            +
           </button>
+        </header>
+
+        <div className="quick-popup__body">
+          <article className="quick-popup__surface">
+            <span className="section-label">Чат</span>
+            {quickState.recentChats.length > 0 ? (
+              <>
+                <label className="sr-only" htmlFor="quick-popup-target-chat">
+                  Target local chat
+                </label>
+                <select
+                  aria-label="Target local chat"
+                  className="quick-popup__select"
+                  id="quick-popup-target-chat"
+                  onChange={(event) => setSelectedTargetChatId(event.target.value || null)}
+                  value={selectedTargetChatId ?? ""}
+                >
+                  {quickState.recentChats.map((chat) => (
+                    <option key={chat.chatId} value={chat.chatId}>
+                      {chat.title}
+                    </option>
+                  ))}
+                </select>
+                <p className="muted-text">{selectedTargetChat?.referenceLabel ?? "Быстрый запрос уйдёт в выбранный локальный чат."}</p>
+              </>
+            ) : (
+              <>
+                <strong>Новый локальный чат</strong>
+                <p className="muted-text">Создай первый локальный чат и отправь запрос отсюда.</p>
+              </>
+            )}
+          </article>
+
+          <article className="quick-popup__surface quick-popup__surface--metrics">
+            <div>
+              <span className="section-label">Активность</span>
+              <strong>{activeTask ? formatTaskStatus(activeTask.status) : "Готов"}</strong>
+            </div>
+            <div className="quick-popup__metric-stack">
+              <p>{activeTask ? activeTask.intent : "Нет активных задач"}</p>
+              <p>{`Всего: ${quickState.localChatCount}`}</p>
+            </div>
+          </article>
+
+          {activeTaskProgress !== null ? (
+            <article className="quick-popup__surface">
+              <span className="section-label">Прогресс</span>
+              <strong>{`Грубая оценка прогресса по активным задачам: ${activeTaskProgress}%`}</strong>
+            </article>
+          ) : null}
+
+          {recentActivity ? (
+            <article className="quick-popup__surface">
+              <span className="section-label">Последнее событие</span>
+              <strong>{recentActivity.title}</strong>
+              <p className="muted-text">{recentActivity.detail ?? "Без деталей"}</p>
+            </article>
+          ) : null}
+
+          <article className="quick-popup__composer">
+            <label className="sr-only" htmlFor="quick-popup-request">
+              Quick request
+            </label>
+            <textarea
+              aria-label="Quick request"
+              className="quick-popup__input"
+              id="quick-popup-request"
+              onChange={(event) => setRequestText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSubmit();
+                }
+              }}
+              placeholder="Что сделать?"
+              rows={2}
+              value={requestText}
+            />
+            <button
+              aria-label="Send"
+              className="quick-popup__submit"
+              disabled={isSubmitting || requestText.trim().length === 0}
+              onClick={() => {
+                void handleSubmit();
+              }}
+              type="button"
+            >
+              ↑
+            </button>
+          </article>
         </div>
+
         {responseText ? <p className="task-result">{responseText}</p> : null}
         {error ? <p className="task-error">{error}</p> : null}
       </section>
@@ -354,25 +285,50 @@ function QuickPopupView() {
   );
 }
 
-const navigationItems: NavigationItem[] = [
-  { id: "chats", label: "Чаты" },
-  { id: "telegram", label: "Чаты Telegram" },
-  { id: "blocked", label: "Задачи" },
-  { id: "applications", label: "Приложения" },
-  { id: "knowledge", label: "Knowledge / Review" },
-  { id: "logs", label: "Логи" },
-  { id: "services", label: "Сервисы" },
-  { id: "settings", label: "Настройки" }
-];
-
 function MainWindowView() {
-  const [activeSection, setActiveSection] = useState<NavigationItem["id"]>("chats");
+  const [activeSection, setActiveSection] = useState<NavigationItem["id"]>("home");
   const [selectedLocalChatId, setSelectedLocalChatId] = useState<string | null>(null);
+  const [ownerProfile, setOwnerProfile] = useState<OwnerProfileState | null>(null);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function loadOwnerProfile() {
+      try {
+        const nextProfile = await (window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null));
+
+        if (isSubscribed) {
+          setOwnerProfile(nextProfile);
+        }
+      } catch {
+        if (isSubscribed) {
+          setOwnerProfile(null);
+        }
+      }
+    }
+
+    void loadOwnerProfile();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, []);
+
+  async function handleSaveOwnerProfile(payload: Partial<NonNullable<OwnerProfileState>>) {
+    if (!window.karpik?.saveOwnerProfile) {
+      throw new Error("Owner profile API недоступен в этом окружении.");
+    }
+
+    const nextState = await window.karpik.saveOwnerProfile(payload);
+    setOwnerProfile(nextState);
+    return nextState;
+  }
 
   return (
     <main className="desktop-layout">
       <Sidebar activeSection={activeSection} items={navigationItems} onSelect={setActiveSection} />
       <section className="content-panel">
+        {activeSection === "home" && <HomePage ownerProfile={ownerProfile} onOpenSection={setActiveSection} />}
         {activeSection === "chats" && (
           <ChatsPage onSelectChat={setSelectedLocalChatId} selectedChatId={selectedLocalChatId} />
         )}
@@ -389,6 +345,7 @@ function MainWindowView() {
         {activeSection === "knowledge" && <KnowledgePage />}
         {activeSection === "logs" && <LogsPage />}
         {activeSection === "services" && <ServicesPage />}
+        {activeSection === "profile" && <ProfilePage onSave={handleSaveOwnerProfile} profile={ownerProfile} />}
         {activeSection === "settings" && <SettingsPage />}
       </section>
     </main>

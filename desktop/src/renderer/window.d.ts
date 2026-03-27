@@ -27,6 +27,19 @@ type AppPreferencesState = {
   closeToTrayOnClose: boolean;
 };
 
+type OwnerProfileState = {
+  fullName: string | null;
+  gender: string | null;
+  age: number | null;
+  city: string | null;
+  timezone: string | null;
+  language: string | null;
+  contacts: string | null;
+  occupation: string | null;
+  bio: string | null;
+  notes: string | null;
+};
+
 type AppRegistryItem = {
   appId: string;
   displayName: string;
@@ -195,6 +208,7 @@ declare global {
       getAppsState: () => Promise<AppRegistryState>;
       getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
+      getOwnerProfileState: () => Promise<OwnerProfileState | null>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       createTotpEnrollment: () => Promise<TotpEnrollment>;
       confirmTotpEnrollment: (payload: { code: string }) => Promise<AuthConfigState>;
@@ -242,6 +256,7 @@ declare global {
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
+      saveOwnerProfile: (payload: Partial<OwnerProfileState>) => Promise<OwnerProfileState>;
       saveAppRegistryEntry: (payload: {
         appId?: string;
         displayName: string;

@@ -117,9 +117,11 @@ class SupportsTaskWorkflow(Protocol):
 
     def fetch_app_catalog(self) -> list[SupportsAppCatalogEntry]: ...
 
+    def fetch_owner_profile_context(self) -> str | None: ...
+
 
 class SupportsChatResponder(Protocol):
-    def reply(self, text: str) -> str: ...
+    def reply(self, text: str, owner_profile_context: str | None = None) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -543,7 +545,12 @@ def process_text_message(
             and not message_explicitly_requests_codex(text)
             and not message_requires_codex(text)
         ):
-            return BotReply(text=chat_responder.reply(normalized_text))
+            return BotReply(
+                text=chat_responder.reply(
+                    normalized_text,
+                    owner_profile_context=task_client.fetch_owner_profile_context(),
+                )
+            )
 
         return _create_task_from_intent(
             telegram_user_id=telegram_user_id,

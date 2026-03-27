@@ -6,13 +6,25 @@ type DeepSeekChatResponderOptions = {
   fetchImpl?: FetchLike;
 };
 
+type DeepSeekReplyOptions = {
+  ownerProfileContext?: string | null;
+};
+
 export function createDeepSeekChatResponder({
   apiKey,
   model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
   fetchImpl = globalThis.fetch
 }: DeepSeekChatResponderOptions) {
   return {
-    async reply(text: string): Promise<string> {
+    async reply(text: string, options: DeepSeekReplyOptions = {}): Promise<string> {
+      const systemPromptBase =
+        "Ты Karpik, краткий русскоязычный desktop-ассистент. Отвечай по-русски, без упоминания DeepSeek.";
+      const ownerProfileContext = options.ownerProfileContext?.trim();
+      const systemPrompt =
+        ownerProfileContext && ownerProfileContext.length > 0
+          ? `${systemPromptBase}\n\nКонтекст владельца устройства:\n${ownerProfileContext}`
+          : systemPromptBase;
+
       try {
         const response = await fetchImpl("https://api.deepseek.com/chat/completions", {
           method: "POST",
@@ -25,8 +37,7 @@ export function createDeepSeekChatResponder({
             messages: [
               {
                 role: "system",
-                content:
-                  "Ты Karpik, краткий русскоязычный desktop-ассистент. Отвечай по-русски, без упоминания DeepSeek."
+                content: systemPrompt
               },
               {
                 role: "user",

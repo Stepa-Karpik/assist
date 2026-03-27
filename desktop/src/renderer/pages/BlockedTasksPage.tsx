@@ -172,8 +172,8 @@ export function BlockedTasksPage() {
       {isLoading ? <p className="muted-text">Загружаем очередь задач...</p> : null}
       {!isLoading && tasks.length === 0 ? (
         <div className="empty-panel">
-          <strong>Чисто</strong>
-          <p className="muted-text">Сейчас нет активных или проблемных задач, требующих ручного действия.</p>
+          <strong>Сейчас чисто</strong>
+          <p className="muted-text">Нет задач, которые требуют ручного действия или внимания.</p>
         </div>
       ) : null}
       {actionError !== null ? <p className="task-error">{actionError}</p> : null}
