@@ -15,6 +15,7 @@ const getOwnerProfileState = vi.fn(async () => ({
   bio: null,
   notes: null
 }));
+
 const saveOwnerProfile = vi.fn(async (payload: object) => ({
   fullName: "Степан Карпов",
   gender: "мужской",
@@ -166,7 +167,7 @@ describe("App shell redesign", () => {
 
     expect(await screen.findByRole("heading", { name: /доброе утро, степан/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/спросите о чем нибудь/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /новый чат/i })).toBeInTheDocument();
+    expect(screen.getByText(/новый чат/i)).toBeInTheDocument();
   });
 
   it("shows a separate profile page and hides empty fields in view mode", async () => {

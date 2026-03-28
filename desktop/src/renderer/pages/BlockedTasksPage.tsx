@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   buildTaskArtifactDataUrl,
@@ -7,23 +7,35 @@ import {
   type TaskSnapshotItem
 } from "./taskSnapshot";
 
-type LocalApprovalItem = Awaited<
-  ReturnType<NonNullable<Window["karpik"]>["getLocalApprovals"]>
->[number];
+type LocalApprovalItem = Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalApprovals"]>>[number];
 
-const visibleStatuses = new Set<TaskSnapshotItem["status"]>([
-  "queued",
-  "awaiting_auth",
-  "awaiting_local_approval",
-  "cancel_requested",
-  "blocked",
-  "running",
-  "failed",
-  "stalled"
-]);
+type TaskFilter = "all" | "active" | "attention" | "completed";
 
-function requiresAttention(task: TaskSnapshotItem): boolean {
-  return visibleStatuses.has(task.status);
+const filterLabels: Record<TaskFilter, string> = {
+  all: "Все",
+  active: "Активные",
+  attention: "Требуют внимания",
+  completed: "Завершенные"
+};
+
+function isVisibleTask(task: TaskSnapshotItem): boolean {
+  return !["succeeded"].includes(task.status);
+}
+
+function matchesFilter(task: TaskSnapshotItem, filter: TaskFilter): boolean {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "active") {
+    return ["queued", "running", "awaiting_auth", "awaiting_local_approval", "cancel_requested"].includes(task.status);
+  }
+
+  if (filter === "attention") {
+    return ["failed", "blocked", "stalled", "awaiting_local_approval"].includes(task.status);
+  }
+
+  return ["done", "cancelled"].includes(task.status);
 }
 
 function canCancel(task: TaskSnapshotItem): boolean {
@@ -34,12 +46,27 @@ function canRetry(task: TaskSnapshotItem): boolean {
   return ["blocked", "failed", "cancelled"].includes(task.status);
 }
 
+function formatIntent(task: TaskSnapshotItem): string {
+  if (task.intent.trim().length > 0) {
+    return task.intent;
+  }
+
+  return "Задача";
+}
+
 export function BlockedTasksPage() {
   const [tasks, setTasks] = useState<TaskSnapshotItem[]>([]);
   const [localApprovals, setLocalApprovals] = useState<Record<string, LocalApprovalItem>>({});
+  const [filter, setFilter] = useState<TaskFilter>("all");
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => matchesFilter(task, filter)),
+    [filter, tasks]
+  );
 
   async function refreshBlockedTasks() {
     const [snapshot, approvals] = await Promise.all([
@@ -47,8 +74,12 @@ export function BlockedTasksPage() {
       window.karpik?.getLocalApprovals?.() ?? Promise.resolve([])
     ]);
 
-    setTasks(snapshot.filter(requiresAttention));
+    const visibleTasks = snapshot.filter(isVisibleTask);
+    setTasks(visibleTasks);
     setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
+    setExpandedTaskId((currentTaskId) =>
+      currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId) ? currentTaskId : visibleTasks[0]?.task_id ?? null
+    );
     setIsLoading(false);
   }
 
@@ -65,8 +96,12 @@ export function BlockedTasksPage() {
         return;
       }
 
-      setTasks(snapshot.filter(requiresAttention));
+      const visibleTasks = snapshot.filter(isVisibleTask);
+      setTasks(visibleTasks);
       setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
+      setExpandedTaskId((currentTaskId) =>
+        currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId) ? currentTaskId : visibleTasks[0]?.task_id ?? null
+      );
       setIsLoading(false);
     }
 
@@ -158,110 +193,136 @@ export function BlockedTasksPage() {
   }
 
   return (
-    <div className="page-shell page-shell--full">
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">Задачи</p>
-          <h2>Активные и проблемные задачи</h2>
-          <p className="muted-text">
-            Здесь можно остановить висящие процессы, подтвердить локальный preview или перезапустить задачу.
-          </p>
-        </div>
-      </div>
+    <section className="reference-tasks-page" data-testid="reference-tasks">
+      <aside className="reference-task-filters">
+        {(Object.keys(filterLabels) as TaskFilter[]).map((filterKey) => (
+          <button
+            className={`reference-task-filters__item${filter === filterKey ? " active" : ""}`}
+            key={filterKey}
+            onClick={() => setFilter(filterKey)}
+            type="button"
+          >
+            {filterLabels[filterKey]}
+          </button>
+        ))}
+      </aside>
 
-      {isLoading ? <p className="muted-text">Загружаем очередь задач...</p> : null}
-      {!isLoading && tasks.length === 0 ? (
-        <div className="empty-panel">
-          <strong>Сейчас чисто</strong>
-          <p className="muted-text">Нет задач, которые требуют ручного действия или внимания.</p>
-        </div>
-      ) : null}
-      {actionError !== null ? <p className="task-error">{actionError}</p> : null}
+      <section className="reference-task-list-shell">
+        {isLoading ? <p className="muted-text">Загружаем очередь задач...</p> : null}
+        {actionError !== null ? <p className="task-error">{actionError}</p> : null}
 
-      {tasks.length > 0 ? (
-        <div className="task-list" aria-live="polite">
-          {tasks.map((task) => (
-            <article className="task-card task-card--task" key={task.task_id}>
-              <div className="task-card-header">
-                <strong>{task.task_id}</strong>
-                <span className="task-status">{formatTaskStatus(task.status)}</span>
-              </div>
+        {!isLoading && filteredTasks.length === 0 ? (
+          <div className="reference-empty-state">
+            <strong>Нет задач для выбранного фильтра.</strong>
+          </div>
+        ) : null}
 
-              <p className="task-title">{task.intent}</p>
-              {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
-              {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
+        <div className="reference-task-list" role="list">
+          {filteredTasks.map((task) => {
+            const approval = localApprovals[task.task_id];
+            const isExpanded = expandedTaskId === task.task_id;
 
-              {buildTaskArtifactDataUrl(task) !== null ? (
-                <figure className="task-artifact">
-                  <img alt={task.artifactFileName ?? "remote-task-artifact"} src={buildTaskArtifactDataUrl(task) ?? undefined} />
-                  {task.artifactFileName ? <figcaption>{task.artifactFileName}</figcaption> : null}
-                </figure>
-              ) : null}
-
-              {task.status === "awaiting_local_approval" && localApprovals[task.task_id] !== undefined ? (
-                <div className="task-preview-panel">
-                  <p className="task-result">{localApprovals[task.task_id].summaryText}</p>
-                  <p className="muted-text">Файлы: {localApprovals[task.task_id].changedFiles.join(", ")}</p>
-                  <pre className="task-result task-result--pre">{localApprovals[task.task_id].previewText}</pre>
+            return (
+              <article
+                className={`reference-task-row${isExpanded ? " expanded" : ""}`}
+                key={task.task_id}
+                onClick={() => setExpandedTaskId((currentTaskId) => (currentTaskId === task.task_id ? null : task.task_id))}
+                role="listitem"
+              >
+                <div className="reference-task-row__summary">
+                  <div className="reference-task-row__meta">
+                    <span className="reference-task-row__label">ID</span>
+                    <strong>{task.task_id}</strong>
+                    <span className="reference-task-row__label">Задача</span>
+                    <span>{formatIntent(task)}</span>
+                  </div>
+                  <span className={`reference-task-row__status reference-task-row__status--${task.status}`}>
+                    {formatTaskStatus(task.status)}
+                  </span>
                 </div>
-              ) : null}
 
-              <div className="action-row">
-                {task.status === "awaiting_local_approval" && localApprovals[task.task_id] !== undefined ? (
-                  <>
-                    <button
-                      className="ghost-button ghost-button--primary"
-                      disabled={busyTaskId === task.task_id}
-                      onClick={() => {
-                        void handleApprove(task.task_id);
-                      }}
-                      type="button"
-                    >
-                      Подтвердить
-                    </button>
-                    <button
-                      className="ghost-button"
-                      disabled={busyTaskId === task.task_id}
-                      onClick={() => {
-                        void handleReject(task.task_id);
-                      }}
-                      type="button"
-                    >
-                      Отклонить
-                    </button>
-                  </>
-                ) : null}
+                {isExpanded ? (
+                  <div className="reference-task-row__details">
+                    {task.result_text ? <p className="task-result">{task.result_text}</p> : null}
+                    {task.error_text ? <p className="task-error">{task.error_text}</p> : null}
 
-                {canCancel(task) ? (
-                  <button
-                    className="ghost-button ghost-button--danger"
-                    disabled={busyTaskId === task.task_id}
-                    onClick={() => {
-                      void handleCancel(task.task_id);
-                    }}
-                    type="button"
-                  >
-                    {task.status === "cancel_requested" ? "Останавливаем..." : "Остановить"}
-                  </button>
-                ) : null}
+                    {approval ? (
+                      <div className="reference-task-row__approval">
+                        <p className="task-result">{approval.summaryText}</p>
+                        <p className="muted-text">Файлы: {approval.changedFiles.join(", ")}</p>
+                        <pre className="task-result task-result--pre">{approval.previewText}</pre>
+                      </div>
+                    ) : null}
 
-                {canRetry(task) ? (
-                  <button
-                    className="ghost-button"
-                    disabled={busyTaskId === task.task_id}
-                    onClick={() => {
-                      void handleRetry(task.task_id);
-                    }}
-                    type="button"
-                  >
-                    Повторить
-                  </button>
+                    {buildTaskArtifactDataUrl(task) !== null ? (
+                      <figure className="task-artifact">
+                        <img alt={task.artifactFileName ?? "task-artifact"} src={buildTaskArtifactDataUrl(task) ?? undefined} />
+                      </figure>
+                    ) : null}
+
+                    <div className="reference-task-row__actions">
+                      {task.status === "awaiting_local_approval" && approval ? (
+                        <>
+                          <button
+                            className="reference-task-row__action reference-task-row__action--primary"
+                            disabled={busyTaskId === task.task_id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleApprove(task.task_id);
+                            }}
+                            type="button"
+                          >
+                            Подтвердить
+                          </button>
+                          <button
+                            className="reference-task-row__action"
+                            disabled={busyTaskId === task.task_id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleReject(task.task_id);
+                            }}
+                            type="button"
+                          >
+                            Отклонить
+                          </button>
+                        </>
+                      ) : null}
+
+                      {canCancel(task) ? (
+                        <button
+                          className="reference-task-row__action reference-task-row__action--danger"
+                          disabled={busyTaskId === task.task_id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleCancel(task.task_id);
+                          }}
+                          type="button"
+                        >
+                          Остановить
+                        </button>
+                      ) : null}
+
+                      {canRetry(task) ? (
+                        <button
+                          className="reference-task-row__action"
+                          disabled={busyTaskId === task.task_id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRetry(task.task_id);
+                          }}
+                          type="button"
+                        >
+                          Повторить
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
-      ) : null}
-    </div>
+      </section>
+    </section>
   );
 }

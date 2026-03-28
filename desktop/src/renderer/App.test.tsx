@@ -603,7 +603,7 @@ describe("App navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Новый локальный чат" }));
 
     expect(createDesktopChat).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("Новый локальный чат")).toBeInTheDocument();
+    expect((await screen.findAllByText("Новый локальный чат")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("Локальный диалог")).length).toBeGreaterThan(0);
   });
 

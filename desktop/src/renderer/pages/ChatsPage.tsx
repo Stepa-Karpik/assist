@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-type LocalChatItem = Awaited<
-  ReturnType<NonNullable<Window["karpik"]>["getLocalChats"]>
->[number];
+type LocalChatItem = Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalChats"]>>[number];
 
 type LocalChatDetail = NonNullable<
   Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalChatDetail"]>>
@@ -53,10 +51,10 @@ function buildChatSubtitle(chat: LocalChatItem): string {
   }
 
   if (chat.workspaceId) {
-    return `Workspace: ${chat.workspaceId}`;
+    return `workspace ${chat.workspaceId}`;
   }
 
-  return chat.source === "local_continuation_chat" ? "Продолжение Telegram-диалога" : "Локальный диалог";
+  return chat.source === "local_continuation_chat" ? "Продолжение Telegram диалога" : "Локальный диалог";
 }
 
 type ChatsPageProps = {
@@ -187,27 +185,6 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     };
   }, [activeChatId]);
 
-  async function handleCreateDesktopChat() {
-    if (!window.karpik?.createDesktopChat) {
-      setError("Local chat API недоступен в этом окружении.");
-      return;
-    }
-
-    setError(null);
-
-    try {
-      const nextChat = await window.karpik.createDesktopChat({
-        title: "Новый локальный чат"
-      });
-      setLocalChats((currentChats) => upsertChatSummary(currentChats, nextChat));
-      setActiveChatId(nextChat.chatId);
-      setActiveChat(createEmptyDetail(nextChat));
-      onSelectChat?.(nextChat.chatId);
-    } catch {
-      setError("Не удалось создать локальный чат.");
-    }
-  }
-
   async function handleSendLocalRequest() {
     if (!window.karpik?.sendLocalChatMessage || activeChatId === null) {
       setError("API локального выполнения недоступен в этом окружении.");
@@ -251,153 +228,99 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
   }
 
   return (
-    <div className="page-shell page-shell--full">
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">Чаты</p>
-          <h2>Локальный операторский диалог</h2>
-          <p className="muted-text">
-            Сообщения пользователя справа, ответы ассистента слева. Continuation-чаты из Telegram живут здесь же.
-          </p>
+    <section className="reference-chat-page" data-testid="reference-chats">
+      <aside className="reference-chat-page__sidebar-column">
+        <div className="reference-chat-page__heading">
+          <h2>{activeChatSummary?.title ?? "Локальный чат"}</h2>
+          <p>{activeChatSummary?.referenceLabel ?? "Локальный диалог"}</p>
         </div>
-        <button
-          className="ghost-button ghost-button--primary ghost-button--wide"
-          onClick={() => {
-            void handleCreateDesktopChat();
-          }}
-          type="button"
-        >
-          Новый локальный чат
-        </button>
-      </div>
 
-      {error !== null ? <p className="task-error">{error}</p> : null}
-
-      <div className="messenger-layout">
-        <aside className="chat-list-shell">
+        <div className="reference-chat-list">
           {isLoading ? <p className="muted-text">Загружаем локальные чаты...</p> : null}
 
           {!isLoading && localChats.length === 0 ? (
-            <div className="empty-panel">
+            <div className="reference-empty-state">
               <strong>Локальных чатов пока нет.</strong>
-              <p className="muted-text">Создай первый локальный чат и отправь обычное сообщение.</p>
             </div>
           ) : null}
 
           {localChats.map((chat) => (
             <button
-              className={`chat-list-item${chat.chatId === activeChatId ? " active" : ""}`}
+              className={`reference-chat-list__item${chat.chatId === activeChatId ? " active" : ""}`}
               key={chat.chatId}
               onClick={() => {
                 handleSelectChat(chat.chatId);
               }}
               type="button"
             >
-              <div className="chat-list-item__top">
-                <strong>{chat.title}</strong>
-                <span className="task-status">{chat.messageCount}</span>
-              </div>
-              <p className="chat-list-item__meta">{buildChatSubtitle(chat)}</p>
+              <span className="reference-chat-list__title">{chat.title}</span>
             </button>
           ))}
-        </aside>
+        </div>
+      </aside>
 
-        <section className="chat-thread-shell">
+      <section className="reference-thread-shell">
+        <div aria-hidden="true" className="reference-thread-shell__glow" />
+        <div className="reference-thread-shell__messages" role="log">
           {isDetailLoading ? <p className="muted-text">Загружаем чат...</p> : null}
 
           {!isDetailLoading && activeChat === null ? (
-            <div className="empty-panel">
-              <strong>Выбери чат</strong>
-              <p className="muted-text">Слева доступны локальные и continuation-чаты.</p>
+            <div className="reference-empty-state">
+              <strong>Выбери чат слева.</strong>
             </div>
           ) : null}
 
-          {activeChat !== null ? (
-            <>
-              <header className="chat-thread-header">
-                <div>
-                  <strong>{activeChat.title}</strong>
-                  <p className="muted-text">
-                    {activeChat.referenceLabel ?? buildChatSubtitle(activeChatSummary ?? activeChat)}
-                  </p>
+          {activeChat?.messages.map((message) => {
+            const imageUrl = buildArtifactDataUrl(message);
+            return (
+              <div className={`reference-message reference-message--${message.role}`} key={message.messageId}>
+                <div className="reference-message__bubble">
+                  <p>{message.text}</p>
+                  <span className="reference-message__time">{formatMessageTime(message.createdAt)}</span>
                 </div>
-                {activeChat.workspaceId ? <span className="workspace-pill">{activeChat.workspaceId}</span> : null}
-              </header>
-
-              <div className="chat-thread" aria-live="polite">
-                {activeChat.messages.length === 0 ? (
-                  <div className="empty-panel">
-                    <strong>Локальный диалог</strong>
-                    <p className="muted-text">
-                      Диалог пуст. Напиши что-то вроде «привет», «скинь скриншот» или «обнови README».
-                    </p>
-                  </div>
+                {imageUrl !== null ? (
+                  <figure className="reference-message__artifact">
+                    <img alt={message.artifactFileName ?? "artifact"} src={imageUrl} />
+                  </figure>
                 ) : null}
-
-                {activeChat.messages.map((message) => {
-                  const imageUrl = buildArtifactDataUrl(message);
-                  return (
-                    <div className={`chat-message-row chat-message-row--${message.role}`} key={message.messageId}>
-                      <article className={`chat-bubble chat-bubble--${message.role}`}>
-                        <div className="chat-bubble__meta">
-                          <span>
-                            {message.role === "user"
-                              ? "Ты"
-                              : message.role === "assistant"
-                                ? "Ассистент"
-                                : "Система"}
-                          </span>
-                          <span>{formatMessageTime(message.createdAt)}</span>
-                        </div>
-                        <p>{message.text}</p>
-                        {imageUrl !== null ? (
-                          <figure className="chat-bubble__figure">
-                            <img alt={message.artifactFileName ?? "artifact"} src={imageUrl} />
-                            {message.artifactFileName ? <figcaption>{message.artifactFileName}</figcaption> : null}
-                          </figure>
-                        ) : null}
-                      </article>
-                    </div>
-                  );
-                })}
               </div>
+            );
+          })}
+        </div>
 
-              <div className="chat-composer">
-                <label className="section-label" htmlFor="local-chat-request">
-                  Новый запрос
-                </label>
-                <div className="chat-composer__row">
-                  <input
-                    aria-label="Local request"
-                    className="quick-input"
-                    id="local-chat-request"
-                    onChange={(event) => setRequestText(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        void handleSendLocalRequest();
-                      }
-                    }}
-                    placeholder="Напиши обычным языком: например, «привет» или «скинь скриншот второго экрана»"
-                    type="text"
-                    value={requestText}
-                  />
-                  <button
-                    className="ghost-button ghost-button--primary ghost-button--wide"
-                    disabled={isSending || requestText.trim().length === 0}
-                    onClick={() => {
-                      void handleSendLocalRequest();
-                    }}
-                    type="button"
-                  >
-                    {isSending ? "Отправляем..." : "Отправить"}
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </section>
-      </div>
-    </div>
+        <div className="reference-thread-shell__composer">
+          <button aria-label="Прикрепить" className="reference-thread-shell__attach" type="button">
+            ⌕
+          </button>
+          <input
+            aria-label="Local request"
+            className="reference-thread-shell__input"
+            onChange={(event) => setRequestText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void handleSendLocalRequest();
+              }
+            }}
+            placeholder="Сообщение..."
+            type="text"
+            value={requestText}
+          />
+          <button
+            aria-label="Отправить"
+            className="reference-thread-shell__submit"
+            disabled={isSending || requestText.trim().length === 0}
+            onClick={() => {
+              void handleSendLocalRequest();
+            }}
+            type="button"
+          >
+            ↑
+          </button>
+        </div>
+
+        {error !== null ? <p className="task-error">{error}</p> : null}
+      </section>
+    </section>
   );
 }

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
 
+import { CorePagesShell } from "./layout/CorePagesShell";
 import { Sidebar, type NavigationItem } from "./layout/Sidebar";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { BlockedTasksPage } from "./pages/BlockedTasksPage";
@@ -324,29 +325,76 @@ function MainWindowView() {
     return nextState;
   }
 
+  async function handleCreateDesktopChat() {
+    if (!window.karpik?.createDesktopChat) {
+      return;
+    }
+
+    try {
+      const nextChat = await window.karpik.createDesktopChat({
+        title: "Новый локальный чат"
+      });
+      setSelectedLocalChatId(nextChat.chatId);
+      setActiveSection("chats");
+    } catch {
+      setActiveSection("chats");
+    }
+  }
+
+  const isCoreSection =
+    activeSection === "home" ||
+    activeSection === "chats" ||
+    activeSection === "telegram" ||
+    activeSection === "blocked";
+
+  let sectionView: ReactElement | null = null;
+
+  if (activeSection === "home") {
+    sectionView = <HomePage ownerProfile={ownerProfile} onOpenSection={setActiveSection} />;
+  } else if (activeSection === "chats") {
+    sectionView = <ChatsPage onSelectChat={setSelectedLocalChatId} selectedChatId={selectedLocalChatId} />;
+  } else if (activeSection === "telegram") {
+    sectionView = (
+      <TelegramChatsPage
+        onContinueToLocalChats={(chatId) => {
+          setSelectedLocalChatId(chatId);
+          setActiveSection("chats");
+        }}
+      />
+    );
+  } else if (activeSection === "blocked") {
+    sectionView = <BlockedTasksPage />;
+  } else if (activeSection === "applications") {
+    sectionView = <ApplicationsPage />;
+  } else if (activeSection === "knowledge") {
+    sectionView = <KnowledgePage />;
+  } else if (activeSection === "logs") {
+    sectionView = <LogsPage />;
+  } else if (activeSection === "services") {
+    sectionView = <ServicesPage />;
+  } else if (activeSection === "profile") {
+    sectionView = <ProfilePage onSave={handleSaveOwnerProfile} profile={ownerProfile} />;
+  } else if (activeSection === "settings") {
+    sectionView = <SettingsPage />;
+  }
+
   return (
     <main className="desktop-layout">
       <Sidebar activeSection={activeSection} items={navigationItems} onSelect={setActiveSection} />
       <section className="content-panel">
-        {activeSection === "home" && <HomePage ownerProfile={ownerProfile} onOpenSection={setActiveSection} />}
-        {activeSection === "chats" && (
-          <ChatsPage onSelectChat={setSelectedLocalChatId} selectedChatId={selectedLocalChatId} />
-        )}
-        {activeSection === "telegram" && (
-          <TelegramChatsPage
-            onContinueToLocalChats={(chatId) => {
-              setSelectedLocalChatId(chatId);
-              setActiveSection("chats");
+        {isCoreSection ? (
+          <CorePagesShell
+            activeSection={activeSection}
+            onCreateChat={() => {
+              void handleCreateDesktopChat();
             }}
-          />
+            onOpenTasks={() => setActiveSection("blocked")}
+          >
+            {sectionView}
+          </CorePagesShell>
+        ) : (
+          sectionView
         )}
-        {activeSection === "blocked" && <BlockedTasksPage />}
-        {activeSection === "applications" && <ApplicationsPage />}
-        {activeSection === "knowledge" && <KnowledgePage />}
-        {activeSection === "logs" && <LogsPage />}
-        {activeSection === "services" && <ServicesPage />}
-        {activeSection === "profile" && <ProfilePage onSave={handleSaveOwnerProfile} profile={ownerProfile} />}
-        {activeSection === "settings" && <SettingsPage />}
       </section>
     </main>
   );
