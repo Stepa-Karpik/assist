@@ -8,6 +8,7 @@ import { ChatsPage } from "./pages/ChatsPage";
 import { HomePage } from "./pages/HomePage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LogsPage } from "./pages/LogsPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -19,6 +20,9 @@ type QuickAccessState = Awaited<
 >;
 type OwnerProfileState = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getOwnerProfileState"]>
+>;
+type OnboardingStatus = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getOnboardingStatus"]>
 >;
 
 const emptyQuickAccessState: NonNullable<QuickAccessState> = {
@@ -402,9 +406,99 @@ function MainWindowView() {
 
 export default function App() {
   const view = window.karpik?.view ?? "main";
+  const hasOnboardingApi = typeof window.karpik?.getOnboardingStatus === "function";
+  const [isOnboardingLoading, setIsOnboardingLoading] = useState(view === "main" && hasOnboardingApi);
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+
+  useEffect(() => {
+    if (view !== "main") {
+      setIsOnboardingLoading(false);
+      return;
+    }
+
+    if (!hasOnboardingApi) {
+      setOnboardingStatus({
+        device_id: "",
+        device_registered: true,
+        trusted_telegram_user_count: 1,
+        owner_profile_complete: true,
+        password_configured: true,
+        totp_configured: true,
+        completed: true
+      });
+      setIsOnboardingLoading(false);
+      return;
+    }
+
+    let isSubscribed = true;
+
+    async function loadOnboardingStatus() {
+      try {
+        const nextStatus =
+          (await window.karpik?.getOnboardingStatus?.()) ??
+          ({
+            device_id: "",
+            device_registered: true,
+            trusted_telegram_user_count: 1,
+            owner_profile_complete: true,
+            password_configured: true,
+            totp_configured: true,
+            completed: true
+          } satisfies OnboardingStatus);
+
+        if (isSubscribed) {
+          setOnboardingStatus(nextStatus);
+        }
+      } catch {
+        if (isSubscribed) {
+          setOnboardingStatus({
+            device_id: "",
+            device_registered: true,
+            trusted_telegram_user_count: 1,
+            owner_profile_complete: true,
+            password_configured: true,
+            totp_configured: true,
+            completed: true
+          });
+        }
+      } finally {
+        if (isSubscribed) {
+          setIsOnboardingLoading(false);
+        }
+      }
+    }
+
+    void loadOnboardingStatus();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [hasOnboardingApi, view]);
 
   if (view === "quick-popup") {
     return <QuickPopupView />;
+  }
+
+  if (isOnboardingLoading) {
+    return (
+      <main className="onboarding-shell">
+        <section className="onboarding-card">
+          <h1>Подготовка Karpik</h1>
+          <p className="muted-text">Проверяю статус устройства…</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (onboardingStatus !== null && !onboardingStatus.completed) {
+    return (
+      <OnboardingPage
+        initialStatus={onboardingStatus}
+        onCompleted={() => {
+          setOnboardingStatus((current) => (current === null ? current : { ...current, completed: true }));
+        }}
+      />
+    );
   }
 
   return <MainWindowView />;
