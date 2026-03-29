@@ -53,6 +53,11 @@ type AppRegistryState = {
   items: AppRegistryItem[];
 };
 
+type AppRegistryMutationResult = {
+  state: AppRegistryState;
+  syncState: "synced" | "local_only";
+};
+
 type AssistantProcessItem = {
   taskId: string;
   appId: string;
@@ -235,7 +240,7 @@ declare global {
       }) => Promise<LocalChatItem>;
       openPairingSession: () => Promise<PairingState>;
       installUpdate: () => Promise<void>;
-      refreshDiscoveredApps: () => Promise<AppRegistryState>;
+      refreshDiscoveredApps: () => Promise<AppRegistryMutationResult>;
       readKnowledgeEntry: (payload: {
         sectionId: KnowledgeSectionId;
         relativePath: string;
@@ -264,7 +269,7 @@ declare global {
         aliases?: string[];
         linked?: boolean;
         source?: AppRegistryItem["source"];
-      }) => Promise<AppRegistryState>;
+      }) => Promise<AppRegistryMutationResult>;
       saveChatWorkspaceBinding: (payload: {
         chatId: number;
         workspaceId: string;
@@ -273,7 +278,7 @@ declare global {
         workspaces?: Array<Partial<CodexWorkspace>>;
         defaultWorkspaceId?: string;
       }) => Promise<CodexConfigState>;
-      removeAppRegistryEntry: (appId: string) => Promise<AppRegistryState>;
+      removeAppRegistryEntry: (appId: string) => Promise<AppRegistryMutationResult>;
     };
   }
 }

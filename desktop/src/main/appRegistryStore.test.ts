@@ -110,4 +110,43 @@ describe("AppRegistryStore", () => {
 
     expect(restored.items).toEqual(saved.items);
   });
+
+  it("builds a public catalog without launch paths", () => {
+    const store = new AppRegistryStore({
+      settingsRoot: createSettingsRoot()
+    });
+
+    store.saveApp({
+      displayName: "osu! lazer",
+      launchPath: "C:\\Games\\osu!\\osu!.exe",
+      aliases: ["osu", "осу"],
+      linked: true,
+      source: "manual"
+    });
+    store.replaceDiscoveredApps([
+      {
+        displayName: "Discord",
+        launchPath: "C:\\Users\\TBG\\Desktop\\Discord.lnk",
+        aliases: ["discord"],
+        source: "shortcut"
+      }
+    ]);
+
+    expect(store.getPublicCatalog()).toEqual([
+      {
+        appId: expect.any(String),
+        displayName: "Discord",
+        aliases: ["discord"],
+        linked: false,
+        source: "shortcut"
+      },
+      {
+        appId: expect.any(String),
+        displayName: "osu! lazer",
+        aliases: ["osu", "осу"],
+        linked: true,
+        source: "manual"
+      }
+    ]);
+  });
 });

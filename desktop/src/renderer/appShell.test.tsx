@@ -141,7 +141,10 @@ beforeEach(() => {
     createLocalContinuationChat: vi.fn(),
     openPairingSession: vi.fn(),
     installUpdate: vi.fn(),
-    refreshDiscoveredApps: vi.fn(async () => ({ items: [] })),
+    refreshDiscoveredApps: vi.fn(async () => ({
+      state: { items: [] },
+      syncState: "synced" as const
+    })),
     readKnowledgeEntry: vi.fn(async () => null),
     rejectLocalApproval: vi.fn(),
     cancelTask: vi.fn(),
@@ -149,10 +152,16 @@ beforeEach(() => {
     sendLocalChatMessage: vi.fn(async () => null),
     saveAuthConfig: vi.fn(),
     saveAppPreferences: vi.fn(),
-    saveAppRegistryEntry: vi.fn(async () => ({ items: [] })),
+    saveAppRegistryEntry: vi.fn(async () => ({
+      state: { items: [] },
+      syncState: "synced" as const
+    })),
     saveChatWorkspaceBinding: vi.fn(),
     saveCodexConfig: vi.fn(),
-    removeAppRegistryEntry: vi.fn(async () => ({ items: [] }))
+    removeAppRegistryEntry: vi.fn(async () => ({
+      state: { items: [] },
+      syncState: "synced" as const
+    }))
   };
 });
 

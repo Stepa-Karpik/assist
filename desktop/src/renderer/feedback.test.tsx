@@ -329,4 +329,15 @@ describe("desktop renderer feedback", () => {
 
     expect(await screen.findByText("Workspace для чата 5001 сохранён.")).toBeInTheDocument();
   });
+
+  it("renders clear linked and discovered app sections in russian", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Приложения" }));
+
+    expect(await screen.findByText("Реестр запуска и alias-связки")).toBeInTheDocument();
+    expect(await screen.findByText("Связанные приложения")).toBeInTheDocument();
+    expect(await screen.findByText("Найденные автоматически")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Путь до exe или ярлыка")).toBeInTheDocument();
+  });
 });

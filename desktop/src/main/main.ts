@@ -3,7 +3,11 @@ import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, Notification, Tr
 import QRCode from "qrcode";
 
 import { ActivityLogStore } from "./activityLogStore";
-import { AppRegistryStore, type AppRegistryInput } from "./appRegistryStore";
+import {
+  AppRegistryStore,
+  type AppRegistryInput,
+  type AppRegistryState
+} from "./appRegistryStore";
 import { AppPreferencesStore, type AppPreferencesState } from "./appPreferencesStore";
 import { AssistantProcessStore } from "./assistantProcessStore";
 import { type AuthConfigInput, AuthStore } from "./authStore";
@@ -152,7 +156,7 @@ function buildRemoteAppCatalogItems(): RemoteAppCatalogItem[] {
     return [];
   }
 
-  return appRegistryStore.getState().items.map((item) => ({
+  return appRegistryStore.getPublicCatalog().map((item) => ({
     appId: item.appId,
     displayName: item.displayName,
     aliases: [...item.aliases],
@@ -161,23 +165,36 @@ function buildRemoteAppCatalogItems(): RemoteAppCatalogItem[] {
   }));
 }
 
-async function syncAppCatalogState() {
-  const response = await syncClient.syncAppCatalog(buildRemoteAppCatalogItems());
+type AppCatalogMutationResult = {
+  state: AppRegistryState;
+  syncState: "synced" | "local_only";
+};
 
-  if (!response.ok) {
-    logResponseError("Syncing app catalog", response);
+async function syncAppCatalogState(): Promise<"synced" | "local_only"> {
+  try {
+    const response = await syncClient.syncAppCatalog(buildRemoteAppCatalogItems());
+
+    if (!response.ok) {
+      logResponseError("Syncing app catalog", response);
+      return "local_only";
+    }
+
+    return "synced";
+  } catch (error: unknown) {
+    console.error("Failed to sync app catalog", error);
+    return "local_only";
   }
 }
 
-async function refreshDiscoveredApps() {
+async function refreshDiscoveredApps(): Promise<AppCatalogMutationResult | null> {
   if (appRegistryStore === null) {
-    return appRegistryStore;
+    return null;
   }
 
   const discoveredApps = await discoverApps();
-  appRegistryStore.replaceDiscoveredApps(discoveredApps);
-  await syncAppCatalogState();
-  return appRegistryStore.getState();
+  const state = appRegistryStore.replaceDiscoveredApps(discoveredApps);
+  const syncState = await syncAppCatalogState();
+  return { state, syncState };
 }
 
 async function syncAuthConfigState() {
@@ -603,8 +620,8 @@ function registerIpcHandlers() {
       }
 
       const state = appRegistryStore.saveApp(payload);
-      await syncAppCatalogState();
-      return state;
+      const syncState = await syncAppCatalogState();
+      return { state, syncState };
     }
   );
   ipcMain.handle(
@@ -615,15 +632,15 @@ function registerIpcHandlers() {
       }
 
       const state = appRegistryStore.removeApp(appId);
-      await syncAppCatalogState();
-      return state;
+      const syncState = await syncAppCatalogState();
+      return { state, syncState };
     }
   );
   ipcMain.handle(
     "apps:refresh-discovered",
     async () => {
-      const state = await refreshDiscoveredApps();
-      return state ?? { items: [] };
+      const result = await refreshDiscoveredApps();
+      return result ?? { state: { items: [] }, syncState: "local_only" };
     }
   );
   ipcMain.handle(

@@ -232,9 +232,13 @@ const getAssistantProcesses = vi.fn(async () => [
     pid: 4242
   }
 ]);
-const refreshDiscoveredApps = vi.fn(async () => getAppsState());
-const saveAppRegistryEntry = vi.fn(async () => getAppsState());
-const removeAppRegistryEntry = vi.fn(async () => getAppsState());
+const buildAppRegistryMutationResult = async () => ({
+  state: await getAppsState(),
+  syncState: "synced" as const
+});
+const refreshDiscoveredApps = vi.fn(async () => buildAppRegistryMutationResult());
+const saveAppRegistryEntry = vi.fn(async () => buildAppRegistryMutationResult());
+const removeAppRegistryEntry = vi.fn(async () => buildAppRegistryMutationResult());
 
 const getPairingState = vi.fn(async () => ({
   code: null,

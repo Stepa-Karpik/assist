@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 
-type AppRegistryItem = Awaited<ReturnType<NonNullable<Window["karpik"]>["getAppsState"]>>["items"][number];
+type AppRegistryItem = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getAppsState"]>
+>["items"][number];
 type AssistantProcessItem = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getAssistantProcesses"]>
 >[number];
+type AppRegistryMutationResult = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["refreshDiscoveredApps"]>
+>;
 
-const emptyFormState = {
+type FormState = {
+  appId: string;
+  displayName: string;
+  launchPath: string;
+  aliasesText: string;
+  linked: boolean;
+};
+
+const emptyFormState: FormState = {
   appId: "",
   displayName: "",
   launchPath: "",
@@ -21,7 +34,7 @@ function toAliasesText(item: AppRegistryItem): string {
   return item.aliases.join(", ");
 }
 
-function toFormState(item: AppRegistryItem) {
+function toFormState(item: AppRegistryItem): FormState {
   return {
     appId: item.appId,
     displayName: item.displayName,
@@ -38,10 +51,50 @@ function parseAliases(value: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeMutationResult(
+  result: AppRegistryMutationResult | { items: AppRegistryItem[] }
+): AppRegistryMutationResult {
+  if ("state" in result && "syncState" in result) {
+    return result;
+  }
+
+  return {
+    state: result,
+    syncState: "synced"
+  };
+}
+
+function getMutationMessage(
+  action: "save" | "remove" | "refresh",
+  syncState: AppRegistryMutationResult["syncState"]
+): string {
+  if (syncState === "synced") {
+    if (action === "save") {
+      return "Приложение сохранено.";
+    }
+
+    if (action === "remove") {
+      return "Приложение удалено из реестра.";
+    }
+
+    return "Список приложений обновлён.";
+  }
+
+  if (action === "save") {
+    return "Приложение сохранено локально. Каталог на сервер пока не синхронизирован.";
+  }
+
+  if (action === "remove") {
+    return "Приложение удалено локально. Каталог на сервер пока не синхронизирован.";
+  }
+
+  return "Локальный список приложений обновлён. Каталог на сервер пока не синхронизирован.";
+}
+
 export function ApplicationsPage() {
   const [appsState, setAppsState] = useState<{ items: AppRegistryItem[] }>({ items: [] });
   const [assistantProcesses, setAssistantProcesses] = useState<AssistantProcessItem[]>([]);
-  const [formState, setFormState] = useState(emptyFormState);
+  const [formState, setFormState] = useState<FormState>(emptyFormState);
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,9 +169,9 @@ export function ApplicationsPage() {
     setSuccess(null);
 
     try {
-      const nextState = await window.karpik.refreshDiscoveredApps();
-      setAppsState(nextState);
-      setSuccess("Список приложений обновлён.");
+      const result = normalizeMutationResult(await window.karpik.refreshDiscoveredApps());
+      setAppsState(result.state);
+      setSuccess(getMutationMessage("refresh", result.syncState));
     } catch {
       setError("Не удалось обновить найденные приложения.");
     } finally {
@@ -142,16 +195,18 @@ export function ApplicationsPage() {
     setSuccess(null);
 
     try {
-      const nextState = await window.karpik.saveAppRegistryEntry({
-        appId: formState.appId || undefined,
-        displayName: formState.displayName.trim(),
-        launchPath: formState.launchPath.trim(),
-        aliases: parseAliases(formState.aliasesText),
-        linked: formState.linked,
-        source: formState.appId ? undefined : "manual"
-      });
-      setAppsState(nextState);
-      setSuccess("Приложение сохранено.");
+      const result = normalizeMutationResult(
+        await window.karpik.saveAppRegistryEntry({
+          appId: formState.appId || undefined,
+          displayName: formState.displayName.trim(),
+          launchPath: formState.launchPath.trim(),
+          aliases: parseAliases(formState.aliasesText),
+          linked: formState.linked,
+          source: formState.appId ? undefined : "manual"
+        })
+      );
+      setAppsState(result.state);
+      setSuccess(getMutationMessage("save", result.syncState));
       resetForm();
     } catch {
       setError("Не удалось сохранить приложение.");
@@ -171,12 +226,12 @@ export function ApplicationsPage() {
     setSuccess(null);
 
     try {
-      const nextState = await window.karpik.removeAppRegistryEntry(appId);
-      setAppsState(nextState);
+      const result = normalizeMutationResult(await window.karpik.removeAppRegistryEntry(appId));
+      setAppsState(result.state);
       if (formState.appId === appId) {
         resetForm();
       }
-      setSuccess("Приложение удалено из реестра.");
+      setSuccess(getMutationMessage("remove", result.syncState));
     } catch {
       setError("Не удалось удалить приложение.");
     } finally {
@@ -191,8 +246,9 @@ export function ApplicationsPage() {
           <p className="eyebrow">Приложения</p>
           <h2>Реестр запуска и alias-связки</h2>
           <p className="muted-text">
-            Здесь связываются программы и ярлыки с понятными именами. Связанные приложения попадают в
-            `/apps`, а найденные автоматически используются как кандидаты для выбора в Telegram.
+            Здесь связываются программы и ярлыки с понятными именами. Связанные приложения
+            попадают в <code>/apps</code>, а найденные автоматически используются как кандидаты
+            для выбора в Telegram.
           </p>
         </div>
         <button
@@ -217,6 +273,7 @@ export function ApplicationsPage() {
             <strong>{formState.appId ? "Редактирование приложения" : "Связать приложение"}</strong>
             {formState.appId ? <span className="task-status">{formState.appId}</span> : null}
           </div>
+
           <label className="section-label" htmlFor="app-display-name">
             Название
           </label>
@@ -313,7 +370,9 @@ export function ApplicationsPage() {
                   <div>
                     <strong>{item.displayName}</strong>
                     <p className="chat-list-item__meta">{item.launchPath}</p>
-                    <p className="chat-list-item__meta">Alias: {item.aliases.join(", ") || "нет"}</p>
+                    <p className="chat-list-item__meta">
+                      Alias: {item.aliases.join(", ") || "нет"}
+                    </p>
                   </div>
                   <div className="action-row">
                     <button

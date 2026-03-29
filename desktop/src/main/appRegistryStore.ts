@@ -22,6 +22,14 @@ export type AppRegistryState = {
   items: AppRegistryItem[];
 };
 
+export type PublicAppCatalogItem = {
+  appId: string;
+  displayName: string;
+  aliases: string[];
+  linked: boolean;
+  source: AppRegistrySource;
+};
+
 export type AppRegistryInput = {
   appId?: string;
   displayName: string;
@@ -181,6 +189,16 @@ export class AppRegistryStore {
 
   getApp(appId: string): AppRegistryItem | null {
     return this.state.items.find((item) => item.appId === appId) ?? null;
+  }
+
+  getPublicCatalog(): PublicAppCatalogItem[] {
+    return this.state.items.map((item) => ({
+      appId: item.appId,
+      displayName: item.displayName,
+      aliases: [...item.aliases],
+      linked: item.linked,
+      source: item.source
+    }));
   }
 
   private load(): AppRegistryState {
