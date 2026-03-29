@@ -12,6 +12,7 @@ from app.api.tasks import router as tasks_router
 from app.config import get_settings
 from app.services.app_catalog_store import InMemoryAppCatalogStore
 from app.services.challenge_store import InMemoryChallengeStore
+from app.services.device_registry import DeviceRegistry
 from app.services.device_presence_store import InMemoryDevicePresenceStore
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
     state_backend = create_state_backend(settings)
+    application.state.device_registry = DeviceRegistry(state_backend=state_backend)
     application.state.device_presence_store = InMemoryDevicePresenceStore(
         state_backend=state_backend
     )
