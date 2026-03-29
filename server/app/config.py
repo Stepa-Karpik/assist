@@ -11,6 +11,7 @@ class Settings:
     state_file: Path = Path(__file__).resolve().parents[1] / ".tmp" / "runtime-state.json"
     database_url: str | None = None
     database_connect_timeout: int = 5
+    telegram_bot_name: str = "Karpik"
 
 
 def get_settings() -> Settings:
@@ -26,4 +27,5 @@ def get_settings() -> Settings:
         ),
         database_url=getenv("KARPIK_DATABASE_URL"),
         database_connect_timeout=int(getenv("KARPIK_DATABASE_CONNECT_TIMEOUT", "5")),
+        telegram_bot_name=getenv("KARPIK_BOT_NAME", "Karpik"),
     )

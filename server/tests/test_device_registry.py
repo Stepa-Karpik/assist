@@ -39,6 +39,27 @@ def test_register_device_persists_record(state_file: Path) -> None:
     assert persisted.owner_label == "Stepa"
 
 
+def test_register_device_updates_existing_metadata_without_replacing_identity(state_file: Path) -> None:
+    registry = DeviceRegistry(state_backend=JsonStateBackend(state_file))
+
+    first = registry.register_device(
+        device_id="desktop-main",
+        device_label="Desktop Main",
+        owner_label="Stepa",
+    )
+    second = registry.register_device(
+        device_id="desktop-main",
+        device_label="Stepa Desktop",
+        owner_label="Степан Карпов",
+    )
+
+    assert second.device_id == first.device_id
+    assert second.device_label == "Stepa Desktop"
+    assert second.owner_label == "Степан Карпов"
+    assert second.created_at == first.created_at
+    assert second.updated_at >= first.updated_at
+
+
 def test_grant_trust_is_persisted_per_device(state_file: Path) -> None:
     registry = DeviceRegistry(state_backend=JsonStateBackend(state_file))
     registry.register_device(device_id="desktop-main", device_label="Desktop Main")

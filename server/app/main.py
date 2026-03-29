@@ -17,6 +17,7 @@ from app.services.device_presence_store import InMemoryDevicePresenceStore
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
 from app.services.owner_profile_store import InMemoryOwnerProfileStore
+from app.services.onboarding_token_store import OnboardingTokenStore
 from app.services.state_backend import create_state_backend
 from app.services.task_store import InMemoryTaskStore
 
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
     )
+    application.state.settings = settings
     state_backend = create_state_backend(settings)
     application.state.device_registry = DeviceRegistry(state_backend=state_backend)
     application.state.device_presence_store = InMemoryDevicePresenceStore(
@@ -36,6 +38,9 @@ def create_app() -> FastAPI:
         state_backend=state_backend
     )
     application.state.owner_profile_store = InMemoryOwnerProfileStore(
+        state_backend=state_backend
+    )
+    application.state.onboarding_token_store = OnboardingTokenStore(
         state_backend=state_backend
     )
     application.state.pairing_store = InMemoryPairingStore(
