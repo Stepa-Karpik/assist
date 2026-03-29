@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  buildPairingFallbackCommand,
+  buildPairingStartLink,
+  telegramBotHandle
+} from "../pairingInstructions";
+
 type PairingState = {
   code: string | null;
   expiresAt: string | null;
@@ -84,7 +90,6 @@ const supportedRemoteTasks = [
   "/confirm",
   "/decline"
 ];
-
 function formatExpiryHint(expiresAt: string | null): string {
   if (expiresAt === null) {
     return "Код действует 5 минут и принимается только пока ПК онлайн.";
@@ -191,6 +196,7 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const workspaceOptions = useMemo(() => buildWorkspacePayload(workspaceDrafts), [workspaceDrafts]);
+  const showAuthWarning = !authConfigState.passwordConfigured || !authConfigState.totpConfigured;
 
   useEffect(() => {
     let isSubscribed = true;
@@ -231,6 +237,31 @@ export function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function refreshPairingState() {
+      try {
+        const nextPairingState = await (window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState));
+
+        if (isSubscribed) {
+          setPairingState(nextPairingState);
+        }
+      } catch {
+        // Keep the last known state if the background refresh fails.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshPairingState();
+    }, 2000);
+
+    return () => {
+      isSubscribed = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   async function handleOpenPairingSession() {
     if (!window.karpik?.openPairingSession) {
       setError("Pairing API недоступен в этом окружении.");
@@ -244,7 +275,7 @@ export function SettingsPage() {
     try {
       const nextState = await window.karpik.openPairingSession();
       setPairingState(nextState);
-      setPairingFeedback("Pairing window opened. Use the current code within 5 minutes.");
+      setPairingFeedback("Pairing-код обновлён. Можно использовать /start-ссылку или fallback-команду /pair.");
     } catch {
       setError("Не удалось открыть pairing-сессию.");
     } finally {
@@ -426,6 +457,9 @@ export function SettingsPage() {
     : pairingState.isActive
       ? "Pairing активен"
       : "Pairing не активен";
+  const pairingStartLink = pairingState.isActive && pairingState.code ? buildPairingStartLink(pairingState.code) : null;
+  const pairingFallbackCommand =
+    pairingState.isActive && pairingState.code ? buildPairingFallbackCommand(pairingState.code) : null;
 
   return (
     <div className="page-shell">
@@ -440,6 +474,11 @@ export function SettingsPage() {
         <p className="section-label">Remote auth</p>
         <p>Password: {describeAuthStatus(authConfigState.passwordConfigured)}</p>
         <p>TOTP: {describeAuthStatus(authConfigState.totpConfigured)}</p>
+        {showAuthWarning ? (
+          <p className="task-error status-feedback">
+            Пароль и TOTP не обязательны, но без них remote-доступ защищён слабее.
+          </p>
+        ) : null}
         <label className="section-label" htmlFor="settings-password">
           Пароль для remote auth
         </label>
@@ -649,7 +688,14 @@ export function SettingsPage() {
         <p className="muted-text">
           {formatExpiryHint(pairingState.isActive ? pairingState.expiresAt : null)}
         </p>
+        <p className="muted-text">Telegram-бот для привязки: {telegramBotHandle}</p>
         <p className="muted-text">Доверенные Telegram ID: {pairingState.trustedTelegramUserIds.length}</p>
+        {pairingStartLink !== null ? (
+          <p className="muted-text">Быстрый старт: {pairingStartLink}</p>
+        ) : null}
+        {pairingFallbackCommand !== null ? (
+          <p className="muted-text">Резервная команда: {pairingFallbackCommand}</p>
+        ) : null}
         <button
           aria-busy={isOpeningPairing}
           className={buildButtonClass(isOpeningPairing, pairingFeedback !== null)}

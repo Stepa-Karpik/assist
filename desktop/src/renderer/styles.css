@@ -20,8 +20,16 @@ body,
 
 body {
   margin: 0;
-  overflow: hidden;
   background: transparent;
+  overflow-x: hidden;
+}
+
+body[data-karpik-view="main"] {
+  overflow-y: auto;
+}
+
+body[data-karpik-view="quick-popup"] {
+  overflow: hidden;
 }
 
 .sr-only {
@@ -213,9 +221,11 @@ img {
 
 .content-panel {
   min-width: 0;
+  min-height: 0;
   height: 100vh;
   padding: 28px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 body,

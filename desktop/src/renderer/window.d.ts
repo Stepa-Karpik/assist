@@ -40,6 +40,12 @@ type OwnerProfileState = {
   notes: string | null;
 };
 
+type OnboardingState = {
+  installationFingerprint: string;
+  completedInstallationFingerprint: string | null;
+  requiresOnboarding: boolean;
+};
+
 type AppRegistryItem = {
   appId: string;
   displayName: string;
@@ -208,6 +214,7 @@ declare global {
       getAppsState: () => Promise<AppRegistryState>;
       getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
+      getOnboardingState: () => Promise<OnboardingState | null>;
       getOwnerProfileState: () => Promise<OwnerProfileState | null>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       createTotpEnrollment: () => Promise<TotpEnrollment>;
@@ -224,6 +231,7 @@ declare global {
       getUpdateState: () => Promise<UpdateState>;
       approveLocalApproval: (taskId: string) => Promise<void>;
       checkForUpdates: () => Promise<UpdateState>;
+      completeOnboarding: () => Promise<OnboardingState>;
       createDesktopChat: (payload?: {
         title?: string;
         workspaceId?: string | null;

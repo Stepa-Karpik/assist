@@ -18,10 +18,11 @@ def trust_telegram_user(
         "/api/pairing/open",
         json={
             "device_id": device_id,
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
-    event_response = client.post(
+    pair_response = client.post(
         "/api/bot/pair-attempt",
         json={
             "device_id": device_id,
@@ -31,14 +32,8 @@ def trust_telegram_user(
             "wait_seconds": 0,
         },
     )
-    event_id = event_response.json()["event_id"]
-    client.post(
-        f"/api/events/{event_id}/resolve",
-        json={
-            "result": "paired",
-            "trusted_telegram_user_id": telegram_user_id,
-        },
-    )
+    assert pair_response.status_code == 200
+    assert pair_response.json()["status"] == "paired"
 
 
 def create_low_risk_telegram_task(

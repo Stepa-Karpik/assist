@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import started from "electron-squirrel-startup";
 import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, Notification, Tray } from "electron";
 import QRCode from "qrcode";
@@ -18,11 +19,13 @@ import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { getDataRoot } from "./dataRoot";
+import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { createKnowledgeStore } from "./knowledgeStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
 import { createLocalChatRuntime } from "./localChatRuntime";
+import { OnboardingStateStore } from "./onboardingStateStore";
 import {
   OwnerProfileStore,
   buildOwnerProfileContext,
@@ -34,7 +37,7 @@ import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
   type DevicePresenceResponse,
-  type PairingEventListResponse,
+  type PairingStateResponse,
   type RemoteTaskRecord,
   type RemoteAppCatalogItem,
   createSyncClient
@@ -65,6 +68,7 @@ let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
 let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
@@ -82,13 +86,10 @@ const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
 const backgroundTaskSnapshotLimit = 25;
 const manualTaskHistoryLimit = 100;
-const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
+let deviceId = process.env.KARPIK_DEVICE_ID?.trim() ?? "";
 const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
 const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
-const syncClient = createSyncClient({
-  serverUrl,
-  deviceId
-});
+let syncClient!: ReturnType<typeof createSyncClient>;
 const devicePresenceTracker = createDevicePresenceTracker();
 
 if (started) {
@@ -97,6 +98,17 @@ if (started) {
 
 function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
+}
+
+function buildInstallationFingerprint(): string {
+  const executablePath = app.getPath("exe");
+
+  try {
+    const executableStat = fs.statSync(executablePath);
+    return `${app.getVersion()}::${executablePath}::${Math.trunc(executableStat.mtimeMs)}`;
+  } catch {
+    return `${app.getVersion()}::${executablePath}`;
+  }
 }
 
 function shouldPollAuth(snapshot: RemoteTaskRecord[]): boolean {
@@ -252,45 +264,42 @@ async function pollAuthEvents() {
   }
 }
 
+function applyRemotePairingState(payload: PairingStateResponse) {
+  return pairingStore.syncFromServerState({
+    trustedTelegramUserIds: payload.trusted_telegram_user_ids,
+    session:
+      payload.session === null
+        ? null
+        : {
+            code: payload.session.code,
+            expiresAt: payload.session.expires_at,
+            status: payload.session.status,
+          }
+  });
+}
+
+async function refreshPairingState() {
+  const response = await syncClient.fetchPairingState();
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch pairing state: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as PairingStateResponse;
+  return applyRemotePairingState(payload);
+}
+
 async function pollPairingEvents() {
   if (!pairingStore.getState().isActive) {
     stopPairingPolling();
     return;
   }
 
-  const response = await syncClient.fetchPairingEvents();
-
-  if (!response.ok) {
-    logResponseError("Fetching pairing events", response);
+  try {
+    await refreshPairingState();
+  } catch (error: unknown) {
+    console.error("Failed to refresh pairing state", error);
     return;
-  }
-
-  const payload = (await response.json()) as PairingEventListResponse;
-
-  for (const event of payload.items) {
-    const resolution = pairingStore.resolvePairAttempt({
-      code: event.code,
-      telegramUserId: event.telegram_user_id
-    });
-
-    const resolveResponse = await syncClient.resolvePairingEvent(event.event_id, {
-      result: resolution.result,
-      trustedTelegramUserId:
-        resolution.result === "paired" ? event.telegram_user_id : undefined
-    });
-
-    if (!resolveResponse.ok) {
-      logResponseError("Resolving pairing event", resolveResponse);
-      continue;
-    }
-
-    if (resolution.result === "paired") {
-      const closeResponse = await syncClient.closePairingSession();
-
-      if (!closeResponse.ok) {
-        logResponseError("Closing pairing session", closeResponse);
-      }
-    }
   }
 
   if (!pairingStore.getState().isActive) {
@@ -603,6 +612,14 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
+  ipcMain.handle("onboarding:get-state", () => onboardingStateStore?.getState() ?? null);
+  ipcMain.handle("onboarding:complete", () => {
+    if (onboardingStateStore === null) {
+      throw new Error("Onboarding state store is not initialized");
+    }
+
+    return onboardingStateStore.markCompleted();
+  });
   ipcMain.handle("profile:get-state", () => ownerProfileStore?.getState());
   ipcMain.handle("apps:get-state", () => appRegistryStore?.getState() ?? { items: [] });
   ipcMain.handle("apps:get-active-processes", () => assistantProcessStore.listActive());
@@ -791,7 +808,13 @@ function registerIpcHandlers() {
       return quickAccessRuntime.submitRequest(payload);
     }
   );
-  ipcMain.handle("pairing:get-state", () => pairingStore.getState());
+  ipcMain.handle("pairing:get-state", async () => {
+    try {
+      return await refreshPairingState();
+    } catch {
+      return pairingStore.getState();
+    }
+  });
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
     if (localApprovalStore === null) {
@@ -844,11 +867,11 @@ function registerIpcHandlers() {
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
 
-    if (state.expiresAt === null) {
+    if (state.expiresAt === null || state.code === null) {
       return state;
     }
 
-    const response = await syncClient.openPairingSession(state.expiresAt);
+    const response = await syncClient.openPairingSession(state.code, state.expiresAt);
 
     if (!response.ok) {
       pairingStore.closePairingSession();
@@ -856,7 +879,7 @@ function registerIpcHandlers() {
     }
 
     ensurePairingPolling();
-    return pairingStore.getState();
+    return refreshPairingState().catch(() => pairingStore.getState());
   });
 
   ipcHandlersRegistered = true;
@@ -865,8 +888,22 @@ function registerIpcHandlers() {
 async function bootstrap() {
   nativeTheme.themeSource = "system";
   const runtimeFolders = ensureRuntimeFolders(getDataRoot());
+  if (deviceId.length === 0) {
+    const deviceIdentityStore = new DeviceIdentityStore({
+      identityRoot: runtimeFolders.root
+    });
+    deviceId = deviceIdentityStore.getState().deviceId;
+  }
+  syncClient = createSyncClient({
+    serverUrl,
+    deviceId
+  });
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
+  });
+  onboardingStateStore = new OnboardingStateStore({
+    settingsRoot: runtimeFolders.settings,
+    installationFingerprint: buildInstallationFingerprint()
   });
   ownerProfileStore = new OwnerProfileStore({
     settingsRoot: runtimeFolders.settings
@@ -910,7 +947,7 @@ async function bootstrap() {
     );
   };
   taskExecutor = createTaskExecutor({
-    deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
+    deviceId,
     userRoot: runtimeFolders.userRoot,
     resolveCodexWorkspace: (task) =>
       codexSettingsStore?.getWorkspaceForChat(task.chat_id).rootPath ??
@@ -997,6 +1034,9 @@ async function bootstrap() {
   void syncOwnerProfileState().catch((error: unknown) => {
     console.error("Failed to sync owner profile state", error);
   });
+  void refreshPairingState().catch((error: unknown) => {
+    console.error("Failed to sync pairing state", error);
+  });
 }
 
 app.whenReady().then(bootstrap);
@@ -1022,13 +1062,6 @@ app.on("before-quit", () => {
   stopDeviceHeartbeatPolling();
   stopTaskPolling();
   stopPairingPolling();
-
-  if (pairingStore.getState().isActive) {
-    void syncClient.closePairingSession().catch((error: unknown) => {
-      console.error("Failed to close pairing session", error);
-    });
-    pairingStore.closePairingSession();
-  }
 
   tray?.destroy();
 });

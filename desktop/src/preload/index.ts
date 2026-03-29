@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getAppsState: () => ipcRenderer.invoke("apps:get-state"),
   getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
+  getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
   getOwnerProfileState: () => ipcRenderer.invoke("profile:get-state"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   createTotpEnrollment: () => ipcRenderer.invoke("auth:create-totp-enrollment"),
@@ -25,6 +26,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   approveLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:approve-local-approval", taskId),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  completeOnboarding: () => ipcRenderer.invoke("onboarding:complete"),
   createDesktopChat: (payload?: { title?: string; workspaceId?: string | null }) =>
     ipcRenderer.invoke("chats:create-desktop", payload),
   createLocalContinuationChat: (payload: {

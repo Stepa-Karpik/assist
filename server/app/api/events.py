@@ -17,7 +17,7 @@ router = APIRouter(tags=["pairing-events"])
 def create_pair_attempt(payload: PairAttemptRequest, request: Request) -> PairAttemptResponse:
     store = request.app.state.pairing_store
     event = PairAttemptEvent(
-        device_id=payload.device_id,
+        device_id=payload.device_id or "",
         telegram_user_id=payload.telegram_user_id,
         chat_id=payload.chat_id,
         code=payload.code,
@@ -26,6 +26,9 @@ def create_pair_attempt(payload: PairAttemptRequest, request: Request) -> PairAt
 
     if created is None:
         return PairAttemptResponse(status="ignored")
+
+    if created.status == "resolved" and created.result is not None:
+        return PairAttemptResponse(status=created.result, event_id=created.event_id)
 
     resolved = store.wait_for_resolution(created.event_id, payload.wait_seconds)
 

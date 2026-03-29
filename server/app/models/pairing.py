@@ -11,6 +11,7 @@ PairAttemptResult = Literal["paired", "invalid_code", "ignored"]
 
 class PairingOpenRequest(BaseModel):
     device_id: str
+    code: str
     expires_at: datetime
 
 
@@ -20,13 +21,14 @@ class PairingCloseRequest(BaseModel):
 
 class PairingSession(BaseModel):
     device_id: str
+    code: str | None = None
     status: PairingSessionStatus
     expires_at: datetime
     attempt_count: int = 0
 
 
 class PairAttemptRequest(BaseModel):
-    device_id: str
+    device_id: str | None = None
     telegram_user_id: int
     chat_id: int
     code: str
@@ -62,3 +64,9 @@ class PairAttemptResolutionResponse(BaseModel):
     event_id: str
     result: PairAttemptResult
     trusted_users: list[int]
+
+
+class PairingStateResponse(BaseModel):
+    device_id: str
+    trusted_telegram_user_ids: list[int]
+    session: PairingSession | None

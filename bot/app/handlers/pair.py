@@ -29,6 +29,24 @@ def get_pair_failure_text() -> str:
     return "Код недействителен"
 
 
+def resolve_pair_code(
+    code: str,
+    *,
+    telegram_user_id: int,
+    chat_id: int,
+    pairing_client: SupportsPairAttempt,
+) -> str | None:
+    result = pairing_client.submit_pair_attempt(telegram_user_id, chat_id, code)
+
+    if result == "paired":
+        return get_pair_success_text()
+
+    if result == "invalid_code":
+        return get_pair_failure_text()
+
+    return None
+
+
 def resolve_pair_command(
     text: str,
     *,
@@ -41,12 +59,9 @@ def resolve_pair_command(
     if code is None:
         return get_pair_failure_text()
 
-    result = pairing_client.submit_pair_attempt(telegram_user_id, chat_id, code)
-
-    if result == "paired":
-        return get_pair_success_text()
-
-    if result == "invalid_code":
-        return get_pair_failure_text()
-
-    return None
+    return resolve_pair_code(
+        code,
+        telegram_user_id=telegram_user_id,
+        chat_id=chat_id,
+        pairing_client=pairing_client,
+    )

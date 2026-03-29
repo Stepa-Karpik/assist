@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PairingStore } from "./pairingStore";
 
 describe("PairingStore", () => {
-  it("opens a pairing session with one active code and a five-minute expiry", () => {
+  it("creates a draft pairing session with one active code and a five-minute expiry", () => {
     const store = new PairingStore({
       now: () => new Date("2026-03-24T01:00:00.000Z"),
       codeFactory: () => "PAIR-01"
@@ -31,37 +31,43 @@ describe("PairingStore", () => {
     expect(state.code).toBe("PAIR-02");
   });
 
-  it("adds the telegram user to the trusted allowlist when the code is valid", () => {
-    const store = new PairingStore({
-      now: () => new Date("2026-03-24T01:00:00.000Z"),
-      codeFactory: () => "PAIR-01"
-    });
-    store.openPairingSession();
+  it("replaces the local draft with server-owned session state and trusted users", () => {
+    const store = new PairingStore();
 
-    const result = store.resolvePairAttempt({
-      code: "PAIR-01",
-      telegramUserId: 101
+    const state = store.syncFromServerState({
+      trustedTelegramUserIds: [101, 42],
+      session: {
+        code: "PAIR-77",
+        expiresAt: "2030-03-24T01:05:00.000Z",
+        status: "active"
+      }
     });
 
-    expect(result.result).toBe("paired");
-    expect(result.trustedTelegramUserIds).toEqual([101]);
-    expect(store.getState().isActive).toBe(false);
+    expect(state).toEqual({
+      code: "PAIR-77",
+      expiresAt: "2030-03-24T01:05:00.000Z",
+      isActive: true,
+      trustedTelegramUserIds: [42, 101]
+    });
   });
 
-  it("does not trust the user when the code is invalid", () => {
+  it("clears the active session when the server reports no active session", () => {
     const store = new PairingStore({
       now: () => new Date("2026-03-24T01:00:00.000Z"),
       codeFactory: () => "PAIR-01"
     });
     store.openPairingSession();
 
-    const result = store.resolvePairAttempt({
-      code: "WRONG",
-      telegramUserId: 101
+    const state = store.syncFromServerState({
+      trustedTelegramUserIds: [101],
+      session: null
     });
 
-    expect(result.result).toBe("invalid_code");
-    expect(result.trustedTelegramUserIds).toEqual([]);
-    expect(store.getState().isActive).toBe(true);
+    expect(state).toEqual({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: [101]
+    });
   });
 });
