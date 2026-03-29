@@ -9,6 +9,20 @@ export function resolvePreloadPath(buildRoot: string): string {
   return path.join(buildRoot, "index.js");
 }
 
+export function shouldStartWindowHidden(input: {
+  argv: string[];
+  startHiddenOnLaunch: boolean;
+}): boolean {
+  return input.startHiddenOnLaunch || input.argv.includes("--start-hidden");
+}
+
+export function shouldHideMainWindowOnClose(input: {
+  isAppQuitting: boolean;
+  closeToTrayOnClose: boolean;
+}): boolean {
+  return !input.isAppQuitting && input.closeToTrayOnClose;
+}
+
 export function calculateQuickPopupBounds(input: {
   trayBounds: Rectangle;
   workArea: Rectangle;

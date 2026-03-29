@@ -2,7 +2,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { calculateQuickPopupBounds, resolvePreloadPath } from "./windows";
+import {
+  calculateQuickPopupBounds,
+  resolvePreloadPath,
+  shouldHideMainWindowOnClose,
+  shouldStartWindowHidden
+} from "./windows";
 
 describe("resolvePreloadPath", () => {
   it("points packaged windows to the generated vite preload bundle", () => {
@@ -35,5 +40,45 @@ describe("calculateQuickPopupBounds", () => {
 
     expect(bounds.y).toBeGreaterThanOrEqual(40);
     expect(bounds.x).toBe(8);
+  });
+});
+
+describe("shouldStartWindowHidden", () => {
+  it("starts hidden when preferences require tray-first launch", () => {
+    expect(
+      shouldStartWindowHidden({
+        argv: [],
+        startHiddenOnLaunch: true
+      })
+    ).toBe(true);
+  });
+
+  it("starts hidden when the explicit startup flag is present", () => {
+    expect(
+      shouldStartWindowHidden({
+        argv: ["--start-hidden"],
+        startHiddenOnLaunch: false
+      })
+    ).toBe(true);
+  });
+});
+
+describe("shouldHideMainWindowOnClose", () => {
+  it("hides to tray when the app is not quitting and tray-close is enabled", () => {
+    expect(
+      shouldHideMainWindowOnClose({
+        isAppQuitting: false,
+        closeToTrayOnClose: true
+      })
+    ).toBe(true);
+  });
+
+  it("does not hide to tray when the app is explicitly quitting", () => {
+    expect(
+      shouldHideMainWindowOnClose({
+        isAppQuitting: true,
+        closeToTrayOnClose: true
+      })
+    ).toBe(false);
   });
 });

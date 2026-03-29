@@ -789,9 +789,9 @@ describe("App navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
 
-    expect(await screen.findByText("Desktop updates")).toBeInTheDocument();
-    expect(await screen.findByText("Current version: 0.1.0")).toBeInTheDocument();
-    expect(await screen.findByText("Available release: 0.2.0")).toBeInTheDocument();
+    expect(await screen.findByText("Обновления")).toBeInTheDocument();
+    expect(await screen.findByText("Текущая версия: 0.1.0")).toBeInTheDocument();
+    expect(await screen.findByText("Доступный релиз: 0.2.0")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Проверить обновления" }));
     fireEvent.click(await screen.findByRole("button", { name: "Установить обновление" }));
 
@@ -1257,12 +1257,10 @@ describe("App navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
 
-    expect(await screen.findByText("Device ID: desktop-local")).toBeInTheDocument();
-    expect(await screen.findByText("Server URL: http://127.0.0.1:8000")).toBeInTheDocument();
-    expect(await screen.findByText("Server heartbeat: online")).toBeInTheDocument();
-    expect(await screen.findByText("Server reachable: yes")).toBeInTheDocument();
-    expect(await screen.findByText("Last active chat: Execution chat")).toBeInTheDocument();
-    expect(await screen.findByText("Default workspace: Assist")).toBeInTheDocument();
+    expect(await screen.findByText("Устройство: desktop-local")).toBeInTheDocument();
+    expect(await screen.findByText("Сервер на связи: Да")).toBeInTheDocument();
+    expect(await screen.findByText("Последний активный чат: Execution chat")).toBeInTheDocument();
+    expect(await screen.findByText("Основной workspace: Assist")).toBeInTheDocument();
   });
 
   it("shows knowledge files and switches preview", async () => {

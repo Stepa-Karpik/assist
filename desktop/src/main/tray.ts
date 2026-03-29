@@ -21,6 +21,22 @@ type TrayWindows = {
   quickPopup: BrowserWindow;
 };
 
+export function buildTrayMenuTemplate(showMainWindow: () => void) {
+  return [
+    {
+      label: "Открыть окно",
+      click: showMainWindow
+    },
+    {
+      type: "separator" as const
+    },
+    {
+      label: "Выход",
+      role: "quit" as const
+    }
+  ];
+}
+
 function placeQuickPopup(tray: Tray, quickPopup: BrowserWindow) {
   const trayBounds = tray.getBounds();
   const popupBounds = quickPopup.getBounds();
@@ -49,21 +65,7 @@ export function createAppTray({ mainWindow, quickPopup }: TrayWindows): Tray {
   };
 
   tray.setToolTip("Karpik");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "Открыть окно",
-        click: showMainWindow
-      },
-      {
-        type: "separator"
-      },
-      {
-        label: "Выход",
-        role: "quit"
-      }
-    ])
-  );
+  tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenuTemplate(showMainWindow)));
 
   quickPopup.on("blur", () => {
     if (quickPopup.isVisible()) {

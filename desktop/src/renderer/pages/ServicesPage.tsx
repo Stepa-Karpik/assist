@@ -26,6 +26,7 @@ const emptyRuntimeStatus: RuntimeStatus = {
   pendingTaskCount: 0,
   blockedTaskCount: 0
 };
+
 const emptyUpdateState: UpdateState = {
   currentVersion: "",
   feedUrl: null,
@@ -37,7 +38,29 @@ const emptyUpdateState: UpdateState = {
 };
 
 function formatBoolean(value: boolean): string {
-  return value ? "yes" : "no";
+  return value ? "Да" : "Нет";
+}
+
+function formatHeartbeatState(value: RuntimeStatus["serverHeartbeatState"]): string {
+  return value === "online" ? "На связи" : "Недоступен";
+}
+
+function formatUpdatePhase(value: UpdateState["phase"]): string {
+  switch (value) {
+    case "idle":
+      return "Готово";
+    case "checking":
+      return "Проверка";
+    case "downloading":
+      return "Загрузка";
+    case "downloaded":
+      return "Готово к установке";
+    case "error":
+      return "Ошибка";
+    case "disabled":
+    default:
+      return "Выключено";
+  }
 }
 
 export function ServicesPage() {
@@ -67,7 +90,7 @@ export function ServicesPage() {
         setError(null);
       } catch {
         if (isSubscribed) {
-          setError("Не удалось загрузить runtime status.");
+          setError("Не удалось загрузить состояние сервисов.");
         }
       } finally {
         if (isSubscribed) {
@@ -90,7 +113,8 @@ export function ServicesPage() {
   async function handleCheckForUpdates() {
     try {
       setIsCheckingUpdates(true);
-      const nextState = await (window.karpik?.checkForUpdates?.() ?? Promise.resolve(emptyUpdateState));
+      const nextState =
+        (await window.karpik?.checkForUpdates?.()) ?? emptyUpdateState;
       setUpdateState((currentState) =>
         currentState.phase === "downloaded" && nextState.phase === "checking" ? currentState : nextState
       );
@@ -119,67 +143,64 @@ export function ServicesPage() {
       <div className="page-header">
         <div>
           <p className="eyebrow">Сервисы</p>
-          <h2>Runtime и интеграции</h2>
+          <h2>Состояние приложения</h2>
           <p className="muted-text">
-            Снимок desktop runtime, server heartbeat, readiness auth и канал обновлений.
+            Подключение к серверу, готовность защиты, локальная активность и обновления.
           </p>
         </div>
       </div>
 
-      {isLoading ? <p className="muted-text">Загружаем runtime status...</p> : null}
+      {isLoading ? <p className="muted-text">Загружаем состояние сервисов...</p> : null}
       {error !== null ? <p className="task-error">{error}</p> : null}
 
       {!isLoading ? (
         <div className="service-grid">
           <article className="task-card">
             <div className="task-card-header">
-              <strong>Runtime</strong>
-              <span className="task-status">Desktop</span>
+              <strong>Подключение</strong>
+              <span className="task-status">{formatHeartbeatState(status.serverHeartbeatState)}</span>
             </div>
-            <p>Device ID: {status.deviceId}</p>
-            <p>Server URL: {status.serverUrl}</p>
-            <p>Server heartbeat: {status.serverHeartbeatState}</p>
-            <p>Server reachable: {formatBoolean(status.serverHeartbeatReachable)}</p>
-            <p>Last server heartbeat: {status.serverHeartbeatAt ?? "none"}</p>
-            <p>Pairing active: {formatBoolean(status.pairingActive)}</p>
-            <p>Trusted Telegram users: {status.trustedTelegramUserCount}</p>
+            <p>Устройство: {status.deviceId}</p>
+            <p>Сервер на связи: {formatBoolean(status.serverHeartbeatReachable)}</p>
+            <p>Последний пинг: {status.serverHeartbeatAt ?? "ещё не было"}</p>
+            <p>Pairing активен: {formatBoolean(status.pairingActive)}</p>
+            <p>Доверенных Telegram-пользователей: {status.trustedTelegramUserCount}</p>
           </article>
 
           <article className="task-card">
             <div className="task-card-header">
-              <strong>Auth and workspaces</strong>
-              <span className="task-status">Ready</span>
+              <strong>Безопасность и окружение</strong>
+              <span className="task-status">Готовность</span>
             </div>
-            <p>Password configured: {formatBoolean(status.passwordConfigured)}</p>
-            <p>TOTP configured: {formatBoolean(status.totpConfigured)}</p>
-            <p>Workspaces: {status.workspaceCount}</p>
-            <p>Default workspace: {status.defaultWorkspaceName}</p>
-            <p>{status.defaultWorkspaceRoot}</p>
+            <p>Пароль настроен: {formatBoolean(status.passwordConfigured)}</p>
+            <p>TOTP настроен: {formatBoolean(status.totpConfigured)}</p>
+            <p>Workspace: {status.workspaceCount}</p>
+            <p>Основной workspace: {status.defaultWorkspaceName || "не выбран"}</p>
+            <p>{status.defaultWorkspaceRoot || "Путь будет показан после настройки."}</p>
           </article>
 
           <article className="task-card">
             <div className="task-card-header">
-              <strong>Local activity</strong>
-              <span className="task-status">Observed</span>
+              <strong>Локальная активность</strong>
+              <span className="task-status">Мониторинг</span>
             </div>
-            <p>Local chats: {status.localChatCount}</p>
-            <p>Last active chat: {status.lastActiveChatTitle ?? "none"}</p>
-            <p>Activity log entries: {status.activityLogCount}</p>
-            <p>Pending tasks: {status.pendingTaskCount}</p>
-            <p>Blocked tasks: {status.blockedTaskCount}</p>
+            <p>Локальных чатов: {status.localChatCount}</p>
+            <p>Последний активный чат: {status.lastActiveChatTitle ?? "нет данных"}</p>
+            <p>Записей в логе: {status.activityLogCount}</p>
+            <p>Активных задач: {status.pendingTaskCount}</p>
+            <p>Проблемных задач: {status.blockedTaskCount}</p>
           </article>
 
           <article className="task-card">
             <div className="task-card-header">
-              <strong>Desktop updates</strong>
-              <span className="task-status">{updateState.phase}</span>
+              <strong>Обновления</strong>
+              <span className="task-status">{formatUpdatePhase(updateState.phase)}</span>
             </div>
-            <p>Current version: {updateState.currentVersion || "unknown"}</p>
-            <p>Feed URL: {updateState.feedUrl ?? "not configured"}</p>
-            <p>Updater enabled: {formatBoolean(updateState.isSupported)}</p>
-            <p>Last checked: {updateState.lastCheckedAt ?? "never"}</p>
-            <p>Available release: {updateState.availableReleaseName ?? "none"}</p>
-            <p>{updateState.message ?? "No updater activity yet."}</p>
+            <p>Текущая версия: {updateState.currentVersion || "неизвестно"}</p>
+            <p>Обновления доступны: {formatBoolean(updateState.isSupported)}</p>
+            <p>Последняя проверка: {updateState.lastCheckedAt ?? "ещё не запускалась"}</p>
+            <p>Доступный релиз: {updateState.availableReleaseName ?? "нет"}</p>
+            <p>{updateState.message ?? "Пока нет событий обновления."}</p>
             <div className="action-row">
               <button
                 aria-busy={isCheckingUpdates}

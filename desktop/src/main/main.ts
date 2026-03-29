@@ -48,7 +48,12 @@ import { buildTaskNotification } from "./taskNotifications";
 import { runTaskSyncCycle } from "./taskRuntime";
 import { createAppTray } from "./tray";
 import { createUpdateService, type UpdaterAdapter } from "./updateService";
-import { createMainWindow, createQuickPopupWindow } from "./windows";
+import {
+  createMainWindow,
+  createQuickPopupWindow,
+  shouldHideMainWindowOnClose,
+  shouldStartWindowHidden
+} from "./windows";
 
 let mainWindow: BrowserWindow | null = null;
 let quickPopup: BrowserWindow | null = null;
@@ -981,15 +986,20 @@ async function bootstrap() {
     console.error("Failed to discover apps", error);
   });
 
-  const startHidden = process.argv.includes("--start-hidden");
+  const startHidden = shouldStartWindowHidden({
+    argv: process.argv,
+    startHiddenOnLaunch: appPreferencesStore.getState().startHiddenOnLaunch
+  });
   mainWindow = createMainWindow({
     startHidden
   });
   quickPopup = createQuickPopupWindow(mainWindow);
   mainWindow.on("close", (event) => {
     if (
-      !isAppQuitting &&
-      appPreferencesStore?.getState().closeToTrayOnClose
+      shouldHideMainWindowOnClose({
+        isAppQuitting,
+        closeToTrayOnClose: appPreferencesStore?.getState().closeToTrayOnClose ?? false
+      })
     ) {
       event.preventDefault();
       quickPopup?.hide();
