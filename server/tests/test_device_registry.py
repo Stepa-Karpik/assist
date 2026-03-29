@@ -76,3 +76,13 @@ def test_active_device_binding_round_trips(state_file: Path) -> None:
     reloaded = DeviceRegistry(state_backend=JsonStateBackend(state_file))
     assert reloaded.get_active_device(101) == "laptop-main"
 
+
+def test_resolve_active_device_falls_back_to_single_trusted_device(state_file: Path) -> None:
+    registry = DeviceRegistry(state_backend=JsonStateBackend(state_file))
+    registry.register_device(device_id="desktop-main", device_label="Desktop Main")
+    registry.grant_trust(device_id="desktop-main", telegram_user_id=101)
+
+    assert registry.resolve_active_device(101) == "desktop-main"
+
+    reloaded = DeviceRegistry(state_backend=JsonStateBackend(state_file))
+    assert reloaded.get_active_device(101) == "desktop-main"

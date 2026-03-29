@@ -22,14 +22,12 @@ def normalize_pair_attempt_status(value: object) -> PairAttemptStatus:
 @dataclass(frozen=True, slots=True)
 class PairingServerClient:
     server_url: str
-    device_id: str
     wait_seconds: float = 5.0
 
     def submit_pair_attempt(
         self, telegram_user_id: int, chat_id: int, code: str
     ) -> PairAttemptStatus:
         payload = {
-            "device_id": self.device_id,
             "telegram_user_id": telegram_user_id,
             "chat_id": chat_id,
             "code": code,

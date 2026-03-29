@@ -104,6 +104,10 @@ class DeviceRegistry:
 
     def set_active_device(self, *, telegram_user_id: int, device_id: str) -> str:
         with self._lock:
+            trusted_users = self._device_trust.get(device_id, set())
+            if telegram_user_id not in trusted_users or device_id not in self._devices:
+                raise ValueError("Device is not trusted for this Telegram user")
+
             self._telegram_device_bindings[telegram_user_id] = device_id
             self._persist()
             return device_id
@@ -111,6 +115,33 @@ class DeviceRegistry:
     def get_active_device(self, telegram_user_id: int) -> str | None:
         with self._lock:
             return self._telegram_device_bindings.get(telegram_user_id)
+
+    def resolve_active_device(self, telegram_user_id: int) -> str | None:
+        with self._lock:
+            active_device_id = self._telegram_device_bindings.get(telegram_user_id)
+            if (
+                active_device_id is not None
+                and active_device_id in self._devices
+                and telegram_user_id in self._device_trust.get(active_device_id, set())
+            ):
+                return active_device_id
+
+            trusted_device_ids = sorted(
+                [
+                    device_id
+                    for device_id, user_ids in self._device_trust.items()
+                    if telegram_user_id in user_ids and device_id in self._devices
+                ],
+                key=lambda candidate: self._devices[candidate].device_label.lower(),
+            )
+
+            if len(trusted_device_ids) == 1:
+                device_id = trusted_device_ids[0]
+                self._telegram_device_bindings[telegram_user_id] = device_id
+                self._persist()
+                return device_id
+
+            return None
 
     def _restore_state(self) -> None:
         if self._state_backend is None:
@@ -153,4 +184,3 @@ class DeviceRegistry:
             "telegram_device_bindings",
             {str(user_id): device_id for user_id, device_id in self._telegram_device_bindings.items()},
         )
-

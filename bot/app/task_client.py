@@ -97,6 +97,23 @@ class DeviceStatusResult:
     attention_count: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class TrustedDeviceEntry:
+    device_id: str
+    device_label: str
+    owner_label: str | None = None
+    status: str = "offline"
+    last_seen_at: str | None = None
+    is_active: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class TrustedDeviceListResult:
+    telegram_user_id: int
+    active_device_id: str | None
+    items: tuple[TrustedDeviceEntry, ...]
+
+
 def build_owner_profile_context(parsed: object) -> str | None:
     if not isinstance(parsed, dict):
         return None
@@ -272,6 +289,35 @@ def parse_app_catalog_item(value: object) -> AppCatalogEntry | None:
     )
 
 
+def parse_trusted_device_item(value: object) -> TrustedDeviceEntry | None:
+    if not isinstance(value, dict):
+        return None
+
+    device_id = value.get("device_id")
+    device_label = value.get("device_label")
+    owner_label = value.get("owner_label")
+    status = value.get("status")
+    last_seen_at = value.get("last_seen_at")
+    is_active = value.get("is_active")
+
+    if (
+        not isinstance(device_id, str)
+        or not isinstance(device_label, str)
+        or not isinstance(status, str)
+        or not isinstance(is_active, bool)
+    ):
+        return None
+
+    return TrustedDeviceEntry(
+        device_id=device_id,
+        device_label=device_label,
+        owner_label=owner_label if isinstance(owner_label, str) else None,
+        status=status,
+        last_seen_at=last_seen_at if isinstance(last_seen_at, str) else None,
+        is_active=is_active,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TaskServerClient:
     server_url: str
@@ -281,8 +327,13 @@ class TaskServerClient:
     def create_task(
         self, telegram_user_id: int, chat_id: int, risk: str, intent: str
     ) -> TaskWorkflowResult:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+
+        if resolved_device_id is None:
+            return TaskWorkflowResult(status="ignored")
+
         payload = {
-            "device_id": self.device_id,
+            "device_id": resolved_device_id,
             "intent": intent,
             "source": "telegram",
             "risk": risk,
@@ -298,8 +349,13 @@ class TaskServerClient:
         value: str,
         challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+
+        if resolved_device_id is None:
+            return TaskWorkflowResult(status="ignored")
+
         payload: dict[str, object] = {
-            "device_id": self.device_id,
+            "device_id": resolved_device_id,
             "telegram_user_id": telegram_user_id,
             "chat_id": chat_id,
             "value": value,
@@ -318,8 +374,13 @@ class TaskServerClient:
         decision: str,
         challenge_id: str | None = None,
     ) -> TaskWorkflowResult:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+
+        if resolved_device_id is None:
+            return TaskWorkflowResult(status="ignored")
+
         payload: dict[str, object] = {
-            "device_id": self.device_id,
+            "device_id": resolved_device_id,
             "telegram_user_id": telegram_user_id,
             "chat_id": chat_id,
             "decision": decision,
@@ -333,8 +394,13 @@ class TaskServerClient:
     def fetch_task(self, task_id: str) -> TaskStatusResult:
         return parse_task_status_item(self._get_json(f"/api/tasks/{task_id}"))
 
-    def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
-        items = self._fetch_task_history(chat_id=chat_id)
+    def fetch_latest_task(self, telegram_user_id: int, chat_id: int) -> TaskStatusResult:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+
+        if resolved_device_id is None:
+            return TaskStatusResult(found=False)
+
+        items = self._fetch_task_history(device_id=resolved_device_id, chat_id=chat_id)
 
         if len(items) == 0:
             return TaskStatusResult(found=False)
@@ -347,18 +413,32 @@ class TaskServerClient:
             error_text=items[0].error_text,
         )
 
-    def fetch_active_queue(self) -> list[TaskSummaryResult]:
+    def fetch_active_queue(self, telegram_user_id: int) -> list[TaskSummaryResult]:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+        if resolved_device_id is None:
+            return []
+
         return [
             item
-            for item in self._fetch_task_history()
+            for item in self._fetch_task_history(device_id=resolved_device_id)
             if item.status in ACTIVE_TASK_STATUSES
         ]
 
-    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]:
-        return self._fetch_task_history()[:limit]
+    def fetch_recent_commands(
+        self, telegram_user_id: int, limit: int = 5
+    ) -> list[TaskSummaryResult]:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+        if resolved_device_id is None:
+            return []
 
-    def fetch_device_status(self) -> DeviceStatusResult:
-        parsed = self._get_json(f"/api/devices/{self.device_id}")
+        return self._fetch_task_history(device_id=resolved_device_id)[:limit]
+
+    def fetch_device_status(self, telegram_user_id: int) -> DeviceStatusResult:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+        if resolved_device_id is None:
+            return DeviceStatusResult(found=False)
+
+        parsed = self._get_json(f"/api/devices/{resolved_device_id}")
 
         if not isinstance(parsed, dict):
             return DeviceStatusResult(found=False)
@@ -370,7 +450,7 @@ class TaskServerClient:
         if not isinstance(device_id, str) or not isinstance(is_online, bool):
             return DeviceStatusResult(found=False)
 
-        queue = self.fetch_active_queue()
+        queue = self.fetch_active_queue(telegram_user_id)
         attention_count = sum(
             1 for item in queue if item.status in ATTENTION_TASK_STATUSES
         )
@@ -387,8 +467,12 @@ class TaskServerClient:
     def cancel_task(self, task_id: str) -> TaskStatusResult:
         return parse_task_status_item(self._post_json(f"/api/tasks/{task_id}/cancel", None))
 
-    def fetch_app_catalog(self) -> list[AppCatalogEntry]:
-        parsed = self._get_json(f"/api/apps?{urlencode({'device_id': self.device_id})}")
+    def fetch_app_catalog(self, telegram_user_id: int) -> list[AppCatalogEntry]:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+        if resolved_device_id is None:
+            return []
+
+        parsed = self._get_json(f"/api/apps?{urlencode({'device_id': resolved_device_id})}")
 
         if not isinstance(parsed, dict):
             return []
@@ -403,13 +487,64 @@ class TaskServerClient:
             if item is not None
         ]
 
-    def fetch_owner_profile_context(self) -> str | None:
-        parsed = self._get_json(f"/api/profile?{urlencode({'device_id': self.device_id})}")
+    def fetch_owner_profile_context(self, telegram_user_id: int) -> str | None:
+        resolved_device_id = self.resolve_active_device_id(telegram_user_id)
+        if resolved_device_id is None:
+            return None
+
+        parsed = self._get_json(f"/api/profile?{urlencode({'device_id': resolved_device_id})}")
         return build_owner_profile_context(parsed)
 
-    def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:
+    def fetch_trusted_devices(self, telegram_user_id: int) -> TrustedDeviceListResult:
+        parsed = self._get_json(f"/api/devices?{urlencode({'telegram_user_id': telegram_user_id})}")
+
+        if not isinstance(parsed, dict):
+            return TrustedDeviceListResult(
+                telegram_user_id=telegram_user_id,
+                active_device_id=None,
+                items=(),
+            )
+
+        active_device_id = parsed.get("active_device_id")
+        items = parsed.get("items")
+        if not isinstance(items, list):
+            items = []
+
+        return TrustedDeviceListResult(
+            telegram_user_id=telegram_user_id,
+            active_device_id=active_device_id if isinstance(active_device_id, str) else None,
+            items=tuple(
+                item
+                for item in (parse_trusted_device_item(value) for value in items)
+                if item is not None
+            ),
+        )
+
+    def use_device(
+        self, telegram_user_id: int, device_id: str
+    ) -> TrustedDeviceListResult | None:
+        parsed = self._post_json(
+            "/api/devices/use",
+            {
+                "telegram_user_id": telegram_user_id,
+                "device_id": device_id,
+            },
+        )
+
+        if not isinstance(parsed, dict):
+            return None
+
+        return self.fetch_trusted_devices(telegram_user_id)
+
+    def resolve_active_device_id(self, telegram_user_id: int) -> str | None:
+        devices = self.fetch_trusted_devices(telegram_user_id)
+        return devices.active_device_id
+
+    def _fetch_task_history(
+        self, *, device_id: str, chat_id: int | None = None
+    ) -> list[TaskSummaryResult]:
         query = {
-            "device_id": self.device_id,
+            "device_id": device_id,
             "include_history": "true",
         }
 

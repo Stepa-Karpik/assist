@@ -44,13 +44,19 @@ class SupportsTaskWorkflow(Protocol):
 
     def fetch_task(self, task_id: str) -> TaskStatusResult: ...
 
-    def fetch_latest_task(self, chat_id: int) -> TaskStatusResult: ...
+    def fetch_latest_task(
+        self, telegram_user_id: int, chat_id: int
+    ) -> TaskStatusResult: ...
 
-    def fetch_device_status(self) -> DeviceStatusResult: ...
+    def fetch_device_status(self, telegram_user_id: int) -> DeviceStatusResult: ...
 
-    def fetch_active_queue(self) -> list[TaskSummaryResult]: ...
+    def fetch_active_queue(
+        self, telegram_user_id: int
+    ) -> list[TaskSummaryResult]: ...
 
-    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]: ...
+    def fetch_recent_commands(
+        self, telegram_user_id: int, limit: int = 5
+    ) -> list[TaskSummaryResult]: ...
 
     def cancel_task(self, task_id: str) -> TaskStatusResult: ...
 
@@ -166,7 +172,7 @@ def get_decline_text() -> str:
 
 
 def get_setup_required_text() -> str:
-    return "Сначала настрой пароль и TOTP в GUI Karpik на ПК."
+    return "Сначала настройте пароль и TOTP в приложении Karpik на ПК."
 
 
 def get_device_status_text(
@@ -369,15 +375,15 @@ def resolve_status_command(
     chat_id: int,
     task_client: SupportsTaskWorkflow,
 ) -> str | None:
-    del telegram_user_id
-
     parsed = parse_status_command(text)
 
     if parsed is None:
         return "Используйте /status [task_id]."
 
     if parsed == "":
-        return map_task_status_response(task_client.fetch_latest_task(chat_id))
+        return map_task_status_response(
+            task_client.fetch_latest_task(telegram_user_id, chat_id)
+        )
 
     task_result = task_client.fetch_task(parsed)
 
@@ -387,8 +393,10 @@ def resolve_status_command(
     return map_task_status_response(task_result)
 
 
-def resolve_device_command(*, task_client: SupportsTaskWorkflow) -> str:
-    result = task_client.fetch_device_status()
+def resolve_device_command(
+    *, telegram_user_id: int, task_client: SupportsTaskWorkflow
+) -> str:
+    result = task_client.fetch_device_status(telegram_user_id)
 
     if not result.found or result.device_id is None or result.is_online is None:
         return "Статус ПК недоступен."
@@ -402,12 +410,16 @@ def resolve_device_command(*, task_client: SupportsTaskWorkflow) -> str:
     )
 
 
-def resolve_queue_command(*, task_client: SupportsTaskWorkflow) -> str:
-    return get_queue_summary_text(task_client.fetch_active_queue())
+def resolve_queue_command(
+    *, telegram_user_id: int, task_client: SupportsTaskWorkflow
+) -> str:
+    return get_queue_summary_text(task_client.fetch_active_queue(telegram_user_id))
 
 
-def resolve_last_command(*, task_client: SupportsTaskWorkflow) -> str:
-    return get_recent_commands_text(task_client.fetch_recent_commands(5))
+def resolve_last_command(
+    *, telegram_user_id: int, task_client: SupportsTaskWorkflow
+) -> str:
+    return get_recent_commands_text(task_client.fetch_recent_commands(telegram_user_id, 5))
 
 
 def resolve_cancel_command(text: str, *, task_client: SupportsTaskWorkflow) -> str:

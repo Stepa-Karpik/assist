@@ -12,6 +12,8 @@ def get_help_text() -> str:
             "Команды оператора:",
             "/pair <code>",
             "/pc",
+            "/devices",
+            "/use <device_id>",
             "/queue",
             "/last",
             "/apps",

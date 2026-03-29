@@ -88,18 +88,22 @@ class FakeTaskClient:
         del task_id
         return self.task_status_result
 
-    def fetch_latest_task(self, chat_id: int) -> TaskStatusResult:
-        del chat_id
+    def fetch_latest_task(self, telegram_user_id: int, chat_id: int) -> TaskStatusResult:
+        del telegram_user_id, chat_id
         return self.latest_task_result
 
-    def fetch_device_status(self) -> DeviceStatusResult:
+    def fetch_device_status(self, telegram_user_id: int) -> DeviceStatusResult:
+        del telegram_user_id
         return self.device_status_result
 
-    def fetch_active_queue(self) -> list[TaskSummaryResult]:
+    def fetch_active_queue(self, telegram_user_id: int) -> list[TaskSummaryResult]:
+        del telegram_user_id
         return self.queue_result
 
-    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]:
-        del limit
+    def fetch_recent_commands(
+        self, telegram_user_id: int, limit: int = 5
+    ) -> list[TaskSummaryResult]:
+        del telegram_user_id, limit
         return self.recent_result
 
     def cancel_task(self, task_id: str) -> TaskStatusResult:
@@ -243,7 +247,7 @@ def test_lockout_and_setup_required_are_reported() -> None:
     )
 
     assert locked_response == get_locked_text()
-    assert setup_response == get_setup_required_text()
+    assert setup_response == "Сначала настрой пароль и TOTP в GUI Karpik на ПК."
 
 
 def test_invalid_password_is_reported() -> None:
@@ -373,9 +377,18 @@ def test_device_queue_and_recent_operator_commands_are_reported() -> None:
         ],
     )
 
-    device_response = resolve_device_command(task_client=task_client)
-    queue_response = resolve_queue_command(task_client=task_client)
-    last_response = resolve_last_command(task_client=task_client)
+    device_response = resolve_device_command(
+        telegram_user_id=42,
+        task_client=task_client,
+    )
+    queue_response = resolve_queue_command(
+        telegram_user_id=42,
+        task_client=task_client,
+    )
+    last_response = resolve_last_command(
+        telegram_user_id=42,
+        task_client=task_client,
+    )
 
     assert device_response == get_device_status_text(
         device_id="stepa-desktop",

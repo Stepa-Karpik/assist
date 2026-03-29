@@ -21,6 +21,23 @@ class FakeResponse:
 def test_fetch_app_catalog_returns_server_items(monkeypatch) -> None:
     def fake_urlopen(request, timeout):
         del timeout
+
+        if request.full_url.endswith("/api/devices?telegram_user_id=42"):
+            return FakeResponse(
+                {
+                    "telegram_user_id": 42,
+                    "active_device_id": "desktop-local",
+                    "items": [
+                        {
+                            "device_id": "desktop-local",
+                            "device_label": "Desktop Local",
+                            "status": "online",
+                            "is_active": True,
+                        }
+                    ],
+                }
+            )
+
         assert request.full_url.endswith("/api/apps?device_id=desktop-local")
         return FakeResponse(
             {
@@ -43,7 +60,7 @@ def test_fetch_app_catalog_returns_server_items(monkeypatch) -> None:
         device_id="desktop-local",
     )
 
-    result = client.fetch_app_catalog()
+    result = client.fetch_app_catalog(telegram_user_id=42)
 
     assert len(result) == 1
     assert result[0].app_id == "app-osu"

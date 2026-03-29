@@ -107,17 +107,17 @@ class SupportsTaskWorkflow(Protocol):
         challenge_id: str | None = None,
     ) -> TaskWorkflowResult: ...
 
-    def fetch_device_status(self) -> object: ...
+    def fetch_device_status(self, telegram_user_id: int) -> object: ...
 
-    def fetch_active_queue(self) -> object: ...
+    def fetch_active_queue(self, telegram_user_id: int) -> object: ...
 
-    def fetch_recent_commands(self, limit: int = 5) -> object: ...
+    def fetch_recent_commands(self, telegram_user_id: int, limit: int = 5) -> object: ...
 
     def cancel_task(self, task_id: str) -> object: ...
 
-    def fetch_app_catalog(self) -> list[SupportsAppCatalogEntry]: ...
+    def fetch_app_catalog(self, telegram_user_id: int) -> list[SupportsAppCatalogEntry]: ...
 
-    def fetch_owner_profile_context(self) -> str | None: ...
+    def fetch_owner_profile_context(self, telegram_user_id: int) -> str | None: ...
 
 
 class SupportsChatResponder(Protocol):
@@ -239,8 +239,10 @@ def build_linked_app_buttons(
     )
 
 
-def build_app_catalog_reply(task_client: SupportsTaskWorkflow) -> BotReply:
-    catalog = task_client.fetch_app_catalog()
+def build_app_catalog_reply(
+    task_client: SupportsTaskWorkflow, telegram_user_id: int
+) -> BotReply:
+    catalog = task_client.fetch_app_catalog(telegram_user_id)
     buttons = build_linked_app_buttons(catalog)
 
     if len(buttons) == 0:
@@ -402,16 +404,31 @@ def _resolve_operator_text(
     lowered = normalized.lower()
 
     if DEVICE_TEXT_PATTERN.search(normalized):
-        return BotReply(text=resolve_device_command(task_client=task_client))
+        return BotReply(
+            text=resolve_device_command(
+                telegram_user_id=telegram_user_id,
+                task_client=task_client,
+            )
+        )
 
     if QUEUE_TEXT_PATTERN.search(normalized):
-        return BotReply(text=resolve_queue_command(task_client=task_client))
+        return BotReply(
+            text=resolve_queue_command(
+                telegram_user_id=telegram_user_id,
+                task_client=task_client,
+            )
+        )
 
     if LAST_TEXT_PATTERN.search(normalized):
-        return BotReply(text=resolve_last_command(task_client=task_client))
+        return BotReply(
+            text=resolve_last_command(
+                telegram_user_id=telegram_user_id,
+                task_client=task_client,
+            )
+        )
 
     if APPS_TEXT_PATTERN.search(normalized):
-        return build_app_catalog_reply(task_client)
+        return build_app_catalog_reply(task_client, telegram_user_id)
 
     cancel_match = CANCEL_TEXT_PATTERN.search(normalized)
     if cancel_match is not None:
@@ -446,7 +463,7 @@ def _resolve_operator_text(
             store=store,
         )
 
-    catalog = task_client.fetch_app_catalog()
+    catalog = task_client.fetch_app_catalog(telegram_user_id)
     app_matches = find_matching_apps(query, catalog)
 
     if len(app_matches) == 1:
@@ -548,7 +565,9 @@ def process_text_message(
             return BotReply(
                 text=chat_responder.reply(
                     normalized_text,
-                    owner_profile_context=task_client.fetch_owner_profile_context(),
+                    owner_profile_context=task_client.fetch_owner_profile_context(
+                        telegram_user_id
+                    ),
                 )
             )
 

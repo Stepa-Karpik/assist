@@ -118,13 +118,18 @@ class FakeTaskClient:
         )
         return self.decision_result
 
-    def fetch_device_status(self) -> DeviceStatusResult:
+    def fetch_device_status(self, telegram_user_id: int) -> DeviceStatusResult:
+        assert telegram_user_id == 42
         return self.device_status_result
 
-    def fetch_active_queue(self) -> list[TaskSummaryResult]:
+    def fetch_active_queue(self, telegram_user_id: int) -> list[TaskSummaryResult]:
+        assert telegram_user_id == 42
         return self.queue_result
 
-    def fetch_recent_commands(self, limit: int = 5) -> list[TaskSummaryResult]:
+    def fetch_recent_commands(
+        self, telegram_user_id: int, limit: int = 5
+    ) -> list[TaskSummaryResult]:
+        assert telegram_user_id == 42
         del limit
         return self.recent_result
 
@@ -137,10 +142,12 @@ class FakeTaskClient:
         )
         return self.cancel_result
 
-    def fetch_app_catalog(self) -> list[FakeAppCatalogEntry]:
+    def fetch_app_catalog(self, telegram_user_id: int) -> list[FakeAppCatalogEntry]:
+        assert telegram_user_id == 42
         return self.app_catalog
 
-    def fetch_owner_profile_context(self) -> str | None:
+    def fetch_owner_profile_context(self, telegram_user_id: int) -> str | None:
+        assert telegram_user_id == 42
         return self.owner_profile_context
 
 

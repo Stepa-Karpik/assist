@@ -24,6 +24,7 @@ from app.conversation import (
     process_manual_task_command,
     process_text_message,
 )
+from app.handlers.devices import resolve_devices_command, resolve_use_command
 from app.delivery import run_delivery_poll_loop
 from app.delivery_client import DeliveryServerClient
 from app.handlers.help import get_help_text
@@ -78,7 +79,6 @@ def create_dispatcher(
     resolved_settings = settings or get_settings()
     resolved_pairing_client = pairing_client or PairingServerClient(
         server_url=resolved_settings.server_url,
-        device_id=resolved_settings.device_id,
         wait_seconds=resolved_settings.pair_wait_seconds,
     )
     resolved_task_client = task_client or TaskServerClient(
@@ -116,8 +116,36 @@ def create_dispatcher(
 
     @dispatcher.message(Command("apps"))
     async def apps_handler(message: Message) -> None:
-        reply = build_app_catalog_reply(resolved_task_client)
+        if message.from_user is None:
+            return
+
+        reply = build_app_catalog_reply(resolved_task_client, message.from_user.id)
         await message.answer(reply.text or "", reply_markup=to_inline_keyboard(reply))
+
+    @dispatcher.message(Command("devices"))
+    async def devices_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        await message.answer(
+            resolve_devices_command(
+                telegram_user_id=message.from_user.id,
+                task_client=resolved_task_client,
+            )
+        )
+
+    @dispatcher.message(Command("use"))
+    async def use_handler(message: Message) -> None:
+        if message.from_user is None:
+            return
+
+        await message.answer(
+            resolve_use_command(
+                message.text or "",
+                telegram_user_id=message.from_user.id,
+                task_client=resolved_task_client,
+            )
+        )
 
     @dispatcher.message(Command("pair"))
     async def pair_handler(message: Message) -> None:
@@ -240,15 +268,39 @@ def create_dispatcher(
     @dispatcher.message(Command("pc"))
     @dispatcher.message(Command("device"))
     async def device_handler(message: Message) -> None:
-        await message.answer(resolve_device_command(task_client=resolved_task_client))
+        if message.from_user is None:
+            return
+
+        await message.answer(
+            resolve_device_command(
+                telegram_user_id=message.from_user.id,
+                task_client=resolved_task_client,
+            )
+        )
 
     @dispatcher.message(Command("queue"))
     async def queue_handler(message: Message) -> None:
-        await message.answer(resolve_queue_command(task_client=resolved_task_client))
+        if message.from_user is None:
+            return
+
+        await message.answer(
+            resolve_queue_command(
+                telegram_user_id=message.from_user.id,
+                task_client=resolved_task_client,
+            )
+        )
 
     @dispatcher.message(Command("last"))
     async def last_handler(message: Message) -> None:
-        await message.answer(resolve_last_command(task_client=resolved_task_client))
+        if message.from_user is None:
+            return
+
+        await message.answer(
+            resolve_last_command(
+                telegram_user_id=message.from_user.id,
+                task_client=resolved_task_client,
+            )
+        )
 
     @dispatcher.message(Command("kill"))
     async def kill_handler(message: Message) -> None:
@@ -289,15 +341,30 @@ def create_dispatcher(
         text = message.text or ""
 
         if is_device_command(text):
-            await message.answer(resolve_device_command(task_client=resolved_task_client))
+            await message.answer(
+                resolve_device_command(
+                    telegram_user_id=message.from_user.id,
+                    task_client=resolved_task_client,
+                )
+            )
             return
 
         if is_queue_command(text):
-            await message.answer(resolve_queue_command(task_client=resolved_task_client))
+            await message.answer(
+                resolve_queue_command(
+                    telegram_user_id=message.from_user.id,
+                    task_client=resolved_task_client,
+                )
+            )
             return
 
         if is_last_command(text):
-            await message.answer(resolve_last_command(task_client=resolved_task_client))
+            await message.answer(
+                resolve_last_command(
+                    telegram_user_id=message.from_user.id,
+                    task_client=resolved_task_client,
+                )
+            )
             return
 
         response = await asyncio.to_thread(

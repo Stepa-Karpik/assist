@@ -18,6 +18,8 @@ def test_help_text_lists_natural_language_examples_and_manual_fallbacks() -> Non
     assert "запусти osu" in help_text
     assert "скинь файл с рабочего стола hack.pptx" in help_text
     assert "/pc" in help_text
+    assert "/devices" in help_text
+    assert "/use <device_id>" in help_text
     assert "/queue" in help_text
     assert "/last" in help_text
     assert "/apps" in help_text
