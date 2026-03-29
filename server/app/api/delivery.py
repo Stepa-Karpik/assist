@@ -6,8 +6,8 @@ router = APIRouter(tags=["bot-delivery"])
 
 
 @router.get("/bot/outbox", response_model=DeliveryEventListResponse)
-def list_bot_outbox(device_id: str, request: Request) -> DeliveryEventListResponse:
-    return DeliveryEventListResponse(items=request.app.state.delivery_store.list_pending(device_id))
+def list_bot_outbox(request: Request) -> DeliveryEventListResponse:
+    return DeliveryEventListResponse(items=request.app.state.delivery_store.list_pending())
 
 
 @router.post("/bot/outbox/{event_id}/ack", response_model=DeliveryAckResponse)

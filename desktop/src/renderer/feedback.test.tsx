@@ -113,7 +113,7 @@ describe("desktop renderer feedback", () => {
     saveAppRegistryEntry.mockResolvedValue(await getAppsState());
     removeAppRegistryEntry.mockResolvedValue(await getAppsState());
 
-    window.karpik = {
+    window.karpik = ({
       view: "main",
       getActivityLog: vi.fn(async () => []),
       getAppsState,
@@ -124,6 +124,12 @@ describe("desktop renderer feedback", () => {
         startHiddenOnLaunch: true,
         closeToTrayOnClose: true
       })),
+      getDeviceIdentity: vi.fn(async () => ({
+        deviceId: "desktop-local",
+        deviceLabel: "Desktop Local",
+        createdAt: "2026-03-25T00:00:00.000Z"
+      })),
+      getOnboardingStatus: undefined,
       getOwnerProfileState,
       getAuthConfigState: vi.fn(async () => ({
         passwordConfigured: false,
@@ -258,7 +264,27 @@ describe("desktop renderer feedback", () => {
         }
       })),
       saveAuthConfig,
+      saveDeviceLabel: vi.fn(async () => ({
+        deviceId: "desktop-local",
+        deviceLabel: "Desktop Local",
+        createdAt: "2026-03-25T00:00:00.000Z"
+      })),
       saveOwnerProfile,
+      registerDevice: vi.fn(async () => ({
+        device_id: "desktop-local",
+        device_label: "Desktop Local",
+        owner_label: "Степан Карпов",
+        status: "online",
+        last_seen_at: "2026-03-25T00:00:00.000Z",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z"
+      })),
+      createOnboardingToken: vi.fn(async () => ({
+        device_id: "desktop-local",
+        token: "token-123",
+        expires_at: "2026-03-25T00:05:00.000Z",
+        start_link: "https://t.me/Karpik?start=pair_token-123"
+      })),
       saveAppPreferences: vi.fn(async (payload) => ({
         launchAtLogin: Boolean(payload.launchAtLogin),
         notificationsEnabled: Boolean(payload.notificationsEnabled),
@@ -269,7 +295,7 @@ describe("desktop renderer feedback", () => {
       saveChatWorkspaceBinding,
       saveCodexConfig,
       removeAppRegistryEntry
-    };
+    } as unknown as NonNullable<Window["karpik"]>);
   });
 
   afterEach(() => {

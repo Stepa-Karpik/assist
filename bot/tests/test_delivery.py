@@ -1,5 +1,22 @@
+import json
+
+import app.delivery_client as delivery_client_module
 from app.delivery import deliver_outbox_cycle, render_delivery_text
-from app.delivery_client import DeliveryEvent
+from app.delivery_client import DeliveryEvent, DeliveryServerClient
+
+
+class FakeResponse:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode("utf-8")
 
 
 class FakeDeliveryClient:
@@ -153,3 +170,18 @@ def test_delivery_cycle_prefers_document_sender_for_file_artifacts() -> None:
 
     assert sent_documents == [(5001, render_delivery_text(event), event)]
     assert client.ack_calls == ["evt-5"]
+
+
+def test_delivery_client_fetches_shared_outbox_without_device_query(monkeypatch) -> None:
+    captured_urls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        del timeout
+        captured_urls.append(request.full_url)
+        return FakeResponse({"items": []})
+
+    monkeypatch.setattr(delivery_client_module, "urlopen", fake_urlopen)
+    client = DeliveryServerClient(server_url="http://127.0.0.1:8000")
+
+    assert client.fetch_pending_events() == []
+    assert captured_urls == ["http://127.0.0.1:8000/api/bot/outbox"]

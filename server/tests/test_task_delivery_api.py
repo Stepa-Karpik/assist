@@ -10,19 +10,29 @@ def setup_function() -> None:
     app.state.task_store.reset()
     app.state.challenge_store.reset()
     app.state.delivery_store.reset()
+    app.state.device_registry.reset()
 
 
 def trust_telegram_user(
     *, device_id: str = "desktop-local", telegram_user_id: int = 101, chat_id: int = 5001
 ) -> None:
     client.post(
+        "/api/devices/register",
+        json={
+            "device_id": device_id,
+            "device_label": device_id,
+            "owner_label": "Test User",
+        },
+    )
+    client.post(
         "/api/pairing/open",
         json={
             "device_id": device_id,
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
-    event_response = client.post(
+    client.post(
         "/api/bot/pair-attempt",
         json={
             "device_id": device_id,
@@ -30,14 +40,6 @@ def trust_telegram_user(
             "chat_id": chat_id,
             "code": "ABC123",
             "wait_seconds": 0,
-        },
-    )
-    event_id = event_response.json()["event_id"]
-    client.post(
-        f"/api/events/{event_id}/resolve",
-        json={
-            "result": "paired",
-            "trusted_telegram_user_id": telegram_user_id,
         },
     )
 
@@ -53,6 +55,28 @@ def create_telegram_task() -> str:
             "risk": "low",
             "telegram_user_id": 101,
             "chat_id": 5001,
+        },
+    )
+    return response.json()["task"]["task_id"]
+
+
+def create_telegram_task_for_device(
+    *,
+    device_id: str,
+    telegram_user_id: int,
+    chat_id: int,
+    intent: str = "status",
+) -> str:
+    trust_telegram_user(device_id=device_id, telegram_user_id=telegram_user_id, chat_id=chat_id)
+    response = client.post(
+        "/api/tasks",
+        json={
+            "device_id": device_id,
+            "intent": intent,
+            "source": "telegram",
+            "risk": "low",
+            "telegram_user_id": telegram_user_id,
+            "chat_id": chat_id,
         },
     )
     return response.json()["task"]["task_id"]
@@ -80,7 +104,7 @@ def test_completing_telegram_task_creates_done_delivery_event() -> None:
         json={"result_text": "desktop-local is online"},
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -98,7 +122,7 @@ def test_failing_telegram_task_creates_failed_delivery_event() -> None:
         json={"error_text": "Unsupported task intent."},
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -120,7 +144,7 @@ def test_blocked_telegram_task_creates_failed_delivery_event() -> None:
         json={"error_text": "Rejected locally."},
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -139,7 +163,7 @@ def test_cancelled_telegram_task_creates_failed_delivery_event() -> None:
         json={"error_text": "Cancelled by operator."},
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -157,7 +181,7 @@ def test_desktop_origin_task_does_not_create_delivery_event() -> None:
         json={"result_text": "desktop-local is online"},
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert response.json()["items"] == []
@@ -171,11 +195,11 @@ def test_acknowledging_delivery_event_removes_it_from_pending_list() -> None:
         f"/api/tasks/{task_id}/complete",
         json={"result_text": "desktop-local is online"},
     )
-    outbox_response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    outbox_response = client.get("/api/bot/outbox")
     event_id = outbox_response.json()["items"][0]["event_id"]
 
     ack_response = client.post(f"/api/bot/outbox/{event_id}/ack")
-    after_response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    after_response = client.get("/api/bot/outbox")
 
     assert ack_response.status_code == 200
     assert ack_response.json()["status"] == "delivered"
@@ -200,7 +224,7 @@ def test_completing_task_with_image_artifact_keeps_delivery_payload() -> None:
         },
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -227,7 +251,7 @@ def test_completing_task_with_file_artifact_keeps_delivery_payload() -> None:
         },
     )
 
-    response = client.get("/api/bot/outbox", params={"device_id": "desktop-local"})
+    response = client.get("/api/bot/outbox")
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
@@ -238,3 +262,35 @@ def test_completing_task_with_file_artifact_keeps_delivery_payload() -> None:
     )
     assert response.json()["items"][0]["artifact_file_name"] == "hack.pptx"
     assert response.json()["items"][0]["artifact_base64"] == "c2xpZGVz"
+
+
+def test_shared_bot_outbox_returns_pending_events_for_multiple_devices() -> None:
+    first_task_id = create_telegram_task_for_device(
+        device_id="desktop-alpha",
+        telegram_user_id=101,
+        chat_id=5001,
+    )
+    second_task_id = create_telegram_task_for_device(
+        device_id="desktop-beta",
+        telegram_user_id=202,
+        chat_id=6001,
+        intent="screenshot screen-1",
+    )
+
+    client.post(f"/api/tasks/{first_task_id}/start")
+    client.post(
+        f"/api/tasks/{first_task_id}/complete",
+        json={"result_text": "desktop-alpha is online"},
+    )
+
+    client.post(f"/api/tasks/{second_task_id}/start")
+    client.post(
+        f"/api/tasks/{second_task_id}/complete",
+        json={"result_text": "Screenshot captured."},
+    )
+
+    response = client.get("/api/bot/outbox")
+
+    assert response.status_code == 200
+    task_ids = {item["task_id"] for item in response.json()["items"]}
+    assert task_ids == {first_task_id, second_task_id}

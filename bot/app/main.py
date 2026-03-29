@@ -83,7 +83,6 @@ def create_dispatcher(
     )
     resolved_task_client = task_client or TaskServerClient(
         server_url=resolved_settings.server_url,
-        device_id=resolved_settings.device_id,
         wait_seconds=resolved_settings.auth_wait_seconds,
     )
     resolved_intent_resolver = (
@@ -403,7 +402,6 @@ async def main() -> None:
     dispatcher = create_dispatcher(settings=settings)
     delivery_client = DeliveryServerClient(
         server_url=settings.server_url,
-        device_id=settings.device_id,
         wait_seconds=settings.auth_wait_seconds,
     )
     delivery_task = asyncio.create_task(

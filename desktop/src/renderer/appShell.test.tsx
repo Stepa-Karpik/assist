@@ -31,10 +31,16 @@ const saveOwnerProfile = vi.fn(async (payload: object) => ({
 }));
 
 beforeEach(() => {
-  window.karpik = {
+  window.karpik = ({
     view: "main",
     getOwnerProfileState,
     saveOwnerProfile,
+    getDeviceIdentity: vi.fn(async () => ({
+      deviceId: "stepa-desktop",
+      deviceLabel: "Stepa Desktop",
+      createdAt: "2026-03-28T00:00:00.000Z"
+    })),
+    getOnboardingStatus: undefined,
     getRuntimeStatus: vi.fn(async () => ({
       deviceId: "stepa-desktop",
       serverUrl: "http://127.0.0.1:8080",
@@ -151,10 +157,30 @@ beforeEach(() => {
     retryTask: vi.fn(),
     sendLocalChatMessage: vi.fn(async () => null),
     saveAuthConfig: vi.fn(),
+    saveDeviceLabel: vi.fn(async () => ({
+      deviceId: "stepa-desktop",
+      deviceLabel: "Stepa Desktop",
+      createdAt: "2026-03-28T00:00:00.000Z"
+    })),
     saveAppPreferences: vi.fn(),
     saveAppRegistryEntry: vi.fn(async () => ({
       state: { items: [] },
       syncState: "synced" as const
+    })),
+    registerDevice: vi.fn(async () => ({
+      device_id: "stepa-desktop",
+      device_label: "Stepa Desktop",
+      owner_label: "Степан Карпов",
+      status: "online",
+      last_seen_at: "2026-03-28T00:00:00.000Z",
+      created_at: "2026-03-28T00:00:00.000Z",
+      updated_at: "2026-03-28T00:00:00.000Z"
+    })),
+    createOnboardingToken: vi.fn(async () => ({
+      device_id: "stepa-desktop",
+      token: "token-123",
+      expires_at: "2026-03-28T00:05:00.000Z",
+      start_link: "https://t.me/Karpik?start=pair_token-123"
     })),
     saveChatWorkspaceBinding: vi.fn(),
     saveCodexConfig: vi.fn(),
@@ -162,7 +188,7 @@ beforeEach(() => {
       state: { items: [] },
       syncState: "synced" as const
     }))
-  };
+  } as unknown as NonNullable<Window["karpik"]>);
 });
 
 afterEach(() => {

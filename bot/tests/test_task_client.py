@@ -55,10 +55,7 @@ def test_fetch_app_catalog_returns_server_items(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(task_client_module, "urlopen", fake_urlopen)
-    client = TaskServerClient(
-        server_url="http://127.0.0.1:8000",
-        device_id="desktop-local",
-    )
+    client = TaskServerClient(server_url="http://127.0.0.1:8000")
 
     result = client.fetch_app_catalog(telegram_user_id=42)
 
@@ -83,10 +80,7 @@ def test_consume_start_link_returns_server_payload(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(task_client_module, "urlopen", fake_urlopen)
-    client = TaskServerClient(
-        server_url="http://127.0.0.1:8000",
-        device_id="desktop-local",
-    )
+    client = TaskServerClient(server_url="http://127.0.0.1:8000")
 
     result = client.consume_start_link("token-123", telegram_user_id=42)
 

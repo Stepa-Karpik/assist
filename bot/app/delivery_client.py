@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 DeliveryKind = Literal["task_done", "task_failed"]
@@ -95,13 +94,11 @@ def parse_delivery_event(value: object) -> DeliveryEvent | None:
 @dataclass(frozen=True, slots=True)
 class DeliveryServerClient:
     server_url: str
-    device_id: str
     wait_seconds: float = 5.0
 
     def fetch_pending_events(self) -> list[DeliveryEvent]:
-        query = urlencode({"device_id": self.device_id})
         request = Request(
-            url=f"{self.server_url.rstrip('/')}/api/bot/outbox?{query}",
+            url=f"{self.server_url.rstrip('/')}/api/bot/outbox",
             method="GET",
         )
 

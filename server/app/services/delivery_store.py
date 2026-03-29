@@ -47,12 +47,13 @@ class InMemoryDeliveryStore:
 
         return event
 
-    def list_pending(self, device_id: str) -> list[DeliveryEvent]:
+    def list_pending(self, device_id: str | None = None) -> list[DeliveryEvent]:
         with self._lock:
             return [
                 event.model_copy()
                 for event in self._events.values()
-                if event.device_id == device_id and event.status == "pending"
+                if event.status == "pending"
+                and (device_id is None or event.device_id == device_id)
             ]
 
     def ack(self, event_id: str) -> DeliveryAckResponse | None:

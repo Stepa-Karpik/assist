@@ -9,19 +9,30 @@ def setup_function() -> None:
     app.state.pairing_store.reset()
     app.state.task_store.reset()
     app.state.challenge_store.reset()
+    app.state.delivery_store.reset()
+    app.state.device_registry.reset()
 
 
 def trust_telegram_user(
     *, device_id: str = "desktop-local", telegram_user_id: int = 101, chat_id: int = 5001
 ) -> None:
     client.post(
+        "/api/devices/register",
+        json={
+            "device_id": device_id,
+            "device_label": device_id,
+            "owner_label": "Test User",
+        },
+    )
+    client.post(
         "/api/pairing/open",
         json={
             "device_id": device_id,
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
-    event_response = client.post(
+    client.post(
         "/api/bot/pair-attempt",
         json={
             "device_id": device_id,
@@ -29,14 +40,6 @@ def trust_telegram_user(
             "chat_id": chat_id,
             "code": "ABC123",
             "wait_seconds": 0,
-        },
-    )
-    event_id = event_response.json()["event_id"]
-    client.post(
-        f"/api/events/{event_id}/resolve",
-        json={
-            "result": "paired",
-            "trusted_telegram_user_id": telegram_user_id,
         },
     )
 

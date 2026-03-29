@@ -328,7 +328,6 @@ def parse_trusted_device_item(value: object) -> TrustedDeviceEntry | None:
 @dataclass(frozen=True, slots=True)
 class TaskServerClient:
     server_url: str
-    device_id: str
     wait_seconds: float = 5.0
 
     def create_task(

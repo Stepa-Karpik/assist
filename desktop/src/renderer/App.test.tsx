@@ -98,6 +98,40 @@ const getAppPreferences = vi.fn<() => Promise<AppPreferences>>(async () => ({
   startHiddenOnLaunch: true,
   closeToTrayOnClose: true
 }));
+const getDeviceIdentity = vi.fn(async () => ({
+  deviceId: "desktop-local",
+  deviceLabel: "Desktop Local",
+  createdAt: "2026-03-24T00:00:00.000Z"
+}));
+const getOnboardingStatus = vi.fn(async () => ({
+  device_id: "desktop-local",
+  device_registered: true,
+  trusted_telegram_user_count: 1,
+  owner_profile_complete: true,
+  password_configured: true,
+  totp_configured: true,
+  completed: true
+}));
+const saveDeviceLabel = vi.fn(async (payload: { deviceLabel: string }) => ({
+  deviceId: "desktop-local",
+  deviceLabel: payload.deviceLabel,
+  createdAt: "2026-03-24T00:00:00.000Z"
+}));
+const registerDevice = vi.fn(async () => ({
+  device_id: "desktop-local",
+  device_label: "Desktop Local",
+  owner_label: "Степан Карпов",
+  status: "online",
+  last_seen_at: "2026-03-24T12:25:00.000Z",
+  created_at: "2026-03-24T00:00:00.000Z",
+  updated_at: "2026-03-24T12:25:00.000Z"
+}));
+const createOnboardingToken = vi.fn(async () => ({
+  device_id: "desktop-local",
+  token: "token-123",
+  expires_at: "2026-03-24T00:05:00.000Z",
+  start_link: "https://t.me/Karpik?start=pair_token-123"
+}));
 const saveAppPreferences = vi.fn(async () => ({
   launchAtLogin: true,
   notificationsEnabled: false,
@@ -490,12 +524,14 @@ const sendLocalChatMessage = vi.fn(
 describe("App navigation", () => {
   beforeEach(() => {
     localChatsState = [];
-    window.karpik = {
+    window.karpik = ({
       view: "main",
       getActivityLog,
       getAppsState,
       getAssistantProcesses,
       getAppPreferences,
+      getDeviceIdentity,
+      getOnboardingStatus: undefined,
       getOwnerProfileState,
       getAuthConfigState,
       createTotpEnrollment,
@@ -524,13 +560,16 @@ describe("App navigation", () => {
       submitQuickRequest,
       sendLocalChatMessage,
       saveAuthConfig,
+      saveDeviceLabel,
       saveAppRegistryEntry,
       saveAppPreferences,
       saveOwnerProfile,
+      registerDevice,
+      createOnboardingToken,
       saveChatWorkspaceBinding,
       saveCodexConfig,
       removeAppRegistryEntry
-    };
+    } as unknown as NonNullable<Window["karpik"]>);
   });
 
   afterEach(() => {
@@ -539,6 +578,8 @@ describe("App navigation", () => {
     getAppsState.mockClear();
     getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
+    getDeviceIdentity.mockClear();
+    getOnboardingStatus.mockClear();
     getOwnerProfileState.mockClear();
     getAuthConfigState.mockClear();
     createTotpEnrollment.mockClear();
@@ -567,9 +608,12 @@ describe("App navigation", () => {
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     saveAuthConfig.mockClear();
+    saveDeviceLabel.mockClear();
     saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
     saveOwnerProfile.mockClear();
+    registerDevice.mockClear();
+    createOnboardingToken.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
     removeAppRegistryEntry.mockClear();
