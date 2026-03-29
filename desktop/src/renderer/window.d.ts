@@ -40,6 +40,29 @@ type OwnerProfileState = {
   notes: string | null;
 };
 
+type DeviceIdentityState = {
+  deviceId: string;
+  deviceLabel: string;
+  createdAt: string;
+};
+
+type DeviceOnboardingStatus = {
+  device_id: string;
+  device_registered: boolean;
+  trusted_telegram_user_count: number;
+  owner_profile_complete: boolean;
+  password_configured: boolean;
+  totp_configured: boolean;
+  completed: boolean;
+};
+
+type DeviceOnboardingToken = {
+  device_id: string;
+  token: string;
+  expires_at: string;
+  start_link: string;
+};
+
 type AppRegistryItem = {
   appId: string;
   displayName: string;
@@ -213,6 +236,8 @@ declare global {
       getAppsState: () => Promise<AppRegistryState>;
       getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
+      getDeviceIdentity: () => Promise<DeviceIdentityState>;
+      getOnboardingStatus: () => Promise<DeviceOnboardingStatus>;
       getOwnerProfileState: () => Promise<OwnerProfileState | null>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       createTotpEnrollment: () => Promise<TotpEnrollment>;
@@ -260,8 +285,19 @@ declare global {
         detail: LocalChatDetail;
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
+      saveDeviceLabel: (payload: { deviceLabel: string }) => Promise<DeviceIdentityState>;
       saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
       saveOwnerProfile: (payload: Partial<OwnerProfileState>) => Promise<OwnerProfileState>;
+      registerDevice: () => Promise<{
+        device_id: string;
+        device_label: string;
+        owner_label: string | null;
+        status: string;
+        last_seen_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+      createOnboardingToken: () => Promise<DeviceOnboardingToken>;
       saveAppRegistryEntry: (payload: {
         appId?: string;
         displayName: string;

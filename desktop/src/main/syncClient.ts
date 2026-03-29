@@ -74,6 +74,44 @@ export type OwnerProfileSyncPayload = {
 
 export type OwnerProfileResponse = OwnerProfileSyncPayload;
 
+export type DeviceRegistrationInput = {
+  deviceLabel: string;
+  ownerLabel?: string | null;
+};
+
+export type DeviceRegistrationPayload = {
+  device_id: string;
+  device_label: string;
+  owner_label: string | null;
+};
+
+export type DeviceRegistrationResponse = {
+  device_id: string;
+  device_label: string;
+  owner_label: string | null;
+  status: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeviceOnboardingStatusResponse = {
+  device_id: string;
+  device_registered: boolean;
+  trusted_telegram_user_count: number;
+  owner_profile_complete: boolean;
+  password_configured: boolean;
+  totp_configured: boolean;
+  completed: boolean;
+};
+
+export type DeviceOnboardingTokenResponse = {
+  device_id: string;
+  token: string;
+  expires_at: string;
+  start_link: string;
+};
+
 export type RemoteTaskStatus =
   | "queued"
   | "awaiting_auth"
@@ -314,6 +352,17 @@ export function buildAppCatalogSyncPayload(
   };
 }
 
+export function buildDeviceRegistrationPayload(
+  deviceId: string,
+  input: DeviceRegistrationInput
+): DeviceRegistrationPayload {
+  return {
+    device_id: deviceId,
+    device_label: input.deviceLabel,
+    owner_label: input.ownerLabel ?? null
+  };
+}
+
 export function createSyncClient({
   serverUrl,
   deviceId,
@@ -329,6 +378,28 @@ export function createSyncClient({
           "Content-Type": "application/json"
         },
         body: JSON.stringify(buildOnlineEventPayload(deviceId))
+      });
+    },
+
+    registerDevice(input: DeviceRegistrationInput) {
+      return fetchImpl(`${baseUrl}/api/devices/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(buildDeviceRegistrationPayload(deviceId, input))
+      });
+    },
+
+    fetchDeviceOnboardingStatus() {
+      return fetchImpl(`${baseUrl}/api/devices/${deviceId}/onboarding`, {
+        method: "GET"
+      });
+    },
+
+    createOnboardingToken() {
+      return fetchImpl(`${baseUrl}/api/devices/${deviceId}/onboarding-token`, {
+        method: "POST"
       });
     },
 

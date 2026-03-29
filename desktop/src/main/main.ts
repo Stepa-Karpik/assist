@@ -21,6 +21,7 @@ import {
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
+import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { getDataRoot } from "./dataRoot";
 import { createKnowledgeStore } from "./knowledgeStore";
 import { LocalApprovalStore } from "./localApprovalStore";
@@ -37,7 +38,10 @@ import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
+  type DeviceOnboardingStatusResponse,
+  type DeviceOnboardingTokenResponse,
   type DevicePresenceResponse,
+  type DeviceRegistrationResponse,
   type RemotePairingState,
   type RemoteTaskRecord,
   type RemoteAppCatalogItem,
@@ -70,6 +74,7 @@ let appRegistryStore: AppRegistryStore | null = null;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
+let deviceIdentityStore: DeviceIdentityStore | null = null;
 let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
@@ -91,12 +96,12 @@ const pairingPollIntervalMs = 2_000;
 const taskPollIntervalMs = 2_000;
 const backgroundTaskSnapshotLimit = 25;
 const manualTaskHistoryLimit = 100;
-const deviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
+let currentDeviceId = process.env.KARPIK_DEVICE_ID ?? "desktop-local";
 const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
 const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
-const syncClient = createSyncClient({
+let syncClient = createSyncClient({
   serverUrl,
-  deviceId
+  deviceId: currentDeviceId
 });
 const devicePresenceTracker = createDevicePresenceTracker();
 
@@ -212,6 +217,37 @@ async function syncAuthConfigState() {
   if (!response.ok) {
     logResponseError("Syncing auth config state", response);
   }
+}
+
+function refreshSyncClientFromIdentity() {
+  if (deviceIdentityStore === null) {
+    return;
+  }
+
+  currentDeviceId = deviceIdentityStore.getState().deviceId;
+  syncClient = createSyncClient({
+    serverUrl,
+    deviceId: currentDeviceId
+  });
+}
+
+async function registerCurrentDevice(): Promise<DeviceRegistrationResponse> {
+  if (deviceIdentityStore === null) {
+    throw new Error("Device identity store is not initialized");
+  }
+
+  refreshSyncClientFromIdentity();
+  const identity = deviceIdentityStore.getState();
+  const response = await syncClient.registerDevice({
+    deviceLabel: identity.deviceLabel,
+    ownerLabel: ownerProfileStore?.getState().fullName ?? null
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to register device: ${response.status}`);
+  }
+
+  return (await response.json()) as DeviceRegistrationResponse;
 }
 
 async function syncOwnerProfileState() {
@@ -666,7 +702,7 @@ function registerIpcHandlers() {
     const devicePresence = devicePresenceTracker.getSnapshot();
 
     return {
-      deviceId,
+      deviceId: currentDeviceId,
       serverUrl,
       serverHeartbeatState: devicePresence.state,
       serverHeartbeatReachable: devicePresence.reachable,
@@ -727,6 +763,41 @@ function registerIpcHandlers() {
       return state;
     }
   );
+  ipcMain.handle("onboarding:get-identity", () => {
+    if (deviceIdentityStore === null) {
+      throw new Error("Device identity store is not initialized");
+    }
+
+    return deviceIdentityStore.getState();
+  });
+  ipcMain.handle("onboarding:save-device-label", async (_event, payload: { deviceLabel: string }) => {
+    if (deviceIdentityStore === null) {
+      throw new Error("Device identity store is not initialized");
+    }
+
+    const state = deviceIdentityStore.saveDeviceLabel(payload.deviceLabel);
+    await registerCurrentDevice();
+    return state;
+  });
+  ipcMain.handle("onboarding:register-device", async () => registerCurrentDevice());
+  ipcMain.handle("onboarding:get-status", async () => {
+    const response = await syncClient.fetchDeviceOnboardingStatus();
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch onboarding status: ${response.status}`);
+    }
+
+    return (await response.json()) as DeviceOnboardingStatusResponse;
+  });
+  ipcMain.handle("onboarding:create-token", async () => {
+    const response = await syncClient.createOnboardingToken();
+
+    if (!response.ok) {
+      throw new Error(`Failed to create onboarding token: ${response.status}`);
+    }
+
+    return (await response.json()) as DeviceOnboardingTokenResponse;
+  });
   ipcMain.handle("profile:save", async (_event, payload: OwnerProfileInput) => {
     if (ownerProfileStore === null) {
       throw new Error("Owner profile store is not initialized");
@@ -734,6 +805,7 @@ function registerIpcHandlers() {
 
     const state = ownerProfileStore.save(payload);
     await syncOwnerProfileState();
+    await registerCurrentDevice();
     return state;
   });
   ipcMain.handle("codex:save-config", (_event, payload: CodexConfigInput) => {
@@ -885,6 +957,11 @@ async function bootstrap() {
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
   });
+  deviceIdentityStore = new DeviceIdentityStore({
+    settingsRoot: runtimeFolders.settings,
+    legacyDeviceId: process.env.KARPIK_DEVICE_ID ?? null
+  });
+  refreshSyncClientFromIdentity();
   ownerProfileStore = new OwnerProfileStore({
     settingsRoot: runtimeFolders.settings
   });
@@ -894,8 +971,9 @@ async function bootstrap() {
   appPreferencesStore.applyLoginItemSettings(app);
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets,
-    totpAccountName: deviceId
+    totpAccountName: deviceIdentityStore.getState().deviceLabel
   });
+  await registerCurrentDevice();
   knowledgeStore = createKnowledgeStore({
     runtimeRoot: runtimeFolders.root
   });
@@ -927,7 +1005,7 @@ async function bootstrap() {
     );
   };
   taskExecutor = createTaskExecutor({
-    deviceId: process.env.KARPIK_DEVICE_ID ?? "desktop-local",
+    deviceId: currentDeviceId,
     userRoot: runtimeFolders.userRoot,
     resolveCodexWorkspace: (task) =>
       codexSettingsStore?.getWorkspaceForChat(task.chat_id).rootPath ??

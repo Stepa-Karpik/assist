@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("karpik", {
   getAppsState: () => ipcRenderer.invoke("apps:get-state"),
   getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
+  getDeviceIdentity: () => ipcRenderer.invoke("onboarding:get-identity"),
+  getOnboardingStatus: () => ipcRenderer.invoke("onboarding:get-status"),
   getOwnerProfileState: () => ipcRenderer.invoke("profile:get-state"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
   createTotpEnrollment: () => ipcRenderer.invoke("auth:create-totp-enrollment"),
@@ -48,6 +50,8 @@ contextBridge.exposeInMainWorld("karpik", {
   retryTask: (taskId: string) => ipcRenderer.invoke("tasks:retry", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),
+  saveDeviceLabel: (payload: { deviceLabel: string }) =>
+    ipcRenderer.invoke("onboarding:save-device-label", payload),
   saveAppPreferences: (payload: {
     launchAtLogin?: boolean;
     startHiddenOnLaunch?: boolean;
@@ -65,6 +69,8 @@ contextBridge.exposeInMainWorld("karpik", {
     bio?: string | null;
     notes?: string | null;
   }) => ipcRenderer.invoke("profile:save", payload),
+  registerDevice: () => ipcRenderer.invoke("onboarding:register-device"),
+  createOnboardingToken: () => ipcRenderer.invoke("onboarding:create-token"),
   saveAppRegistryEntry: (payload: {
     appId?: string;
     displayName: string;

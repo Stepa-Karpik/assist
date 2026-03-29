@@ -66,6 +66,15 @@ function normalizeProfileState(value: Partial<OwnerProfileState> | undefined): O
   };
 }
 
+export function isOwnerProfileComplete(profile: OwnerProfileState | Partial<OwnerProfileState>): boolean {
+  const normalizedProfile = normalizeProfileState(profile);
+  return Boolean(
+    normalizedProfile.fullName &&
+      normalizedProfile.gender &&
+      normalizedProfile.age !== null
+  );
+}
+
 export function buildOwnerProfileContext(profile: OwnerProfileState | Partial<OwnerProfileState>): string {
   const normalizedProfile = normalizeProfileState(profile);
   const lines: string[] = [];

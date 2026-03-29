@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildAppCatalogSyncPayload,
   buildAuthConfigStatusPayload,
+  buildDeviceRegistrationPayload,
   buildEventResolutionPayload,
   buildOnlineEventPayload,
   buildPairingOpenPayload,
@@ -66,7 +67,7 @@ describe("syncClient payload builders", () => {
         {
           appId: "app-osu",
           displayName: "osu! lazer",
-          aliases: ["osu", "осу", "osu lazer"],
+          aliases: ["osu", "РѕСЃСѓ", "osu lazer"],
           linked: true,
           source: "manual"
         }
@@ -77,17 +78,30 @@ describe("syncClient payload builders", () => {
         {
           app_id: "app-osu",
           display_name: "osu! lazer",
-          aliases: ["osu", "осу", "osu lazer"],
+          aliases: ["osu", "РѕСЃСѓ", "osu lazer"],
           linked: true,
           source: "manual"
         }
       ]
     });
   });
+
+  it("describes the device registration payload", () => {
+    expect(
+      buildDeviceRegistrationPayload("device-123", {
+        deviceLabel: "ws-01",
+        ownerLabel: "Иван Петров"
+      })
+    ).toEqual({
+      device_id: "device-123",
+      device_label: "ws-01",
+      owner_label: "Иван Петров"
+    });
+  });
 });
 
 describe("syncClient pairing api", () => {
-  it("opens pairing sessions, reads pairing state, syncs auth state, and resolves auth events", async () => {
+  it("opens pairing sessions, reads pairing state, syncs auth state, resolves auth events, and supports onboarding", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
     const client = createSyncClient({
       serverUrl: "http://127.0.0.1:8000/",
@@ -95,6 +109,12 @@ describe("syncClient pairing api", () => {
       fetchImpl
     });
 
+    await client.registerDevice({
+      deviceLabel: "ws-01",
+      ownerLabel: "Иван Петров"
+    });
+    await client.fetchDeviceOnboardingStatus();
+    await client.createOnboardingToken();
     await client.openPairingSession("ABC123", "2026-03-24T00:05:00.000Z");
     await client.fetchPairingState();
     await client.announceAuthConfigState({
@@ -109,7 +129,7 @@ describe("syncClient pairing api", () => {
       {
         appId: "app-osu",
         displayName: "osu! lazer",
-        aliases: ["osu", "осу", "osu lazer"],
+        aliases: ["osu", "РѕСЃСѓ", "osu lazer"],
         linked: true,
         source: "manual"
       }
@@ -128,6 +148,38 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
+      "http://127.0.0.1:8000/api/devices/register",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: "desktop-local",
+          device_label: "ws-01",
+          owner_label: "Иван Петров"
+        })
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/api/devices/desktop-local/onboarding",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/api/devices/desktop-local/onboarding-token",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
       "http://127.0.0.1:8000/api/pairing/open",
       expect.objectContaining({
         method: "POST",
@@ -143,7 +195,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      2,
+      5,
       "http://127.0.0.1:8000/api/pairing/state?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -151,7 +203,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      3,
+      6,
       "http://127.0.0.1:8000/api/auth/config/status",
       expect.objectContaining({
         method: "POST",
@@ -167,7 +219,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      4,
+      7,
       "http://127.0.0.1:8000/api/auth/events?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -175,7 +227,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      5,
+      8,
       "http://127.0.0.1:8000/api/auth/events/auth-1/resolve",
       expect.objectContaining({
         method: "POST",
@@ -189,7 +241,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      6,
+      9,
       "http://127.0.0.1:8000/api/apps/catalog",
       expect.objectContaining({
         method: "POST",
@@ -202,7 +254,7 @@ describe("syncClient pairing api", () => {
             {
               app_id: "app-osu",
               display_name: "osu! lazer",
-              aliases: ["osu", "осу", "osu lazer"],
+              aliases: ["osu", "РѕСЃСѓ", "osu lazer"],
               linked: true,
               source: "manual"
             }
@@ -212,7 +264,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      7,
+      10,
       "http://127.0.0.1:8000/api/apps?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -220,7 +272,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      8,
+      11,
       "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=25",
       expect.objectContaining({
         method: "GET"
@@ -228,7 +280,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      9,
+      12,
       "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=50",
       expect.objectContaining({
         method: "GET"
@@ -236,7 +288,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      10,
+      13,
       "http://127.0.0.1:8000/api/tasks/task-1",
       expect.objectContaining({
         method: "GET"
@@ -244,7 +296,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      11,
+      14,
       "http://127.0.0.1:8000/api/devices/desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -252,7 +304,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      12,
+      15,
       "http://127.0.0.1:8000/api/tasks/task-1/start",
       expect.objectContaining({
         method: "POST"
@@ -260,7 +312,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      13,
+      16,
       "http://127.0.0.1:8000/api/tasks/task-1/complete",
       expect.objectContaining({
         method: "POST",
@@ -274,7 +326,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      14,
+      17,
       "http://127.0.0.1:8000/api/tasks/task-2/fail",
       expect.objectContaining({
         method: "POST",
@@ -288,7 +340,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      15,
+      18,
       "http://127.0.0.1:8000/api/tasks/task-2/retry",
       expect.objectContaining({
         method: "POST"
