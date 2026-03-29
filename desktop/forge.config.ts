@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const config: ForgeConfig = {
@@ -13,7 +15,9 @@ const config: ForgeConfig = {
         name: "karpik",
         authors: "Stepa Karpik",
         owners: "Stepa Karpik",
-        setupExe: "KarpikSetup.exe"
+        setupExe: "KarpikSetup.exe",
+        setupIcon: path.resolve(__dirname, "build", "setup.ico"),
+        loadingGif: path.resolve(__dirname, "build", "loading.gif")
       }
     },
     {
