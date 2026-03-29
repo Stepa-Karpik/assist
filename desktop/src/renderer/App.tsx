@@ -590,7 +590,7 @@ function OnboardingView({
 
   if (isLoading) {
     return (
-      <main className="desktop-layout">
+      <main className="desktop-layout desktop-layout--standalone">
         <section className="page-shell">
           <p className="muted-text">Загрузка первичной настройки...</p>
         </section>
@@ -599,7 +599,7 @@ function OnboardingView({
   }
 
   return (
-    <main className="desktop-layout">
+    <main className="desktop-layout desktop-layout--standalone">
       <section className="page-shell profile-shell">
         <div className="page-header profile-shell__header">
           <div>
@@ -739,7 +739,7 @@ export default function App() {
 
   if (isOnboardingLoading) {
     return (
-      <main className="desktop-layout">
+      <main className="desktop-layout desktop-layout--standalone">
         <section className="page-shell">
           <p className="muted-text">Загрузка приложения...</p>
         </section>

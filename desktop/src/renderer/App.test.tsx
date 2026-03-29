@@ -629,6 +629,7 @@ describe("App navigation", () => {
     expect(
       await screen.findByText("Этот ПК уже привязан к Telegram. При желании можно открыть новый pairing-код.")
     ).toBeInTheDocument();
+    expect(document.querySelector("main.desktop-layout")).toHaveClass("desktop-layout--standalone");
 
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить в приложение" }));
 
