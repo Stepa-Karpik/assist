@@ -63,6 +63,7 @@ This behavior already exists partially, but it must become a verified product co
 - a user with multiple PCs should be able to target the correct device explicitly
 - Telegram requests must always resolve to a single target `device_id`
 - the desktop app must remain the owner of sensitive local-only data
+- the desktop UI must hide infrastructure details that ordinary users do not need, such as server IPs, raw feed URLs, and internal identifiers
 
 ### Non-goals
 
@@ -344,6 +345,28 @@ The assistant process must terminate only on explicit exit:
 - Windows shutdown/logoff
 
 This preserves background sync and Telegram responsiveness without forcing the user to keep the main window open.
+
+## UI visibility rules
+
+Technical infrastructure details must be hidden from ordinary product surfaces by default.
+
+Examples of data that should not be shown in normal UI:
+
+- raw server IP or base URL
+- update feed URL
+- internal API prefixes
+- low-level device identifiers unless the user is explicitly selecting between devices
+
+Allowed exceptions:
+
+- debug-oriented logs
+- developer-only troubleshooting views
+- explicit device-selection UX where a human-readable device label is primary and `device_id` is secondary or hidden
+
+The practical rule is:
+
+- user-facing screens should speak in product terms such as "server online", "desktop connected", "updates available", and "this PC"
+- infrastructure coordinates should stay out of the visible UI unless they are strictly required for troubleshooting
 
 ## Compatibility and migration
 
