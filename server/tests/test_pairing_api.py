@@ -7,13 +7,15 @@ client = TestClient(app)
 
 def setup_function() -> None:
     app.state.pairing_store.reset()
+    app.state.device_registry.reset()
 
 
-def test_open_pairing_session_marks_device_active() -> None:
+def test_open_pairing_session_persists_code_on_server() -> None:
     response = client.post(
         "/api/pairing/open",
         json={
             "device_id": "desktop-local",
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
@@ -21,13 +23,15 @@ def test_open_pairing_session_marks_device_active() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "active"
     assert response.json()["device_id"] == "desktop-local"
+    assert response.json()["code"] == "ABC123"
 
 
-def test_pair_attempt_creates_pending_event_for_active_device() -> None:
+def test_pair_attempt_with_valid_code_pairs_user_without_desktop_resolution() -> None:
     client.post(
         "/api/pairing/open",
         json={
             "device_id": "desktop-local",
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
@@ -35,73 +39,66 @@ def test_pair_attempt_creates_pending_event_for_active_device() -> None:
     response = client.post(
         "/api/bot/pair-attempt",
         json={
-            "device_id": "desktop-local",
             "telegram_user_id": 101,
             "chat_id": 5001,
             "code": "ABC123",
             "wait_seconds": 0,
         },
     )
-
-    assert response.status_code == 202
-    assert response.json()["status"] == "pending"
-
-
-def test_list_pending_events_returns_pair_attempt_for_device() -> None:
-    client.post(
-        "/api/pairing/open",
-        json={
-            "device_id": "desktop-local",
-            "expires_at": "2030-03-24T01:45:00Z",
-        },
-    )
-    client.post(
-        "/api/bot/pair-attempt",
-        json={
-            "device_id": "desktop-local",
-            "telegram_user_id": 101,
-            "chat_id": 5001,
-            "code": "ABC123",
-            "wait_seconds": 0,
-        },
-    )
-
-    response = client.get("/api/events", params={"device_id": "desktop-local"})
 
     assert response.status_code == 200
-    assert len(response.json()["items"]) == 1
-    assert response.json()["items"][0]["type"] == "pair_attempt"
-    assert response.json()["items"][0]["code"] == "ABC123"
+    assert response.json()["status"] == "paired"
+    assert app.state.device_registry.get_trusted_users("desktop-local") == [101]
+    assert app.state.device_registry.get_active_device(101) == "desktop-local"
 
 
-def test_resolve_event_stores_trusted_telegram_user() -> None:
+def test_pair_attempt_with_invalid_code_returns_invalid_code() -> None:
     client.post(
         "/api/pairing/open",
         json={
             "device_id": "desktop-local",
+            "code": "ABC123",
             "expires_at": "2030-03-24T01:45:00Z",
         },
     )
-    event_response = client.post(
+
+    response = client.post(
         "/api/bot/pair-attempt",
         json={
+            "telegram_user_id": 101,
+            "chat_id": 5001,
+            "code": "WRONG",
+            "wait_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "invalid_code"
+    assert app.state.device_registry.get_trusted_users("desktop-local") == []
+
+
+def test_pairing_state_returns_server_trust_for_device() -> None:
+    client.post(
+        "/api/pairing/open",
+        json={
             "device_id": "desktop-local",
+            "code": "ABC123",
+            "expires_at": "2030-03-24T01:45:00Z",
+        },
+    )
+    client.post(
+        "/api/bot/pair-attempt",
+        json={
             "telegram_user_id": 101,
             "chat_id": 5001,
             "code": "ABC123",
             "wait_seconds": 0,
         },
     )
-    event_id = event_response.json()["event_id"]
 
-    resolve_response = client.post(
-        f"/api/events/{event_id}/resolve",
-        json={
-            "result": "paired",
-            "trusted_telegram_user_id": 101,
-        },
-    )
+    response = client.get("/api/pairing/state", params={"device_id": "desktop-local"})
 
-    assert resolve_response.status_code == 200
-    assert resolve_response.json()["result"] == "paired"
-    assert resolve_response.json()["trusted_users"] == [101]
+    assert response.status_code == 200
+    assert response.json()["device_id"] == "desktop-local"
+    assert response.json()["trusted_telegram_user_ids"] == [101]
+    assert response.json()["status"] == "consumed"

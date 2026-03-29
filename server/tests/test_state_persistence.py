@@ -7,9 +7,10 @@ from uuid import uuid4
 import pytest
 
 from app.models.challenge import AuthConfigStatusRequest
-from app.models.pairing import PairAttemptEvent, PairAttemptResolutionRequest, PairingSession
+from app.models.pairing import PairingSession
 from app.models.task import TaskCreateRequest
 from app.services.challenge_store import InMemoryChallengeStore
+from app.services.device_registry import DeviceRegistry
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
 from app.services.task_store import InMemoryTaskStore
@@ -43,67 +44,49 @@ def test_task_store_reloads_task_history(state_file: Path) -> None:
 
 def test_pairing_store_reloads_trusted_users(state_file: Path) -> None:
     backend = JsonStateBackend(state_file)
-    first_store = InMemoryPairingStore(state_backend=backend)
+    first_registry = DeviceRegistry(state_backend=backend)
+    first_store = InMemoryPairingStore(state_backend=backend, device_registry=first_registry)
     first_store.open_session(
         PairingSession(
             device_id="desktop-local",
+            code="ABC123",
             status="active",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
     )
-    event = PairAttemptEvent(
-        device_id="desktop-local",
-        telegram_user_id=101,
-        chat_id=5001,
-        code="ABC123",
-    )
-    created = first_store.create_pair_attempt(event)
-    assert created is not None
-    first_store.resolve_event(
-        event.event_id,
-        PairAttemptResolutionRequest(result="paired", trusted_telegram_user_id=101),
-    )
+    assert first_store.submit_pair_attempt(code="ABC123", telegram_user_id=101) == "paired"
 
-    second_store = InMemoryPairingStore(state_backend=JsonStateBackend(state_file))
+    second_registry = DeviceRegistry(state_backend=JsonStateBackend(state_file))
+    second_store = InMemoryPairingStore(
+        state_backend=JsonStateBackend(state_file),
+        device_registry=second_registry,
+    )
 
     assert second_store.get_trusted_users("desktop-local") == [101]
 
 
-def test_pairing_store_reloads_active_session_and_pending_events(state_file: Path) -> None:
+def test_pairing_store_reloads_active_session(state_file: Path) -> None:
     backend = JsonStateBackend(state_file)
-    first_store = InMemoryPairingStore(state_backend=backend)
+    first_registry = DeviceRegistry(state_backend=backend)
+    first_store = InMemoryPairingStore(state_backend=backend, device_registry=first_registry)
     first_store.open_session(
         PairingSession(
             device_id="desktop-local",
+            code="ABC123",
             status="active",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
     )
-    first_event = PairAttemptEvent(
-        device_id="desktop-local",
-        telegram_user_id=101,
-        chat_id=5001,
-        code="ABC123",
+
+    second_registry = DeviceRegistry(state_backend=JsonStateBackend(state_file))
+    second_store = InMemoryPairingStore(
+        state_backend=JsonStateBackend(state_file),
+        device_registry=second_registry,
     )
+    state = second_store.get_state("desktop-local")
 
-    created = first_store.create_pair_attempt(first_event)
-
-    assert created is not None
-
-    second_store = InMemoryPairingStore(state_backend=JsonStateBackend(state_file))
-    pending_events = second_store.list_pending_events("desktop-local")
-    second_created = second_store.create_pair_attempt(
-        PairAttemptEvent(
-            device_id="desktop-local",
-            telegram_user_id=101,
-            chat_id=5001,
-            code="XYZ789",
-        )
-    )
-
-    assert len(pending_events) == 1
-    assert pending_events[0].event_id == first_event.event_id
-    assert second_created is not None
+    assert state.status == "active"
+    assert state.code == "ABC123"
 
 
 def test_challenge_store_reloads_auth_config(state_file: Path) -> None:

@@ -38,7 +38,10 @@ def create_app() -> FastAPI:
     application.state.owner_profile_store = InMemoryOwnerProfileStore(
         state_backend=state_backend
     )
-    application.state.pairing_store = InMemoryPairingStore(state_backend=state_backend)
+    application.state.pairing_store = InMemoryPairingStore(
+        state_backend=state_backend,
+        device_registry=application.state.device_registry,
+    )
     application.state.task_store = InMemoryTaskStore(state_backend=state_backend)
     application.state.challenge_store = InMemoryChallengeStore(state_backend=state_backend)
     application.state.delivery_store = InMemoryDeliveryStore(state_backend=state_backend)

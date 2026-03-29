@@ -1,155 +1,167 @@
-from datetime import UTC, datetime
-from threading import Event, Lock
+from __future__ import annotations
 
-from app.models.pairing import (
-    PairAttemptEvent,
-    PairAttemptResolutionRequest,
-    PairingSession,
-)
+from datetime import UTC, datetime
+from threading import Lock
+
+from pydantic import ValidationError
+
+from app.models.pairing import PairAttemptResult, PairingSession, PairingStateResponse
+from app.services.device_registry import DeviceRegistry
 from app.services.state_backend import StateBackend
 
 
 class InMemoryPairingStore:
-    def __init__(self, state_backend: StateBackend | None = None) -> None:
+    def __init__(
+        self,
+        state_backend: StateBackend | None = None,
+        *,
+        device_registry: DeviceRegistry | None = None,
+    ) -> None:
         self._state_backend = state_backend
+        self._device_registry = device_registry
         self._lock = Lock()
         self._sessions: dict[str, PairingSession] = {}
-        self._events: dict[str, PairAttemptEvent] = {}
-        self._trusted_users: dict[str, set[int]] = {}
-        self._waiters: dict[str, Event] = {}
         self._restore_state()
 
     def reset(self) -> None:
         with self._lock:
             self._sessions = {}
-            self._events = {}
-            self._trusted_users = {}
-            self._waiters = {}
             self._persist()
 
     def open_session(self, session: PairingSession) -> PairingSession:
         with self._lock:
             self._sessions[session.device_id] = session
-            self._persist()
-            return session
 
-    def close_session(self, device_id: str) -> PairingSession | None:
+            if self._device_registry is not None and self._device_registry.get_device(session.device_id) is None:
+                self._device_registry.register_device(
+                    device_id=session.device_id,
+                    device_label=session.device_id,
+                )
+
+            self._persist()
+            return session.model_copy()
+
+    def close_session(self, device_id: str) -> PairingStateResponse:
         with self._lock:
             session = self._sessions.get(device_id)
 
-            if session is None:
-                return None
+            if session is not None:
+                session.status = "cancelled"
+                self._persist()
 
-            session.status = "cancelled"
-            self._persist()
-            return session
+            return self._build_state(device_id)
 
-    def create_pair_attempt(self, event: PairAttemptEvent) -> PairAttemptEvent | None:
+    def submit_pair_attempt(
+        self,
+        *,
+        code: str,
+        telegram_user_id: int,
+        device_id: str | None = None,
+    ) -> PairAttemptResult:
         with self._lock:
-            session = self._sessions.get(event.device_id)
+            session = self._find_session_for_code(code, device_id)
 
-            if session is None or session.status != "active" or session.expires_at <= datetime.now(UTC):
-                return None
+            if session is None:
+                return "invalid_code"
 
             session.attempt_count += 1
-            self._events[event.event_id] = event
-            self._waiters[event.event_id] = Event()
-            self._persist()
-            return event
-
-    def list_pending_events(self, device_id: str) -> list[PairAttemptEvent]:
-        with self._lock:
-            return [
-                event.model_copy()
-                for event in self._events.values()
-                if event.device_id == device_id and event.status == "pending"
-            ]
-
-    def resolve_event(
-        self, event_id: str, payload: PairAttemptResolutionRequest
-    ) -> PairAttemptEvent | None:
-        with self._lock:
-            event = self._events.get(event_id)
-
-            if event is None:
-                return None
-
-            event.status = "resolved"
-            event.result = payload.result
-
-            if payload.result == "paired" and payload.trusted_telegram_user_id is not None:
-                trusted_users = self._trusted_users.setdefault(event.device_id, set())
-                trusted_users.add(payload.trusted_telegram_user_id)
-
-                session = self._sessions.get(event.device_id)
-                if session is not None:
-                    session.status = "consumed"
-
+            session.status = "consumed"
             self._persist()
 
-            waiter = self._waiters.get(event_id)
-            if waiter is not None:
-                waiter.set()
+        if self._device_registry is not None:
+            self._device_registry.grant_trust(
+                device_id=session.device_id,
+                telegram_user_id=telegram_user_id,
+                set_active=True,
+            )
 
-            return event.model_copy()
-
-    def wait_for_resolution(self, event_id: str, wait_seconds: float) -> PairAttemptEvent | None:
-        with self._lock:
-            event = self._events.get(event_id)
-            waiter = self._waiters.get(event_id)
-
-            if event is None:
-                return None
-
-            if event.status == "resolved" or wait_seconds <= 0 or waiter is None:
-                return event.model_copy()
-
-        waiter.wait(timeout=wait_seconds)
-
-        with self._lock:
-            event = self._events.get(event_id)
-            return event.model_copy() if event is not None else None
+        return "paired"
 
     def get_trusted_users(self, device_id: str) -> list[int]:
+        if self._device_registry is None:
+            return []
+
+        return self._device_registry.get_trusted_users(device_id)
+
+    def get_state(self, device_id: str) -> PairingStateResponse:
         with self._lock:
-            return sorted(self._trusted_users.get(device_id, set()))
+            return self._build_state(device_id)
+
+    def _find_session_for_code(self, code: str, device_id: str | None) -> PairingSession | None:
+        sessions = [self._sessions[device_id]] if device_id is not None and device_id in self._sessions else list(
+            self._sessions.values()
+        )
+
+        for session in sessions:
+            valid_session = self._get_valid_session(session.device_id)
+            if valid_session is None:
+                continue
+
+            if valid_session.code == code:
+                return valid_session
+
+        return None
+
+    def _get_valid_session(self, device_id: str) -> PairingSession | None:
+        session = self._sessions.get(device_id)
+
+        if session is None:
+            return None
+
+        if session.status != "active":
+            return session
+
+        if session.expires_at <= datetime.now(UTC):
+            session.status = "expired"
+            self._persist()
+
+        return session
+
+    def _build_state(self, device_id: str) -> PairingStateResponse:
+        session = self._get_valid_session(device_id)
+
+        if session is None:
+            return PairingStateResponse(
+                device_id=device_id,
+                code=None,
+                status="inactive",
+                expires_at=None,
+                trusted_telegram_user_ids=self.get_trusted_users(device_id),
+            )
+
+        return PairingStateResponse(
+            device_id=device_id,
+            code=session.code if session.status == "active" else None,
+            status=session.status,
+            expires_at=session.expires_at if session.status == "active" else None,
+            trusted_telegram_user_ids=self.get_trusted_users(device_id),
+        )
 
     def _restore_state(self) -> None:
         if self._state_backend is None:
             return
 
-        raw_users = self._state_backend.read_section("trusted_users", {})
         raw_sessions = self._state_backend.read_section("pairing_sessions", [])
-        raw_events = self._state_backend.read_section("pairing_events", [])
-        self._sessions = {
-            session.device_id: session
-            for session in (PairingSession.model_validate(item) for item in raw_sessions)
-        }
-        self._events = {
-            event.event_id: event
-            for event in (PairAttemptEvent.model_validate(item) for item in raw_events)
-        }
-        self._trusted_users = {
-            device_id: {int(user_id) for user_id in user_ids}
-            for device_id, user_ids in raw_users.items()
-        }
+        sessions: dict[str, PairingSession] = {}
+
+        for item in raw_sessions:
+            try:
+                session = PairingSession.model_validate(item)
+            except ValidationError:
+                # Legacy pairing state did not persist a pairing code. Those
+                # sessions cannot participate in the server-owned pairing flow,
+                # so they are safely discarded during migration.
+                continue
+
+            sessions[session.device_id] = session
+
+        self._sessions = sessions
 
     def _persist(self) -> None:
         if self._state_backend is None:
             return
 
         self._state_backend.write_section(
-            "trusted_users",
-            {
-                device_id: sorted(user_ids)
-                for device_id, user_ids in self._trusted_users.items()
-            },
-        )
-        self._state_backend.write_section(
             "pairing_sessions",
             [session.model_dump(mode="json") for session in self._sessions.values()],
-        )
-        self._state_backend.write_section(
-            "pairing_events",
-            [event.model_dump(mode="json") for event in self._events.values()],
         )

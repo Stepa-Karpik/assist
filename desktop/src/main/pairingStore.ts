@@ -1,12 +1,5 @@
 const PAIRING_TTL_MS = 5 * 60 * 1000;
 
-type PairingResult = "paired" | "invalid_code" | "ignored";
-
-type PairAttempt = {
-  code: string;
-  telegramUserId: number;
-};
-
 type PairingStoreOptions = {
   now?: () => Date;
   codeFactory?: () => string;
@@ -24,8 +17,10 @@ export type PairingState = {
   trustedTelegramUserIds: number[];
 };
 
-export type PairAttemptResolution = {
-  result: PairingResult;
+type RemotePairingState = {
+  code: string | null;
+  expiresAt: string | null;
+  isActive: boolean;
   trustedTelegramUserIds: number[];
 };
 
@@ -40,7 +35,7 @@ export class PairingStore {
 
   private activeSession: ActivePairingSession | null = null;
 
-  private trustedTelegramUserIds = new Set<number>();
+  private trustedTelegramUserIds: number[] = [];
 
   constructor({ now = () => new Date(), codeFactory = generatePairCode }: PairingStoreOptions = {}) {
     this.now = now;
@@ -63,6 +58,19 @@ export class PairingStore {
     return this.getState();
   }
 
+  applyRemoteState(state: RemotePairingState): PairingState {
+    this.trustedTelegramUserIds = [...state.trustedTelegramUserIds].sort((left, right) => left - right);
+    this.activeSession =
+      state.isActive && state.code !== null && state.expiresAt !== null
+        ? {
+            code: state.code,
+            expiresAt: state.expiresAt
+          }
+        : null;
+
+    return this.getState();
+  }
+
   getState(): PairingState {
     const session = this.getValidSession();
 
@@ -70,33 +78,7 @@ export class PairingStore {
       code: session?.code ?? null,
       expiresAt: session?.expiresAt ?? null,
       isActive: session !== null,
-      trustedTelegramUserIds: [...this.trustedTelegramUserIds].sort((left, right) => left - right)
-    };
-  }
-
-  resolvePairAttempt({ code, telegramUserId }: PairAttempt): PairAttemptResolution {
-    const session = this.getValidSession();
-
-    if (session === null) {
-      return {
-        result: "ignored",
-        trustedTelegramUserIds: [...this.trustedTelegramUserIds].sort((left, right) => left - right)
-      };
-    }
-
-    if (session.code !== code) {
-      return {
-        result: "invalid_code",
-        trustedTelegramUserIds: [...this.trustedTelegramUserIds].sort((left, right) => left - right)
-      };
-    }
-
-    this.trustedTelegramUserIds.add(telegramUserId);
-    this.activeSession = null;
-
-    return {
-      result: "paired",
-      trustedTelegramUserIds: [...this.trustedTelegramUserIds].sort((left, right) => left - right)
+      trustedTelegramUserIds: [...this.trustedTelegramUserIds]
     };
   }
 

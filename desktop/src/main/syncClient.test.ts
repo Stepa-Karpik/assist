@@ -27,8 +27,11 @@ describe("syncClient payload builders", () => {
   });
 
   it("describes the pairing session payload", () => {
-    expect(buildPairingOpenPayload("desktop-local", "2026-03-24T00:05:00.000Z")).toEqual({
+    expect(
+      buildPairingOpenPayload("desktop-local", "ABC123", "2026-03-24T00:05:00.000Z")
+    ).toEqual({
       device_id: "desktop-local",
+      code: "ABC123",
       expires_at: "2026-03-24T00:05:00.000Z"
     });
   });
@@ -84,7 +87,7 @@ describe("syncClient payload builders", () => {
 });
 
 describe("syncClient pairing api", () => {
-  it("opens pairing sessions, syncs auth state, and resolves events", async () => {
+  it("opens pairing sessions, reads pairing state, syncs auth state, and resolves auth events", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
     const client = createSyncClient({
       serverUrl: "http://127.0.0.1:8000/",
@@ -92,12 +95,8 @@ describe("syncClient pairing api", () => {
       fetchImpl
     });
 
-    await client.openPairingSession("2026-03-24T00:05:00.000Z");
-    await client.fetchPairingEvents();
-    await client.resolvePairingEvent("evt-1", {
-      result: "paired",
-      trustedTelegramUserId: 42
-    });
+    await client.openPairingSession("ABC123", "2026-03-24T00:05:00.000Z");
+    await client.fetchPairingState();
     await client.announceAuthConfigState({
       passwordConfigured: true,
       totpConfigured: false
@@ -137,6 +136,7 @@ describe("syncClient pairing api", () => {
         },
         body: JSON.stringify({
           device_id: "desktop-local",
+          code: "ABC123",
           expires_at: "2026-03-24T00:05:00.000Z"
         })
       })
@@ -144,7 +144,7 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
-      "http://127.0.0.1:8000/api/events?device_id=desktop-local",
+      "http://127.0.0.1:8000/api/pairing/state?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
       })
@@ -152,21 +152,6 @@ describe("syncClient pairing api", () => {
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       3,
-      "http://127.0.0.1:8000/api/events/evt-1/resolve",
-      expect.objectContaining({
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          result: "paired",
-          trusted_telegram_user_id: 42
-        })
-      })
-    );
-
-    expect(fetchImpl).toHaveBeenNthCalledWith(
-      4,
       "http://127.0.0.1:8000/api/auth/config/status",
       expect.objectContaining({
         method: "POST",
@@ -182,7 +167,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      5,
+      4,
       "http://127.0.0.1:8000/api/auth/events?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -190,7 +175,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      6,
+      5,
       "http://127.0.0.1:8000/api/auth/events/auth-1/resolve",
       expect.objectContaining({
         method: "POST",
@@ -204,7 +189,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      7,
+      6,
       "http://127.0.0.1:8000/api/apps/catalog",
       expect.objectContaining({
         method: "POST",
@@ -227,7 +212,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      8,
+      7,
       "http://127.0.0.1:8000/api/apps?device_id=desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -235,7 +220,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      9,
+      8,
       "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=25",
       expect.objectContaining({
         method: "GET"
@@ -243,7 +228,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      10,
+      9,
       "http://127.0.0.1:8000/api/tasks?device_id=desktop-local&include_history=true&limit=50",
       expect.objectContaining({
         method: "GET"
@@ -251,7 +236,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      11,
+      10,
       "http://127.0.0.1:8000/api/tasks/task-1",
       expect.objectContaining({
         method: "GET"
@@ -259,7 +244,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      12,
+      11,
       "http://127.0.0.1:8000/api/devices/desktop-local",
       expect.objectContaining({
         method: "GET"
@@ -267,7 +252,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      13,
+      12,
       "http://127.0.0.1:8000/api/tasks/task-1/start",
       expect.objectContaining({
         method: "POST"
@@ -275,7 +260,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      14,
+      13,
       "http://127.0.0.1:8000/api/tasks/task-1/complete",
       expect.objectContaining({
         method: "POST",
@@ -289,7 +274,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      15,
+      14,
       "http://127.0.0.1:8000/api/tasks/task-2/fail",
       expect.objectContaining({
         method: "POST",
@@ -303,7 +288,7 @@ describe("syncClient pairing api", () => {
     );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
-      16,
+      15,
       "http://127.0.0.1:8000/api/tasks/task-2/retry",
       expect.objectContaining({
         method: "POST"

@@ -31,37 +31,48 @@ describe("PairingStore", () => {
     expect(state.code).toBe("PAIR-02");
   });
 
-  it("adds the telegram user to the trusted allowlist when the code is valid", () => {
+  it("replaces trusted ids from server state instead of mutating them locally", () => {
     const store = new PairingStore({
       now: () => new Date("2026-03-24T01:00:00.000Z"),
       codeFactory: () => "PAIR-01"
     });
-    store.openPairingSession();
 
-    const result = store.resolvePairAttempt({
+    store.applyRemoteState({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: [101]
+    });
+    store.openPairingSession();
+    store.applyRemoteState({
       code: "PAIR-01",
-      telegramUserId: 101
+      expiresAt: "2026-03-24T01:05:00.000Z",
+      isActive: true,
+      trustedTelegramUserIds: [101, 202]
     });
 
-    expect(result.result).toBe("paired");
-    expect(result.trustedTelegramUserIds).toEqual([101]);
-    expect(store.getState().isActive).toBe(false);
+    expect(store.getState().trustedTelegramUserIds).toEqual([101, 202]);
   });
 
-  it("does not trust the user when the code is invalid", () => {
+  it("clears stale active session from server state when pairing is consumed", () => {
     const store = new PairingStore({
       now: () => new Date("2026-03-24T01:00:00.000Z"),
       codeFactory: () => "PAIR-01"
     });
     store.openPairingSession();
 
-    const result = store.resolvePairAttempt({
-      code: "WRONG",
-      telegramUserId: 101
+    store.applyRemoteState({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: [101]
     });
 
-    expect(result.result).toBe("invalid_code");
-    expect(result.trustedTelegramUserIds).toEqual([]);
-    expect(store.getState().isActive).toBe(true);
+    expect(store.getState()).toEqual({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: [101]
+    });
   });
 });

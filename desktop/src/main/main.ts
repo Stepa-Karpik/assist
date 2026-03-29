@@ -34,7 +34,7 @@ import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
   type DevicePresenceResponse,
-  type PairingEventListResponse,
+  type RemotePairingState,
   type RemoteTaskRecord,
   type RemoteAppCatalogItem,
   createSyncClient
@@ -252,46 +252,30 @@ async function pollAuthEvents() {
   }
 }
 
-async function pollPairingEvents() {
+function applyRemotePairingState(payload: RemotePairingState) {
+  return pairingStore.applyRemoteState({
+    code: payload.code,
+    expiresAt: payload.expires_at,
+    isActive: payload.status === "active",
+    trustedTelegramUserIds: payload.trusted_telegram_user_ids
+  });
+}
+
+async function pollPairingState() {
   if (!pairingStore.getState().isActive) {
     stopPairingPolling();
     return;
   }
 
-  const response = await syncClient.fetchPairingEvents();
+  const response = await syncClient.fetchPairingState();
 
   if (!response.ok) {
-    logResponseError("Fetching pairing events", response);
+    logResponseError("Fetching pairing state", response);
     return;
   }
 
-  const payload = (await response.json()) as PairingEventListResponse;
-
-  for (const event of payload.items) {
-    const resolution = pairingStore.resolvePairAttempt({
-      code: event.code,
-      telegramUserId: event.telegram_user_id
-    });
-
-    const resolveResponse = await syncClient.resolvePairingEvent(event.event_id, {
-      result: resolution.result,
-      trustedTelegramUserId:
-        resolution.result === "paired" ? event.telegram_user_id : undefined
-    });
-
-    if (!resolveResponse.ok) {
-      logResponseError("Resolving pairing event", resolveResponse);
-      continue;
-    }
-
-    if (resolution.result === "paired") {
-      const closeResponse = await syncClient.closePairingSession();
-
-      if (!closeResponse.ok) {
-        logResponseError("Closing pairing session", closeResponse);
-      }
-    }
-  }
+  const payload = (await response.json()) as RemotePairingState;
+  applyRemotePairingState(payload);
 
   if (!pairingStore.getState().isActive) {
     stopPairingPolling();
@@ -487,13 +471,13 @@ function ensurePairingPolling() {
     return;
   }
 
-  void pollPairingEvents().catch((error: unknown) => {
-    console.error("Failed to poll pairing events", error);
+  void pollPairingState().catch((error: unknown) => {
+    console.error("Failed to poll pairing state", error);
   });
 
   pairingPollInterval = setInterval(() => {
-    void pollPairingEvents().catch((error: unknown) => {
-      console.error("Failed to poll pairing events", error);
+    void pollPairingState().catch((error: unknown) => {
+      console.error("Failed to poll pairing state", error);
     });
   }, pairingPollIntervalMs);
 }
@@ -791,7 +775,16 @@ function registerIpcHandlers() {
       return quickAccessRuntime.submitRequest(payload);
     }
   );
-  ipcMain.handle("pairing:get-state", () => pairingStore.getState());
+  ipcMain.handle("pairing:get-state", async () => {
+    const response = await syncClient.fetchPairingState();
+
+    if (!response.ok) {
+      return pairingStore.getState();
+    }
+
+    const payload = (await response.json()) as RemotePairingState;
+    return applyRemotePairingState(payload);
+  });
   ipcMain.handle("tasks:get-snapshot", () => taskSnapshot);
   ipcMain.handle("tasks:approve-local-approval", async (_event, taskId: string) => {
     if (localApprovalStore === null) {
@@ -844,17 +837,19 @@ function registerIpcHandlers() {
   ipcMain.handle("pairing:open-session", async () => {
     const state = pairingStore.openPairingSession();
 
-    if (state.expiresAt === null) {
+    if (state.code === null || state.expiresAt === null) {
       return state;
     }
 
-    const response = await syncClient.openPairingSession(state.expiresAt);
+    const response = await syncClient.openPairingSession(state.code, state.expiresAt);
 
     if (!response.ok) {
       pairingStore.closePairingSession();
       throw new Error(`Failed to open pairing session: ${response.status}`);
     }
 
+    const payload = (await response.json()) as RemotePairingState;
+    applyRemotePairingState(payload);
     ensurePairingPolling();
     return pairingStore.getState();
   });
