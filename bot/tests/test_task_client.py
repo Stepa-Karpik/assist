@@ -67,3 +67,29 @@ def test_fetch_app_catalog_returns_server_items(monkeypatch) -> None:
     assert result[0].display_name == "osu! lazer"
     assert result[0].aliases == ("osu", "осу", "osu lazer")
     assert result[0].linked is True
+
+
+def test_consume_start_link_returns_server_payload(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        del timeout
+
+        assert request.full_url.endswith("/api/bot/start-link")
+        return FakeResponse(
+            {
+                "paired": True,
+                "device_id": "desktop-main",
+                "device_label": "Stepa Desktop",
+            }
+        )
+
+    monkeypatch.setattr(task_client_module, "urlopen", fake_urlopen)
+    client = TaskServerClient(
+        server_url="http://127.0.0.1:8000",
+        device_id="desktop-local",
+    )
+
+    result = client.consume_start_link("token-123", telegram_user_id=42)
+
+    assert result.paired is True
+    assert result.device_id == "desktop-main"
+    assert result.device_label == "Stepa Desktop"

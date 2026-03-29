@@ -2,11 +2,11 @@ from app.handlers.help import get_help_text
 from app.handlers.start import get_start_text
 
 
-def test_start_text_points_to_pair_and_help() -> None:
+def test_start_text_points_to_telegram_link_pair_and_help() -> None:
     start_text = get_start_text()
 
+    assert "Открыть Telegram" in start_text
     assert "/pair <code>" in start_text
-    assert "обычными сообщениями" in start_text
     assert "/help" in start_text
 
 

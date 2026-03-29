@@ -114,6 +114,13 @@ class TrustedDeviceListResult:
     items: tuple[TrustedDeviceEntry, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class StartLinkResult:
+    paired: bool
+    device_id: str | None = None
+    device_label: str | None = None
+
+
 def build_owner_profile_context(parsed: object) -> str | None:
     if not isinstance(parsed, dict):
         return None
@@ -539,6 +546,28 @@ class TaskServerClient:
     def resolve_active_device_id(self, telegram_user_id: int) -> str | None:
         devices = self.fetch_trusted_devices(telegram_user_id)
         return devices.active_device_id
+
+    def consume_start_link(self, token: str, telegram_user_id: int) -> StartLinkResult:
+        parsed = self._post_json(
+            "/api/bot/start-link",
+            {
+                "token": token,
+                "telegram_user_id": telegram_user_id,
+            },
+        )
+
+        if not isinstance(parsed, dict):
+            return StartLinkResult(paired=False)
+
+        paired = parsed.get("paired")
+        device_id = parsed.get("device_id")
+        device_label = parsed.get("device_label")
+
+        return StartLinkResult(
+            paired=paired is True,
+            device_id=device_id if isinstance(device_id, str) else None,
+            device_label=device_label if isinstance(device_label, str) else None,
+        )
 
     def _fetch_task_history(
         self, *, device_id: str, chat_id: int | None = None
