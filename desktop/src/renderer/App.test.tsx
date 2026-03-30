@@ -72,13 +72,12 @@ type UpdateState = {
   message: string | null;
 };
 
-type KnowledgeSection = {
-  id: "master_info" | "knowledge" | "notes" | "websites";
-  label: string;
-  entries: Array<{
-    relativePath: string;
-    displayName: string;
-  }>;
+type KnowledgeTreeNode = {
+  id: string;
+  title: string;
+  relativePath: string;
+  kind: "directory" | "note";
+  children: KnowledgeTreeNode[];
 };
 
 type AppPreferences = {
@@ -380,42 +379,100 @@ const checkForUpdates = vi.fn(async () => ({
   message: "Checking for updates..."
 }));
 const installUpdate = vi.fn(async () => undefined);
-const getKnowledgeState = vi.fn<() => Promise<KnowledgeSection[]>>(async () => [
+const getKnowledgeState = vi.fn<() => Promise<KnowledgeTreeNode[]>>(async () => [
   {
-    id: "knowledge",
-    label: "Knowledge",
-    entries: [
+    id: "user",
+    title: "user",
+    relativePath: "user",
+    kind: "directory",
+    children: [
       {
-        relativePath: "review.md",
-        displayName: "review.md"
-      },
-      {
-        relativePath: "weekly.md",
-        displayName: "weekly.md"
+        id: "user/AI",
+        title: "AI",
+        relativePath: "user/AI",
+        kind: "directory",
+        children: [
+          {
+            id: "user/AI/models",
+            title: "models",
+            relativePath: "user/AI/models",
+            kind: "directory",
+            children: [
+              {
+                id: "user/AI/models/MCP",
+                title: "MCP",
+                relativePath: "user/AI/models/MCP",
+                kind: "directory",
+                children: [
+                  {
+                    id: "user/AI/models/MCP/MCP.md",
+                    title: "MCP",
+                    relativePath: "user/AI/models/MCP/MCP.md",
+                    kind: "note",
+                    children: []
+                  },
+                  {
+                    id: "user/AI/models/MCP/Источники.md",
+                    title: "Источники",
+                    relativePath: "user/AI/models/MCP/Источники.md",
+                    kind: "note",
+                    children: []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     ]
   },
   {
-    id: "notes",
-    label: "Notes",
-    entries: [
+    id: "assist",
+    title: "assist",
+    relativePath: "assist",
+    kind: "directory",
+    children: [
       {
-        relativePath: "daily.txt",
-        displayName: "daily.txt"
+        id: "assist/docs",
+        title: "docs",
+        relativePath: "assist/docs",
+        kind: "directory",
+        children: [
+          {
+            id: "assist/docs/registry",
+            title: "registry",
+            relativePath: "assist/docs/registry",
+            kind: "directory",
+            children: [
+              {
+                id: "assist/docs/registry/Документации.md",
+                title: "Документации",
+                relativePath: "assist/docs/registry/Документации.md",
+                kind: "note",
+                children: []
+              }
+            ]
+          }
+        ]
       }
     ]
   }
 ]);
 const readKnowledgeEntry = vi.fn(
-  async (payload: { sectionId: KnowledgeSection["id"]; relativePath: string }) => ({
-    sectionId: payload.sectionId,
+  async (payload: { relativePath: string }) => ({
+    title:
+      payload.relativePath === "assist/docs/registry/Документации.md"
+        ? "Документации"
+        : payload.relativePath === "user/AI/models/MCP/Источники.md"
+          ? "Источники"
+          : "MCP",
     relativePath: payload.relativePath,
     content:
-      payload.relativePath === "weekly.md"
-        ? "weekly review"
-        : payload.relativePath === "daily.txt"
-          ? "daily note"
-          : "review body"
+      payload.relativePath === "assist/docs/registry/Документации.md"
+        ? "known docs"
+        : payload.relativePath === "user/AI/models/MCP/Источники.md"
+          ? "sources"
+          : "MCP note body"
   })
 );
 
@@ -1433,14 +1490,14 @@ describe("App navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Knowledge / Review" }));
 
-    expect(await screen.findByText("review.md")).toBeInTheDocument();
-    expect(await screen.findByText("review body")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "weekly.md" }));
+    expect(await screen.findByText("user")).toBeInTheDocument();
+    expect(await screen.findByText("assist")).toBeInTheDocument();
+    expect(await screen.findByText("MCP note body")).toBeInTheDocument();
+    fireEvent.click((await screen.findByText("Документации")).closest("button")!);
 
     expect(readKnowledgeEntry).toHaveBeenCalledWith({
-      sectionId: "knowledge",
-      relativePath: "weekly.md"
+      relativePath: "assist/docs/registry/Документации.md"
     });
-    expect(await screen.findByText("weekly review")).toBeInTheDocument();
+    expect(await screen.findByText("known docs")).toBeInTheDocument();
   });
 });

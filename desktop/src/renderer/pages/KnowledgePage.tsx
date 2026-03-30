@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
-type KnowledgeSection = Awaited<
+type KnowledgeTreeNode = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getKnowledgeState"]>
 >[number];
 
 type KnowledgeSelection = {
-  sectionId: KnowledgeSection["id"];
   relativePath: string;
 };
 
@@ -13,38 +12,87 @@ type KnowledgeEntryDetail = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["readKnowledgeEntry"]>
 >;
 
-function findFirstEntry(sections: KnowledgeSection[]): KnowledgeSelection | null {
-  for (const section of sections) {
-    const firstEntry = section.entries[0];
-
-    if (firstEntry) {
+function findFirstNote(nodes: KnowledgeTreeNode[]): KnowledgeSelection | null {
+  for (const node of nodes) {
+    if (node.kind === "note") {
       return {
-        sectionId: section.id,
-        relativePath: firstEntry.relativePath
+        relativePath: node.relativePath
       };
+    }
+
+    const nestedSelection = findFirstNote(node.children);
+
+    if (nestedSelection !== null) {
+      return nestedSelection;
     }
   }
 
   return null;
 }
 
-function hasSelection(
-  sections: KnowledgeSection[],
-  selection: KnowledgeSelection | null
-): boolean {
+function hasSelection(nodes: KnowledgeTreeNode[], selection: KnowledgeSelection | null): boolean {
   if (selection === null) {
     return false;
   }
 
-  return sections.some(
-    (section) =>
-      section.id === selection.sectionId &&
-      section.entries.some((entry) => entry.relativePath === selection.relativePath)
+  return nodes.some((node) => {
+    if (node.relativePath === selection.relativePath) {
+      return true;
+    }
+
+    return hasSelection(node.children, selection);
+  });
+}
+
+function renderTreeNode(
+  node: KnowledgeTreeNode,
+  selection: KnowledgeSelection | null,
+  onSelect: (selection: KnowledgeSelection) => void,
+  depth = 0
+) {
+  if (node.kind === "directory") {
+    return (
+      <div className="knowledge-tree-node" key={node.id}>
+        <p className="section-label" style={{ paddingLeft: `${depth * 14}px` }}>
+          {node.title}
+        </p>
+        {node.children.length === 0 ? (
+          <p className="muted-text" style={{ paddingLeft: `${depth * 14}px` }}>
+            Пока пусто.
+          </p>
+        ) : (
+          <div className="task-list">
+            {node.children.map((childNode) =>
+              renderTreeNode(childNode, selection, onSelect, depth + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const isActive = selection?.relativePath === node.relativePath;
+
+  return (
+    <button
+      className={`task-card knowledge-entry-button${isActive ? " active" : ""}`}
+      key={node.id}
+      onClick={() =>
+        onSelect({
+          relativePath: node.relativePath
+        })
+      }
+      style={{ marginLeft: `${depth * 14}px` }}
+      type="button"
+    >
+      <strong>{node.title}</strong>
+      <p className="muted-text">{node.relativePath}</p>
+    </button>
   );
 }
 
 export function KnowledgePage() {
-  const [sections, setSections] = useState<KnowledgeSection[]>([]);
+  const [roots, setRoots] = useState<KnowledgeTreeNode[]>([]);
   const [selection, setSelection] = useState<KnowledgeSelection | null>(null);
   const [preview, setPreview] = useState<KnowledgeEntryDetail>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,30 +100,30 @@ export function KnowledgePage() {
   useEffect(() => {
     let isSubscribed = true;
 
-    async function loadSections() {
+    async function loadRoots() {
       try {
-        const nextSections = await (window.karpik?.getKnowledgeState?.() ?? Promise.resolve([]));
+        const nextRoots = await (window.karpik?.getKnowledgeState?.() ?? Promise.resolve([]));
 
         if (!isSubscribed) {
           return;
         }
 
-        setSections(nextSections);
+        setRoots(nextRoots);
         setSelection((currentSelection) => {
-          if (hasSelection(nextSections, currentSelection)) {
+          if (hasSelection(nextRoots, currentSelection)) {
             return currentSelection;
           }
 
-          return findFirstEntry(nextSections);
+          return findFirstNote(nextRoots);
         });
       } catch {
         if (isSubscribed) {
-          setError("Не удалось загрузить knowledge browser.");
+          setError("Не удалось загрузить knowledge vault.");
         }
       }
     }
 
-    void loadSections();
+    void loadRoots();
 
     return () => {
       isSubscribed = false;
@@ -92,14 +140,17 @@ export function KnowledgePage() {
       }
 
       try {
-        const nextPreview = (await window.karpik?.readKnowledgeEntry?.(selection)) ?? null;
+        const nextPreview =
+          (await window.karpik?.readKnowledgeEntry?.({
+            relativePath: selection.relativePath
+          })) ?? null;
 
         if (isSubscribed) {
           setPreview(nextPreview);
         }
       } catch {
         if (isSubscribed) {
-          setError("Не удалось открыть knowledge entry.");
+          setError("Не удалось открыть knowledge note.");
         }
       }
     }
@@ -111,67 +162,31 @@ export function KnowledgePage() {
     };
   }, [selection]);
 
-  const hasEntries = useMemo(
-    () => sections.some((section) => section.entries.length > 0),
-    [sections]
-  );
+  const hasEntries = useMemo(() => findFirstNote(roots) !== null, [roots]);
 
   return (
     <div className="page-shell">
       <p className="eyebrow">Knowledge / Review</p>
-      <h2>Knowledge Browser</h2>
+      <h2>Knowledge Vault</h2>
       <p className="muted-text">
-        Read-only browser for master info, notes, knowledge files, and captured websites.
+        Локальный Obsidian-friendly vault с деревом user/assist и markdown-связями.
       </p>
 
       <div className="knowledge-layout">
         <aside className="knowledge-sidebar">
-          {sections.map((section) => (
-            <section key={section.id}>
-              <p className="section-label">{section.label}</p>
-              {section.entries.length === 0 ? (
-                <p className="muted-text">Пока пусто.</p>
-              ) : (
-                <div className="task-list">
-                  {section.entries.map((entry) => {
-                    const isActive =
-                      selection?.sectionId === section.id &&
-                      selection.relativePath === entry.relativePath;
-
-                    return (
-                      <button
-                        className={`task-card knowledge-entry-button${isActive ? " active" : ""}`}
-                        key={`${section.id}:${entry.relativePath}`}
-                        onClick={() =>
-                          setSelection({
-                            sectionId: section.id,
-                            relativePath: entry.relativePath
-                          })
-                        }
-                        type="button"
-                      >
-                        <strong>{entry.displayName}</strong>
-                        {entry.relativePath !== entry.displayName ? (
-                          <p className="muted-text">{entry.relativePath}</p>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          ))}
+          {roots.map((root) => renderTreeNode(root, selection, setSelection))}
         </aside>
 
         <section className="knowledge-preview">
           <p className="section-label">Preview</p>
           {!hasEntries ? (
-            <p className="muted-text">В knowledge browser пока нет файлов.</p>
+            <p className="muted-text">В knowledge vault пока нет markdown-заметок.</p>
           ) : preview === null ? (
-            <p className="muted-text">Выбери файл слева.</p>
+            <p className="muted-text">Выбери заметку слева.</p>
           ) : (
             <>
-              <strong>Selected file: {preview.relativePath}</strong>
+              <strong>{preview.title}</strong>
+              <p className="muted-text">{preview.relativePath}</p>
               <pre className="knowledge-preview-text">{preview.content}</pre>
             </>
           )}

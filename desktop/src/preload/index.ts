@@ -35,10 +35,8 @@ contextBridge.exposeInMainWorld("karpik", {
     title?: string;
     workspaceId?: string | null;
   }) => ipcRenderer.invoke("chats:create-continuation", payload),
-  readKnowledgeEntry: (payload: {
-    sectionId: "master_info" | "knowledge" | "notes" | "websites";
-    relativePath: string;
-  }) => ipcRenderer.invoke("knowledge:read-entry", payload),
+  readKnowledgeEntry: (payload: { relativePath: string }) =>
+    ipcRenderer.invoke("knowledge:read-entry", payload),
   refreshDiscoveredApps: () => ipcRenderer.invoke("apps:refresh-discovered"),
   sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
     ipcRenderer.invoke("chats:send-message", payload),

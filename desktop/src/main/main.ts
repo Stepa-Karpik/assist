@@ -21,7 +21,7 @@ import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
-import { createKnowledgeStore } from "./knowledgeStore";
+import { createKnowledgeVaultStore } from "./knowledgeVaultStore";
 import { VaultSettingsStore } from "./vaultSettingsStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
@@ -66,7 +66,7 @@ let appRegistryStore: AppRegistryStore | null = null;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
-let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
+let knowledgeStore: ReturnType<typeof createKnowledgeVaultStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
@@ -640,7 +640,7 @@ function registerIpcHandlers() {
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
-  ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listSections() ?? []);
+  ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listRoots() ?? []);
   ipcMain.handle("vault:set-root", (_event, vaultRoot: string) => {
     if (vaultSettingsStore === null) {
       throw new Error("Vault settings store is not initialized");
@@ -648,6 +648,9 @@ function registerIpcHandlers() {
 
     const normalizedVaultRoot = vaultSettingsStore.setVaultRoot(vaultRoot);
     ensureKnowledgeVault(normalizedVaultRoot);
+    knowledgeStore = createKnowledgeVaultStore({
+      vaultRoot: normalizedVaultRoot
+    });
     return getVaultSettingsState();
   });
   ipcMain.handle(
@@ -683,8 +686,7 @@ function registerIpcHandlers() {
   );
   ipcMain.handle(
     "knowledge:read-entry",
-    (_event, payload: { sectionId: "master_info" | "knowledge" | "notes" | "websites"; relativePath: string }) =>
-      knowledgeStore?.readEntry(payload) ?? null
+    (_event, payload: { relativePath: string }) => knowledgeStore?.readNote(payload.relativePath) ?? null
   );
   ipcMain.handle("quick-access:get-state", () => quickAccessRuntime?.getState());
   ipcMain.handle("runtime:get-status", () => {
@@ -940,13 +942,13 @@ async function bootstrap() {
   const configuredVaultRoot = vaultSettingsStore.getVaultRoot();
   if (configuredVaultRoot !== null) {
     ensureKnowledgeVault(configuredVaultRoot);
+    knowledgeStore = createKnowledgeVaultStore({
+      vaultRoot: configuredVaultRoot
+    });
   }
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets,
     totpAccountName: deviceId
-  });
-  knowledgeStore = createKnowledgeStore({
-    runtimeRoot: runtimeFolders.root
   });
   activityLogStore = new ActivityLogStore({
     stateRoot: runtimeFolders.state

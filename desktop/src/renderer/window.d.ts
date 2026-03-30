@@ -192,23 +192,18 @@ type UpdateState = {
   message: string | null;
 };
 
-type KnowledgeSectionId = "master_info" | "knowledge" | "notes" | "websites";
-
-type KnowledgeEntry = {
+type KnowledgeTreeNode = {
+  id: string;
+  title: string;
   relativePath: string;
-  displayName: string;
-};
-
-type KnowledgeSection = {
-  id: KnowledgeSectionId;
-  label: string;
-  entries: KnowledgeEntry[];
+  kind: "directory" | "note";
+  children: KnowledgeTreeNode[];
 };
 
 type KnowledgeEntryDetail = {
-  sectionId: KnowledgeSectionId;
-  relativePath: string;
   content: string;
+  title: string;
+  relativePath: string;
 };
 
 declare global {
@@ -226,7 +221,7 @@ declare global {
       createTotpEnrollment: () => Promise<TotpEnrollment>;
       confirmTotpEnrollment: (payload: { code: string }) => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
-      getKnowledgeState: () => Promise<KnowledgeSection[]>;
+      getKnowledgeState: () => Promise<KnowledgeTreeNode[]>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
@@ -250,10 +245,7 @@ declare global {
       openPairingSession: () => Promise<PairingState>;
       installUpdate: () => Promise<void>;
       refreshDiscoveredApps: () => Promise<AppRegistryState>;
-      readKnowledgeEntry: (payload: {
-        sectionId: KnowledgeSectionId;
-        relativePath: string;
-      }) => Promise<KnowledgeEntryDetail | null>;
+      readKnowledgeEntry: (payload: { relativePath: string }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       cancelTask: (taskId: string) => Promise<void>;
       retryTask: (taskId: string) => Promise<void>;
