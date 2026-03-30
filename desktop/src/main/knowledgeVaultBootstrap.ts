@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  DOCS_REGISTRY_FILE_NAME,
+  DOCS_REGISTRY_INITIAL_CONTENT,
+  TRUSTED_SITES_FILE_NAME,
+  TRUSTED_SITES_INITIAL_CONTENT
+} from "./knowledgeVaultConstants";
+
 function ensureDirectory(directoryPath: string): void {
   fs.mkdirSync(directoryPath, { recursive: true });
 }
@@ -36,12 +43,9 @@ export function ensureKnowledgeVault(vaultRoot: string): void {
     skillsRoot
   ].forEach(ensureDirectory);
 
+  ensureMarkdownFile(path.join(registryRoot, DOCS_REGISTRY_FILE_NAME), DOCS_REGISTRY_INITIAL_CONTENT);
   ensureMarkdownFile(
-    path.join(registryRoot, "Документации.md"),
-    "# Документации\n\n## Известные документации\n\n"
-  );
-  ensureMarkdownFile(
-    path.join(registryRoot, "Доверенные сайты.md"),
-    "# Доверенные сайты\n\n## Источники\n\n"
+    path.join(registryRoot, TRUSTED_SITES_FILE_NAME),
+    TRUSTED_SITES_INITIAL_CONTENT
   );
 }

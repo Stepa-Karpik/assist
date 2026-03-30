@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
+import { DOCS_REGISTRY_FILE_NAME, TRUSTED_SITES_FILE_NAME } from "./knowledgeVaultConstants";
 
 const tempRoots: string[] = [];
 
@@ -30,7 +31,11 @@ describe("ensureKnowledgeVault", () => {
 
     expect(fs.existsSync(path.join(vaultRoot, "user"))).toBe(true);
     expect(fs.existsSync(path.join(vaultRoot, "assist"))).toBe(true);
-    expect(fs.existsSync(path.join(vaultRoot, "assist", "docs", "registry", "Документации.md"))).toBe(true);
-    expect(fs.existsSync(path.join(vaultRoot, "assist", "docs", "registry", "Доверенные сайты.md"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(vaultRoot, "assist", "docs", "registry", DOCS_REGISTRY_FILE_NAME))
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(vaultRoot, "assist", "docs", "registry", TRUSTED_SITES_FILE_NAME))
+    ).toBe(true);
   });
 });
