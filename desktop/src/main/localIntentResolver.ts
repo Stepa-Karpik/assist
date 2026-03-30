@@ -39,9 +39,15 @@ export function normalizeMatchKey(value: string): string {
 
 export function messageExplicitlyRequestsCodex(text: string): boolean {
   const normalized = normalizeMatchKey(text);
+  const tokens = normalized.split(" ").filter((token) => token.length > 0);
+  const firstToken = tokens[0];
+  const lastToken = tokens.at(-1);
+
   return (
-    normalized.split(" ").includes("codex") ||
-    normalized.split(" ").includes("кодекс") ||
+    firstToken === "codex" ||
+    firstToken === "кодекс" ||
+    lastToken === "codex" ||
+    lastToken === "кодекс" ||
     normalized.includes("через codex")
   );
 }

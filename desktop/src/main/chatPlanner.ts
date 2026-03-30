@@ -7,14 +7,15 @@ const technicalTopics: Array<{ pattern: RegExp; query: string }> = [
   { pattern: /\bmcp\b/i, query: "MCP" },
   { pattern: /\bpython\b/i, query: "Python" },
   { pattern: /\breact\b/i, query: "React" },
-  { pattern: /\btypescript\b/i, query: "TypeScript" }
+  { pattern: /\btypescript\b/i, query: "TypeScript" },
+  { pattern: /\bcodex\b/i, query: "Codex" }
 ];
 
 function isConversationQuestion(text: string): boolean {
   const normalized = text.toLowerCase();
   return (
     text.includes("?") ||
-    /\b(что|как|почему|зачем|знаешь|объясни|обьясни|расскажи|подскажи)\b/i.test(text) ||
+    /\b(что|как|почему|зачем|знаешь|объясни|расскажи|подскажи)\b/i.test(text) ||
     normalized.startsWith("привет") ||
     normalized.startsWith("здравствуй") ||
     normalized.startsWith("hello") ||

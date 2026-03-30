@@ -34,8 +34,8 @@ from app.intent_resolver import (
     ClarificationResolution,
     IntentResolution,
     SupportsIntentResolver,
-    message_explicitly_requests_codex,
     message_requires_codex,
+    normalize_match_key,
 )
 from app.task_client import TaskWorkflowResult
 
@@ -417,6 +417,17 @@ def should_use_chat_responder(
     resolution: SupportsIntentResolver | IntentResolution,
     chat_responder: SupportsChatResponder | None,
 ) -> bool:
+    def has_explicit_codex_override(value: str) -> bool:
+        normalized = normalize_match_key(value)
+        tokens = [token for token in normalized.split() if token]
+        first_token = tokens[0] if tokens else None
+        last_token = tokens[-1] if tokens else None
+        return (
+            first_token in {"codex", "кодекс"}
+            or last_token in {"codex", "кодекс"}
+            or "через codex" in normalized
+        )
+
     if chat_responder is None:
         return False
 
@@ -427,7 +438,7 @@ def should_use_chat_responder(
     return (
         resolved.kind == "task"
         and resolved.intent == default_codex_intent
-        and not message_explicitly_requests_codex(text)
+        and not has_explicit_codex_override(text)
         and not message_requires_codex(text)
     )
 

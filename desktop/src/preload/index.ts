@@ -17,9 +17,20 @@ contextBridge.exposeInMainWorld("karpik", {
     ipcRenderer.invoke("auth:confirm-totp-enrollment", payload),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
+  getLocalChatRunState: (chatId: string) => ipcRenderer.invoke("chats:get-run-state", chatId),
   subscribeLocalChatEvents: (listener: (event: { chatId: string; detail: unknown }) => void) => {
     const channel = "chats:updated";
     const wrapped = (_event: Electron.IpcRendererEvent, payload: { chatId: string; detail: unknown }) => {
+      listener(payload);
+    };
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
+  },
+  subscribeLocalChatRunEvents: (listener: (event: { chatId: string; run: unknown }) => void) => {
+    const channel = "chats:run-updated";
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { chatId: string; run: unknown }) => {
       listener(payload);
     };
     ipcRenderer.on(channel, wrapped);
@@ -56,6 +67,7 @@ contextBridge.exposeInMainWorld("karpik", {
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   cancelTask: (taskId: string) => ipcRenderer.invoke("tasks:cancel", taskId),
+  cancelLocalChatRun: (chatId: string) => ipcRenderer.invoke("chats:cancel-run", chatId),
   retryTask: (taskId: string) => ipcRenderer.invoke("tasks:retry", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),

@@ -669,3 +669,31 @@ def test_explicit_codex_message_still_creates_task_even_with_chat_responder() ->
         }
     ]
     assert chat_responder.calls == []
+
+
+def test_article_message_that_mentions_codex_stays_conversational() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(owner_profile_context="Р’Р»Р°РґРµР»РµС†: РЎС‚РµРїР°РЅ РљР°СЂРїРѕРІ")
+    chat_responder = FakeChatResponder(
+        "Да, это материал про то, как Codex работает на практике."
+    )
+
+    reply = process_text_message(
+        "читаю на хабре https://habr.com/ru/articles/912576/, например про то, как работает codex, знаешь что нибудь об этом?",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(
+            IntentResolution(
+                kind="task",
+                risk="high",
+                intent="codex читаю на хабре https://habr.com/ru/articles/912576/, например про то, как работает codex, знаешь что нибудь об этом?",
+            )
+        ),
+        chat_responder=chat_responder,
+    )
+
+    assert reply == BotReply(text="Да, это материал про то, как Codex работает на практике.")
+    assert client.task_calls == []
+    assert len(client.conversation_memory_calls) == 1

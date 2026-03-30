@@ -160,7 +160,9 @@ describe("desktop renderer feedback", () => {
       getLocalApprovals: vi.fn(async () => []),
       getLocalChats: vi.fn(async () => []),
       getLocalChatDetail: vi.fn(async () => null),
+      getLocalChatRunState: vi.fn(async () => null),
       subscribeLocalChatEvents: vi.fn(() => () => undefined),
+      subscribeLocalChatRunEvents: vi.fn(() => () => undefined),
       getPairingState: vi.fn(async () => ({
         code: null,
         expiresAt: null,
@@ -246,6 +248,7 @@ describe("desktop renderer feedback", () => {
       readKnowledgeEntry: vi.fn(async () => null),
       rejectLocalApproval: vi.fn(async () => undefined),
       retryTask: vi.fn(async () => undefined),
+      cancelLocalChatRun: vi.fn(async () => true),
       sendLocalChatMessage: vi.fn(async () => null),
       submitQuickRequest: vi.fn(async () => ({
         chat: {

@@ -19,6 +19,7 @@ import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { createChatKnowledgeRetriever } from "./chatKnowledgeRetriever";
+import { createChatRunStore } from "./chatRunStore";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
@@ -74,6 +75,7 @@ let knowledgeStore: ReturnType<typeof createKnowledgeVaultStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let chatRunStore: ReturnType<typeof createChatRunStore> | null = null;
 let knowledgeBackgroundWriter: ReturnType<typeof createKnowledgeBackgroundWriter> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
@@ -104,6 +106,13 @@ function emitLocalChatUpdated(detail: ReturnType<LocalChatStore["getChat"]> exte
   mainWindow?.webContents.send("chats:updated", {
     chatId: detail.chatId,
     detail
+  });
+}
+
+function emitLocalChatRunUpdated(chatId: string, run: ReturnType<ReturnType<typeof createChatRunStore>["getRun"]>) {
+  mainWindow?.webContents.send("chats:run-updated", {
+    chatId,
+    run
   });
 }
 
@@ -734,6 +743,7 @@ function registerIpcHandlers() {
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
+  ipcMain.handle("chats:get-run-state", (_event, chatId: string) => chatRunStore?.getRun(chatId) ?? null);
   ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listRoots() ?? []);
   ipcMain.handle("vault:set-root", (_event, vaultRoot: string) => {
     if (vaultSettingsStore === null) {
@@ -916,6 +926,13 @@ function registerIpcHandlers() {
       return localChatRuntime.sendMessage(payload);
     }
   );
+  ipcMain.handle("chats:cancel-run", (_event, chatId: string) => {
+    if (localChatRuntime === null) {
+      throw new Error("Local chat runtime is not initialized");
+    }
+
+    return localChatRuntime.cancelRun(chatId);
+  });
   ipcMain.handle(
     "quick-access:submit-request",
     async (_event, payload: { chatId?: string; text: string }) => {
@@ -1114,8 +1131,10 @@ async function bootstrap() {
   const chatKnowledgeRetriever = createChatKnowledgeRetriever({
     getVaultRoot: () => vaultSettingsStore?.getVaultRoot() ?? null
   });
+  chatRunStore = createChatRunStore();
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
+    chatRunStore,
     executeTask: (task) => taskExecutor!.execute(task),
     replyToConversation: async ({ prompt }) => {
       if (localChatResponder === null) {
@@ -1138,6 +1157,9 @@ async function bootstrap() {
     },
     onChatUpdated: (detail) => {
       emitLocalChatUpdated(detail);
+    },
+    onRunUpdated: ({ chatId, run }) => {
+      emitLocalChatRunUpdated(chatId, run);
     },
     recordKnowledgeInteraction: async (input) => {
       await applyKnowledgeInteraction(input);

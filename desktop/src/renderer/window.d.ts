@@ -162,6 +162,20 @@ type LocalChatStreamEvent = {
   detail: LocalChatDetail;
 };
 
+type LocalChatRunState = {
+  runId: string;
+  chatId: string;
+  status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
+  cancelRequested: boolean;
+  ackMessageId: string;
+  replyMessageId: string;
+};
+
+type LocalChatRunEvent = {
+  chatId: string;
+  run: LocalChatRunState | null;
+};
+
 type QuickAccessState = {
   targetChat: LocalChatItem | null;
   localChatCount: number;
@@ -231,9 +245,13 @@ declare global {
       getKnowledgeState: () => Promise<KnowledgeTreeNode[]>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
+      getLocalChatRunState: (chatId: string) => Promise<LocalChatRunState | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
       subscribeLocalChatEvents: (
         listener: (event: LocalChatStreamEvent) => void
+      ) => () => void;
+      subscribeLocalChatRunEvents: (
+        listener: (event: LocalChatRunEvent) => void
       ) => () => void;
       getPairingState: () => Promise<PairingState>;
       getQuickAccessState: () => Promise<QuickAccessState | null>;
@@ -258,6 +276,7 @@ declare global {
       readKnowledgeEntry: (payload: { relativePath: string }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       cancelTask: (taskId: string) => Promise<void>;
+      cancelLocalChatRun: (chatId: string) => Promise<boolean>;
       retryTask: (taskId: string) => Promise<void>;
       sendLocalChatMessage: (payload: {
         chatId: string;

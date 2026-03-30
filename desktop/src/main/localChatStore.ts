@@ -452,6 +452,30 @@ export class LocalChatStore {
     return cloneDetail(nextChat);
   }
 
+  deleteMessage(chatId: string, messageId: string): LocalChatDetail {
+    const chat = this.chats.find((candidate) => candidate.chatId === chatId);
+
+    if (chat === undefined) {
+      throw new Error("Local chat not found.");
+    }
+
+    if (!chat.messages.some((message) => message.messageId === messageId)) {
+      return cloneDetail(chat);
+    }
+
+    const nextMessages = chat.messages.filter((message) => message.messageId !== messageId);
+    const nextChat: LocalChatDetail = {
+      ...chat,
+      updatedAt: this.now().toISOString(),
+      messageCount: nextMessages.length,
+      messages: nextMessages
+    };
+
+    this.chats = sortChats([nextChat, ...this.chats.filter((candidate) => candidate.chatId !== chatId)]);
+    this.persist();
+    return cloneDetail(nextChat);
+  }
+
   mirrorRemoteTaskUpdate(input: MirrorRemoteTaskUpdateInput): LocalChatDetail | null {
     const chat = this.chats.find(
       (candidate) =>

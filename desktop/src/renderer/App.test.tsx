@@ -97,10 +97,30 @@ type LocalChatStreamEvent = {
   detail: LocalChatDetail;
 };
 
+type LocalChatRunState = {
+  runId: string;
+  chatId: string;
+  status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
+  cancelRequested: boolean;
+  ackMessageId: string;
+  replyMessageId: string;
+};
+
+type LocalChatRunEvent = {
+  chatId: string;
+  run: LocalChatRunState | null;
+};
+
 type SubscribeLocalChatEventsMock = ReturnType<
   typeof vi.fn<(listener: (event: LocalChatStreamEvent) => void) => () => void>
 > & {
   listener: ((event: LocalChatStreamEvent) => void) | null;
+};
+
+type SubscribeLocalChatRunEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatRunEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatRunEvent) => void) | null;
 };
 
 const getAuthConfigState = vi.fn(async () => ({
@@ -582,6 +602,7 @@ const sendLocalChatMessage = vi.fn(
     return updatedChat;
   }
 );
+const getLocalChatRunState = vi.fn(async (_chatId: string) => null as LocalChatRunState | null);
 const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) => void) => {
   subscribeLocalChatEvents.listener = listener;
   return () => {
@@ -589,6 +610,14 @@ const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) 
   };
 }) as SubscribeLocalChatEventsMock;
 subscribeLocalChatEvents.listener = null;
+const subscribeLocalChatRunEvents = vi.fn((listener: (event: LocalChatRunEvent) => void) => {
+  subscribeLocalChatRunEvents.listener = listener;
+  return () => {
+    subscribeLocalChatRunEvents.listener = null;
+  };
+}) as SubscribeLocalChatRunEventsMock;
+subscribeLocalChatRunEvents.listener = null;
+const cancelLocalChatRun = vi.fn(async (_chatId: string) => true);
 
 describe("App navigation", () => {
   beforeEach(() => {
@@ -610,6 +639,7 @@ describe("App navigation", () => {
       getLocalApprovals,
       getLocalChats,
       getLocalChatDetail,
+      getLocalChatRunState,
       getPairingState,
       getQuickAccessState,
       getRuntimeStatus,
@@ -630,6 +660,8 @@ describe("App navigation", () => {
       submitQuickRequest,
       sendLocalChatMessage,
       subscribeLocalChatEvents,
+      subscribeLocalChatRunEvents,
+      cancelLocalChatRun,
       saveAuthConfig,
       saveAppRegistryEntry,
       saveAppPreferences,
@@ -659,6 +691,7 @@ describe("App navigation", () => {
     getLocalApprovals.mockClear();
     getLocalChats.mockClear();
     getLocalChatDetail.mockClear();
+    getLocalChatRunState.mockClear();
     getPairingState.mockClear();
     getQuickAccessState.mockClear();
     getRuntimeStatus.mockClear();
@@ -678,6 +711,9 @@ describe("App navigation", () => {
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
     subscribeLocalChatEvents.mockClear();
+    subscribeLocalChatRunEvents.mockClear();
+    cancelLocalChatRun.mockClear();
+    subscribeLocalChatRunEvents.listener = null;
     subscribeLocalChatEvents.listener = null;
     saveAuthConfig.mockClear();
     saveAppRegistryEntry.mockClear();

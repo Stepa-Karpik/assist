@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 from contextlib import suppress
@@ -12,8 +14,8 @@ from aiogram.types import (
     Message,
 )
 
-from app.config import Settings, get_settings
 from app.chat_responder import DeepSeekChatResponder
+from app.config import Settings, get_settings
 from app.conversation import (
     BotConversationStore,
     BotReply,
@@ -114,6 +116,43 @@ def create_dispatcher(
     )
     conversation_store = BotConversationStore()
     dispatcher = Dispatcher()
+
+    async def start_chat_reply(*, message: Message, text: str, resolution) -> None:
+        ack = await message.answer("Сейчас посмотрю и отвечу по сути.")
+        placeholder = await message.answer("Ассистент отвечает...")
+
+        async def finalize() -> None:
+            try:
+                response = await asyncio.to_thread(
+                    process_text_message,
+                    text,
+                    telegram_user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    task_client=resolved_task_client,
+                    store=conversation_store,
+                    resolver=FixedIntentResolver(resolution),
+                    chat_responder=chat_responder,
+                )
+                reply_markup = to_inline_keyboard(response) if response is not None else None
+                reply_text = (
+                    response.text
+                    if response is not None and response.text is not None
+                    else "Не удалось подготовить ответ. Попробуй уточнить запрос."
+                )
+
+                with suppress(Exception):
+                    await placeholder.edit_text(reply_text, reply_markup=reply_markup)
+                with suppress(Exception):
+                    await ack.delete()
+            except Exception:
+                with suppress(Exception):
+                    await placeholder.edit_text(
+                        "Не удалось подготовить ответ. Попробуй уточнить запрос."
+                    )
+                with suppress(Exception):
+                    await ack.delete()
+
+        asyncio.create_task(finalize())
 
     @dispatcher.message(CommandStart())
     async def start_handler(message: Message) -> None:
@@ -322,10 +361,7 @@ def create_dispatcher(
             await message.answer(resolve_last_command(task_client=resolved_task_client))
             return
 
-        if (
-            chat_responder is not None
-            and conversation_store.get(message.chat.id) is None
-        ):
+        if chat_responder is not None and conversation_store.get(message.chat.id) is None:
             resolution = await asyncio.to_thread(resolved_intent_resolver.resolve, text)
 
             if should_use_chat_responder(
@@ -333,26 +369,8 @@ def create_dispatcher(
                 resolution=resolution,
                 chat_responder=chat_responder,
             ):
-                placeholder = await message.answer("Думаю...")
-                response = await asyncio.to_thread(
-                    process_text_message,
-                    text,
-                    telegram_user_id=message.from_user.id,
-                    chat_id=message.chat.id,
-                    task_client=resolved_task_client,
-                    store=conversation_store,
-                    resolver=FixedIntentResolver(resolution),
-                    chat_responder=chat_responder,
-                )
-
-                if response is not None:
-                    reply_markup = to_inline_keyboard(response)
-                    with suppress(Exception):
-                        await placeholder.edit_text(response.text or "", reply_markup=reply_markup)
-                        return
-
-                    await message.answer(response.text or "", reply_markup=reply_markup)
-                    return
+                await start_chat_reply(message=message, text=text, resolution=resolution)
+                return
 
         response = await asyncio.to_thread(
             process_text_message,

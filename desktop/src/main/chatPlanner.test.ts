@@ -38,4 +38,17 @@ describe("createChatPlanner", () => {
       expect.objectContaining({ kind: "device_task", intent: "screenshot" })
     ]);
   });
+
+  it("keeps article discussion about codex in conversational mode", () => {
+    const planner = createChatPlanner();
+
+    const plan = planner.plan(
+      "читаю на хабре https://habr.com/ru/articles/912576/, например про то, как работает codex, знаешь что нибудь об этом?"
+    );
+
+    expect(plan.mode).toBe("conversation");
+    expect(plan.actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "visible_reply", strategy: "deepseek" })])
+    );
+  });
 });
