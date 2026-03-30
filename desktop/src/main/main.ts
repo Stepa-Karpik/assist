@@ -20,7 +20,9 @@ import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
+import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
 import { createKnowledgeStore } from "./knowledgeStore";
+import { VaultSettingsStore } from "./vaultSettingsStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
@@ -70,6 +72,7 @@ let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
+let vaultSettingsStore: VaultSettingsStore | null = null;
 let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let updateService: ReturnType<typeof createUpdateService> | null = null;
@@ -901,6 +904,9 @@ async function bootstrap() {
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
   });
+  vaultSettingsStore = new VaultSettingsStore({
+    settingsRoot: runtimeFolders.settings
+  });
   onboardingStateStore = new OnboardingStateStore({
     settingsRoot: runtimeFolders.settings,
     installationFingerprint: buildInstallationFingerprint()
@@ -912,6 +918,10 @@ async function bootstrap() {
     settingsRoot: runtimeFolders.settings
   });
   appPreferencesStore.applyLoginItemSettings(app);
+  const configuredVaultRoot = vaultSettingsStore.getVaultRoot();
+  if (configuredVaultRoot !== null) {
+    ensureKnowledgeVault(configuredVaultRoot);
+  }
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets,
     totpAccountName: deviceId
