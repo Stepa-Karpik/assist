@@ -92,6 +92,15 @@ beforeEach(() => {
     configurable: true,
     value: {
       view: "main",
+      getOnboardingState: vi.fn(async () => ({
+        installationFingerprint: "install-a",
+        completedInstallationFingerprint: "install-a",
+        requiresOnboarding: false
+      })),
+      getVaultSettings: vi.fn(async () => ({
+        vaultRoot: "D:\\KarpikVault",
+        isConfigured: true
+      })),
       getOwnerProfileState,
       getLocalChats,
       getLocalChatDetail,
@@ -123,6 +132,11 @@ beforeEach(() => {
         }
       })),
       saveOwnerProfile: vi.fn(async (payload: unknown) => payload),
+      completeOnboarding: vi.fn(async () => ({
+        installationFingerprint: "install-a",
+        completedInstallationFingerprint: "install-a",
+        requiresOnboarding: false
+      })),
       createLocalContinuationChat: vi.fn(async () => ({
         chatId: "local-chat-14",
         source: "local_continuation_chat" as const,
@@ -146,6 +160,10 @@ beforeEach(() => {
         chatBindings: {
           "12": "assist-main"
         }
+      })),
+      saveVaultRoot: vi.fn(async (vaultRoot: string) => ({
+        vaultRoot,
+        isConfigured: true
       }))
     }
   });

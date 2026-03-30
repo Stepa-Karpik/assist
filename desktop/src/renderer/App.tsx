@@ -28,6 +28,9 @@ type OwnerProfileState = Awaited<
 type OnboardingState = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getOnboardingState"]>
 >;
+type VaultSettingsState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getVaultSettings"]>
+>;
 
 const emptyQuickAccessState: NonNullable<QuickAccessState> = {
   targetChat: null,
@@ -422,12 +425,21 @@ function MainWindowView() {
 
 function OnboardingView({
   initialProfile,
+  initialVaultSettings,
   onComplete
 }: {
   initialProfile: NonNullable<OwnerProfileState> | null;
+  initialVaultSettings: NonNullable<VaultSettingsState> | null;
   onComplete: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<NonNullable<OwnerProfileState>>(initialProfile ?? emptyOwnerProfile);
+  const [vaultSettings, setVaultSettings] = useState<NonNullable<VaultSettingsState>>(
+    initialVaultSettings ?? {
+      vaultRoot: null,
+      isConfigured: false
+    }
+  );
+  const [vaultRootDraft, setVaultRootDraft] = useState(initialVaultSettings?.vaultRoot ?? "");
   const [pairingState, setPairingState] = useState({
     code: null as string | null,
     expiresAt: null as string | null,
@@ -436,6 +448,7 @@ function OnboardingView({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingVaultRoot, setIsSavingVaultRoot] = useState(false);
   const [isOpeningPairing, setIsOpeningPairing] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -446,7 +459,7 @@ function OnboardingView({
 
     async function loadState() {
       try {
-        const [nextProfile, nextPairing] = await Promise.all([
+        const [nextProfile, nextPairing, nextVaultSettings] = await Promise.all([
           window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null),
           window.karpik?.getPairingState?.() ??
             Promise.resolve({
@@ -454,6 +467,11 @@ function OnboardingView({
               expiresAt: null,
               isActive: false,
               trustedTelegramUserIds: []
+            }),
+          window.karpik?.getVaultSettings?.() ??
+            Promise.resolve({
+              vaultRoot: null,
+              isConfigured: false
             })
         ]);
 
@@ -466,6 +484,8 @@ function OnboardingView({
           ...(nextProfile ?? {})
         }));
         setPairingState(nextPairing);
+        setVaultSettings(nextVaultSettings);
+        setVaultRootDraft(nextVaultSettings.vaultRoot ?? "");
       } catch {
         if (isSubscribed) {
           setError("Не удалось загрузить стартовое состояние устройства.");
@@ -519,6 +539,7 @@ function OnboardingView({
   const canContinue =
     draft.fullName !== null &&
     draft.fullName.trim().length > 0 &&
+    vaultSettings.isConfigured &&
     pairingState.trustedTelegramUserIds.length > 0;
   const pairingStartLink =
     pairingState.isActive && pairingState.code ? buildPairingStartLink(pairingState.code) : null;
@@ -545,6 +566,28 @@ function OnboardingView({
       setError("Не удалось сохранить профиль устройства.");
     } finally {
       setIsSavingProfile(false);
+    }
+  }
+
+  async function handleSaveVaultRoot() {
+    if (!window.karpik?.saveVaultRoot) {
+      setError("Vault API недоступен в этом окружении.");
+      return;
+    }
+
+    setIsSavingVaultRoot(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const nextVaultSettings = await window.karpik.saveVaultRoot(vaultRootDraft);
+      setVaultSettings(nextVaultSettings);
+      setVaultRootDraft(nextVaultSettings.vaultRoot ?? "");
+      setFeedback("Vault path saved locally.");
+    } catch {
+      setError("Не удалось сохранить путь к knowledge vault.");
+    } finally {
+      setIsSavingVaultRoot(false);
     }
   }
 
@@ -646,6 +689,30 @@ function OnboardingView({
             </div>
           </article>
 
+          <article className="profile-card profile-form">
+            <label htmlFor="onboarding-vault-root">
+              <span>Путь к vault</span>
+              <input
+                id="onboarding-vault-root"
+                value={vaultRootDraft}
+                onChange={(event) => setVaultRootDraft(event.target.value)}
+              />
+            </label>
+            <p className="muted-text">
+              Здесь будет жить локальная база знаний Obsidian с папками <code>user</code> и <code>assist</code>.
+            </p>
+            {vaultSettings.isConfigured && vaultSettings.vaultRoot ? (
+              <p className="task-success">Сохранённый vault: {vaultSettings.vaultRoot}</p>
+            ) : (
+              <p className="muted-text">Сначала сохрани путь к knowledge vault.</p>
+            )}
+            <div className="profile-shell__actions">
+              <button className="shell-primary-button" disabled={isSavingVaultRoot} onClick={() => void handleSaveVaultRoot()} type="button">
+                {isSavingVaultRoot ? "Сохраняем..." : "Сохранить vault"}
+              </button>
+            </div>
+          </article>
+
           <article className="profile-card">
             <p className="section-label">Telegram pairing</p>
             {pairingState.trustedTelegramUserIds.length > 0 ? (
@@ -687,6 +754,7 @@ function OnboardingView({
 export default function App() {
   const view = window.karpik?.view ?? "main";
   const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
+  const [vaultSettings, setVaultSettings] = useState<VaultSettingsState | null>(null);
   const [isOnboardingLoading, setIsOnboardingLoading] = useState(view === "main");
   const [cachedProfile, setCachedProfile] = useState<NonNullable<OwnerProfileState> | null>(null);
 
@@ -708,9 +776,14 @@ export default function App() {
 
     async function loadOnboardingState() {
       try {
-        const [nextOnboardingState, nextProfile] = await Promise.all([
+        const [nextOnboardingState, nextProfile, nextVaultSettings] = await Promise.all([
           window.karpik?.getOnboardingState?.() ?? Promise.resolve(null),
-          window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null)
+          window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null),
+          window.karpik?.getVaultSettings?.() ??
+            Promise.resolve({
+              vaultRoot: null,
+              isConfigured: false
+            })
         ]);
 
         if (!isSubscribed) {
@@ -719,6 +792,7 @@ export default function App() {
 
         setOnboardingState(nextOnboardingState);
         setCachedProfile(nextProfile ?? null);
+        setVaultSettings(nextVaultSettings);
       } finally {
         if (isSubscribed) {
           setIsOnboardingLoading(false);
@@ -747,13 +821,22 @@ export default function App() {
     );
   }
 
-  if (onboardingState?.requiresOnboarding) {
+  if (onboardingState?.requiresOnboarding || vaultSettings?.isConfigured === false) {
     return (
       <OnboardingView
         initialProfile={cachedProfile}
+        initialVaultSettings={vaultSettings}
         onComplete={async () => {
-          const nextOnboardingState = await (window.karpik?.getOnboardingState?.() ?? Promise.resolve(null));
+          const [nextOnboardingState, nextVaultSettings] = await Promise.all([
+            window.karpik?.getOnboardingState?.() ?? Promise.resolve(null),
+            window.karpik?.getVaultSettings?.() ??
+              Promise.resolve({
+                vaultRoot: null,
+                isConfigured: false
+              })
+          ]);
           setOnboardingState(nextOnboardingState);
+          setVaultSettings(nextVaultSettings);
         }}
       />
     );

@@ -88,6 +88,11 @@ type AppPreferences = {
   closeToTrayOnClose: boolean;
 };
 
+type VaultSettingsState = {
+  vaultRoot: string | null;
+  isConfigured: boolean;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -113,6 +118,14 @@ const saveAppPreferences = vi.fn(async () => ({
   notificationsEnabled: false,
   startHiddenOnLaunch: false,
   closeToTrayOnClose: false
+}));
+const getVaultSettings = vi.fn<() => Promise<VaultSettingsState>>(async () => ({
+  vaultRoot: "D:\\KarpikVault",
+  isConfigured: true
+}));
+const saveVaultRoot = vi.fn(async (vaultRoot: string) => ({
+  vaultRoot,
+  isConfigured: true
 }));
 const getOwnerProfileState = vi.fn(async () => ({
   fullName: "Степан Карпов",
@@ -509,6 +522,7 @@ describe("App navigation", () => {
       getAppsState,
       getAssistantProcesses,
       getAppPreferences,
+      getVaultSettings,
       getOnboardingState,
       getOwnerProfileState,
       getAuthConfigState,
@@ -541,6 +555,7 @@ describe("App navigation", () => {
       saveAuthConfig,
       saveAppRegistryEntry,
       saveAppPreferences,
+      saveVaultRoot,
       saveOwnerProfile,
       saveChatWorkspaceBinding,
       saveCodexConfig,
@@ -554,6 +569,7 @@ describe("App navigation", () => {
     getAppsState.mockClear();
     getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
+    getVaultSettings.mockClear();
     getOnboardingState.mockClear();
     completeOnboarding.mockClear();
     getOwnerProfileState.mockClear();
@@ -586,6 +602,7 @@ describe("App navigation", () => {
     saveAuthConfig.mockClear();
     saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
+    saveVaultRoot.mockClear();
     saveOwnerProfile.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
@@ -616,6 +633,10 @@ describe("App navigation", () => {
       completedInstallationFingerprint: "install-a",
       requiresOnboarding: true
     });
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: null,
+      isConfigured: false
+    });
     getPairingState.mockResolvedValueOnce({
       code: null,
       expiresAt: null,
@@ -626,10 +647,22 @@ describe("App navigation", () => {
     render(<App />);
 
     expect(await screen.findByText("Первичная настройка устройства")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Путь к vault")).toBeInTheDocument();
     expect(
       await screen.findByText("Этот ПК уже привязан к Telegram. При желании можно открыть новый pairing-код.")
     ).toBeInTheDocument();
     expect(document.querySelector("main.desktop-layout")).toHaveClass("desktop-layout--standalone");
+
+    fireEvent.change(await screen.findByLabelText("Путь к vault"), {
+      target: {
+        value: "D:\\KarpikVault"
+      }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить vault" }));
+
+    await waitFor(() => {
+      expect(saveVaultRoot).toHaveBeenCalledWith("D:\\KarpikVault");
+    });
 
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить в приложение" }));
 
@@ -644,6 +677,10 @@ describe("App navigation", () => {
       installationFingerprint: "install-b",
       completedInstallationFingerprint: "install-a",
       requiresOnboarding: true
+    });
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: null,
+      isConfigured: false
     });
     getPairingState.mockResolvedValueOnce({
       code: null,
@@ -666,6 +703,30 @@ describe("App navigation", () => {
       await screen.findByText("Быстрый старт: https://t.me/Desktop_assist_bot?start=pair_PAIR42")
     ).toBeInTheDocument();
     expect(await screen.findByText("Резервная команда: /pair PAIR42")).toBeInTheDocument();
+  });
+
+  it("shows vault root in settings and saves the updated path", async () => {
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: "D:\\KarpikVault",
+      isConfigured: true
+    });
+
+    await renderMainView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    expect(await screen.findByDisplayValue("D:\\KarpikVault")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Путь к knowledge vault"), {
+      target: {
+        value: "E:\\Vault"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить vault" }));
+
+    await waitFor(() => {
+      expect(saveVaultRoot).toHaveBeenCalledWith("E:\\Vault");
+    });
+    expect(await screen.findByText("Vault path saved locally.")).toBeInTheDocument();
   });
 
   it("shows linked applications and assistant-started processes", async () => {

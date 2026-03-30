@@ -124,6 +124,10 @@ describe("desktop renderer feedback", () => {
         startHiddenOnLaunch: true,
         closeToTrayOnClose: true
       })),
+      getVaultSettings: vi.fn(async () => ({
+        vaultRoot: "D:\\KarpikVault",
+        isConfigured: true
+      })),
       getOwnerProfileState,
       getOnboardingState: vi.fn(async () => ({
         installationFingerprint: "install-a",
@@ -268,6 +272,10 @@ describe("desktop renderer feedback", () => {
         }
       })),
       saveAuthConfig,
+      saveVaultRoot: vi.fn(async (vaultRoot: string) => ({
+        vaultRoot,
+        isConfigured: true
+      })),
       saveOwnerProfile,
       saveAppPreferences: vi.fn(async (payload) => ({
         launchAtLogin: Boolean(payload.launchAtLogin),

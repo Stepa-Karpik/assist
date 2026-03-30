@@ -103,6 +103,15 @@ function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
 }
 
+function getVaultSettingsState() {
+  const vaultRoot = vaultSettingsStore?.getVaultRoot() ?? null;
+
+  return {
+    vaultRoot,
+    isConfigured: vaultRoot !== null
+  };
+}
+
 function buildInstallationFingerprint(): string {
   const executablePath = app.getPath("exe");
 
@@ -615,6 +624,7 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
+  ipcMain.handle("vault:get-settings", () => getVaultSettingsState());
   ipcMain.handle("onboarding:get-state", () => onboardingStateStore?.getState() ?? null);
   ipcMain.handle("onboarding:complete", () => {
     if (onboardingStateStore === null) {
@@ -631,6 +641,15 @@ function registerIpcHandlers() {
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
   ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listSections() ?? []);
+  ipcMain.handle("vault:set-root", (_event, vaultRoot: string) => {
+    if (vaultSettingsStore === null) {
+      throw new Error("Vault settings store is not initialized");
+    }
+
+    const normalizedVaultRoot = vaultSettingsStore.setVaultRoot(vaultRoot);
+    ensureKnowledgeVault(normalizedVaultRoot);
+    return getVaultSettingsState();
+  });
   ipcMain.handle(
     "apps:save",
     async (_event, payload: AppRegistryInput) => {

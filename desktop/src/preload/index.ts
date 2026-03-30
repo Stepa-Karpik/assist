@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getAppsState: () => ipcRenderer.invoke("apps:get-state"),
   getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
+  getVaultSettings: () => ipcRenderer.invoke("vault:get-settings"),
   getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
   getOwnerProfileState: () => ipcRenderer.invoke("profile:get-state"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
@@ -55,6 +56,7 @@ contextBridge.exposeInMainWorld("karpik", {
     startHiddenOnLaunch?: boolean;
     closeToTrayOnClose?: boolean;
   }) => ipcRenderer.invoke("app-preferences:save", payload),
+  saveVaultRoot: (vaultRoot: string) => ipcRenderer.invoke("vault:set-root", vaultRoot),
   saveOwnerProfile: (payload: {
     fullName?: string | null;
     gender?: string | null;

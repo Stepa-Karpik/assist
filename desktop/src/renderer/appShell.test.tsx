@@ -118,6 +118,10 @@ beforeEach(() => {
       startHiddenOnLaunch: false,
       closeToTrayOnClose: true
     })),
+    getVaultSettings: vi.fn(async () => ({
+      vaultRoot: "D:\\KarpikVault",
+      isConfigured: true
+    })),
     getAuthConfigState: vi.fn(async () => ({
       passwordConfigured: true,
       totpConfigured: true
@@ -158,6 +162,10 @@ beforeEach(() => {
     retryTask: vi.fn(),
     sendLocalChatMessage: vi.fn(async () => null),
     saveAuthConfig: vi.fn(),
+    saveVaultRoot: vi.fn(async (vaultRoot: string) => ({
+      vaultRoot,
+      isConfigured: true
+    })),
     saveAppPreferences: vi.fn(),
     saveAppRegistryEntry: vi.fn(async () => ({ items: [] })),
     saveChatWorkspaceBinding: vi.fn(),

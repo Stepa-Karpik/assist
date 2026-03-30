@@ -46,6 +46,11 @@ type OnboardingState = {
   requiresOnboarding: boolean;
 };
 
+type VaultSettingsState = {
+  vaultRoot: string | null;
+  isConfigured: boolean;
+};
+
 type AppRegistryItem = {
   appId: string;
   displayName: string;
@@ -214,6 +219,7 @@ declare global {
       getAppsState: () => Promise<AppRegistryState>;
       getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
+      getVaultSettings: () => Promise<VaultSettingsState>;
       getOnboardingState: () => Promise<OnboardingState | null>;
       getOwnerProfileState: () => Promise<OwnerProfileState | null>;
       getAuthConfigState: () => Promise<AuthConfigState>;
@@ -264,6 +270,7 @@ declare global {
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
+      saveVaultRoot: (vaultRoot: string) => Promise<VaultSettingsState>;
       saveOwnerProfile: (payload: Partial<OwnerProfileState>) => Promise<OwnerProfileState>;
       saveAppRegistryEntry: (payload: {
         appId?: string;
