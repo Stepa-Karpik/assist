@@ -188,6 +188,28 @@ export type AuthInputEvent = {
   accepted: boolean | null;
 };
 
+export type RemoteConversationMemoryWrite = {
+  target: "assist/profile" | "assist/preferences" | "assist/docs/websites" | "assist/docs/papers";
+  key: string;
+  value: string;
+};
+
+export type RemoteConversationMemoryEvent = {
+  event_id: string;
+  device_id: string;
+  origin: "telegram-chat";
+  prompt: string;
+  answer: string;
+  source_urls: string[];
+  memory_writes: RemoteConversationMemoryWrite[];
+  status: "pending" | "delivered";
+  created_at: string;
+};
+
+export type ConversationMemoryEventListResponse = {
+  items: RemoteConversationMemoryEvent[];
+};
+
 export type AuthEventListResponse = {
   items: AuthInputEvent[];
 };
@@ -542,6 +564,19 @@ export function createSyncClient({
           "Content-Type": "application/json"
         },
         body: JSON.stringify(resolution)
+      });
+    },
+
+    fetchConversationMemoryEvents() {
+      const params = new URLSearchParams(buildQueuePollPayload(deviceId));
+      return fetchImpl(`${baseUrl}/api/chat-memory/events?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    ackConversationMemoryEvent(eventId: string) {
+      return fetchImpl(`${baseUrl}/api/chat-memory/events/${eventId}/ack`, {
+        method: "POST"
       });
     },
 

@@ -34,11 +34,17 @@ class FakeChatResponder:
     def __post_init__(self) -> None:
         self.calls: list[dict[str, str | None]] = []
 
-    def reply(self, text: str, owner_profile_context: str | None = None) -> str:
+    def reply(
+        self,
+        text: str,
+        owner_profile_context: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str:
         self.calls.append(
             {
                 "text": text,
                 "owner_profile_context": owner_profile_context,
+                "knowledge_context": knowledge_context,
             }
         )
         return self.reply_text
@@ -67,6 +73,7 @@ class FakeTaskClient:
         self.cancel_result = cancel_result or TaskStatusResult(found=False)
         self.app_catalog = app_catalog or []
         self.owner_profile_context = owner_profile_context
+        self.conversation_memory_calls: list[dict[str, object]] = []
         self.task_calls: list[dict[str, object]] = []
         self.auth_calls: list[dict[str, object]] = []
         self.decision_calls: list[dict[str, object]] = []
@@ -142,6 +149,23 @@ class FakeTaskClient:
 
     def fetch_owner_profile_context(self) -> str | None:
         return self.owner_profile_context
+
+    def publish_conversation_memory(
+        self,
+        *,
+        prompt: str,
+        answer: str,
+        source_urls: list[str],
+        memory_writes: list[dict[str, str]],
+    ) -> None:
+        self.conversation_memory_calls.append(
+            {
+                "prompt": prompt,
+                "answer": answer,
+                "source_urls": source_urls,
+                "memory_writes": memory_writes,
+            }
+        )
 
 
 def test_ambiguous_screenshot_message_returns_inline_screen_buttons() -> None:
@@ -371,6 +395,43 @@ def test_text_message_can_cancel_task_from_natural_language() -> None:
     ]
 
 
+def test_conversational_reply_publishes_memory_event() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(owner_profile_context="Владелец: Степан Карпов")
+    responder = FakeChatResponder(
+        reply_text="Привет, Степан. По FastAPI недавно обновились release notes."
+    )
+
+    reply = process_text_message(
+        "меня зовут Карпов Степан Викторович, я программист на Python и использую FastAPI, знаешь что нибудь про его свежие обновления?",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(
+            IntentResolution(
+                kind="task",
+                risk="high",
+                intent="codex меня зовут Карпов Степан Викторович, я программист на Python и использую FastAPI, знаешь что нибудь про его свежие обновления?",
+            )
+        ),
+        chat_responder=responder,
+    )
+
+    assert reply is not None
+    assert "FastAPI" in (reply.text or "")
+    assert len(client.conversation_memory_calls) == 1
+    assert client.conversation_memory_calls[0]["prompt"] == (
+        "меня зовут Карпов Степан Викторович, я программист на Python и использую FastAPI, знаешь что нибудь про его свежие обновления?"
+    )
+    writes = client.conversation_memory_calls[0]["memory_writes"]
+    assert {
+        "target": "assist/profile",
+        "key": "full_name",
+        "value": "Карпов Степан Викторович",
+    } in writes
+
+
 def test_text_message_lists_linked_apps_with_inline_buttons() -> None:
     store = BotConversationStore()
     client = FakeTaskClient(
@@ -576,6 +637,7 @@ def test_generic_message_uses_chat_responder_when_codex_is_not_forced() -> None:
         {
             "text": "привет",
             "owner_profile_context": "Владелец: Степан Карпов",
+            "knowledge_context": None,
         }
     ]
 

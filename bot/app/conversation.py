@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from app.chat_knowledge_lookup import lookup_external_docs
+from app.chat_memory_extractor import (
+    extract_memory_writes,
+    extract_source_urls,
+    serialize_memory_writes,
+)
 from app.handlers.task import (
     get_auth_password_prompt_text,
     get_auth_success_text,
@@ -120,9 +126,23 @@ class SupportsTaskWorkflow(Protocol):
 
     def fetch_owner_profile_context(self) -> str | None: ...
 
+    def publish_conversation_memory(
+        self,
+        *,
+        prompt: str,
+        answer: str,
+        source_urls: list[str],
+        memory_writes: list[dict[str, str]],
+    ) -> None: ...
+
 
 class SupportsChatResponder(Protocol):
-    def reply(self, text: str, owner_profile_context: str | None = None) -> str: ...
+    def reply(
+        self,
+        text: str,
+        owner_profile_context: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,12 +583,26 @@ def process_text_message(
         if should_use_chat_responder(
             text, resolution=resolution, chat_responder=chat_responder
         ):
-            return BotReply(
-                text=chat_responder.reply(
-                    normalized_text,
-                    owner_profile_context=task_client.fetch_owner_profile_context(),
-                )
+            knowledge_lookup = lookup_external_docs(normalized_text)
+            reply_text = chat_responder.reply(
+                normalized_text,
+                owner_profile_context=task_client.fetch_owner_profile_context(),
+                knowledge_context=knowledge_lookup.context,
             )
+            source_urls = extract_source_urls(normalized_text, reply_text)
+            for source_url in knowledge_lookup.source_urls:
+                if source_url not in source_urls:
+                    source_urls.append(source_url)
+
+            task_client.publish_conversation_memory(
+                prompt=normalized_text,
+                answer=reply_text,
+                source_urls=source_urls,
+                memory_writes=serialize_memory_writes(
+                    extract_memory_writes(normalized_text)
+                ),
+            )
+            return BotReply(text=reply_text)
 
         return _create_task_from_intent(
             telegram_user_id=telegram_user_id,

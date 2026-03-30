@@ -82,3 +82,34 @@ def test_chat_responder_injects_owner_profile_context(monkeypatch) -> None:
     system_prompt = captured_payload["messages"][0]["content"]
     assert "Владелец: Степан Карпов" in system_prompt
     assert "Город: Москва" in system_prompt
+
+
+def test_chat_responder_injects_knowledge_context(monkeypatch) -> None:
+    captured_payload: dict[str, object] = {}
+
+    def fake_urlopen(request, timeout):
+        del timeout
+        captured_payload.update(json.loads(request.data.decode("utf-8")))
+        return FakeDeepSeekResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Принято."
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(chat_responder_module, "urlopen", fake_urlopen)
+    responder = DeepSeekChatResponder(api_key="test-key")
+
+    responder.reply(
+        "что нового в FastAPI?",
+        knowledge_context="External docs:\nFastAPI Release Notes",
+    )
+
+    system_prompt = captured_payload["messages"][0]["content"]
+    assert "External docs" in system_prompt
+    assert "FastAPI Release Notes" in system_prompt

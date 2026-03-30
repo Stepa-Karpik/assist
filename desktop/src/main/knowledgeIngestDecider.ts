@@ -22,7 +22,7 @@ export type KnowledgeSkillApprovalDraft = {
 };
 
 export type KnowledgeIngestInput = {
-  origin: "local-chat" | "remote-task";
+  origin: "local-chat" | "remote-task" | "telegram-chat";
   prompt: string;
   answer: string;
   sourceUrls?: string[];

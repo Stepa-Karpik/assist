@@ -17,7 +17,12 @@ class DeepSeekChatResponder:
     model: str = "deepseek-chat"
     timeout_seconds: float = 10.0
 
-    def reply(self, text: str, owner_profile_context: str | None = None) -> str:
+    def reply(
+        self,
+        text: str,
+        owner_profile_context: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str:
         system_prompt = (
             "You are Karpik, a natural Russian-speaking personal assistant. "
             "Answer in Russian. Sound human, calm and practical, not robotic. "
@@ -28,6 +33,11 @@ class DeepSeekChatResponder:
             system_prompt = (
                 f"{system_prompt}\n\n"
                 f"Owner profile context:\n{owner_profile_context.strip()}"
+            )
+        if knowledge_context is not None and knowledge_context.strip():
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                f"Relevant notes and docs:\n{knowledge_context.strip()}"
             )
 
         request_body = {

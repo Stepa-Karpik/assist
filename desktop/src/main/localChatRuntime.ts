@@ -12,13 +12,19 @@ type SendLocalChatMessageInput = {
   text: string;
 };
 
+type ConversationReplyResult = {
+  text: string;
+  sourceUrls?: string[];
+};
+
 type LocalChatRuntimeOptions = {
   chatStore: LocalChatStore;
   executeTask: (task: ExecutableTask) => Promise<TaskExecutionResult>;
   recordKnowledgeInteraction?: (input: {
-    origin: "local-chat";
+    origin: "local-chat" | "telegram-chat";
     prompt: string;
     answer: string;
+    sourceUrls?: string[];
     memoryWrites?: ChatKnowledgeWrite[];
   }) => Promise<void> | void;
   persistLocalApproval?: (
@@ -29,12 +35,12 @@ type LocalChatRuntimeOptions = {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
-  }) => Promise<string>;
+  }) => Promise<string | ConversationReplyResult>;
   replyToConversation?: (input: {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
-  }) => Promise<string> | string;
+  }) => Promise<string | ConversationReplyResult> | string | ConversationReplyResult;
   onChatUpdated?: (detail: LocalChatDetail) => void;
   planMessage?: (text: string) => ChatPlan;
   getWorkspaceRootForChat?: (chatId: string) => string | null | undefined;
@@ -113,7 +119,7 @@ export function createLocalChatRuntime({
     void (async () => {
       try {
         const memoryWrites = extractMemoryWrites(plan);
-        const answer =
+        const reply =
           streamReply !== undefined
             ? await streamReply({
                 chatId,
@@ -125,23 +131,28 @@ export function createLocalChatRuntime({
                 prompt,
                 plan
               });
-
-        const finalText = answer?.trim() || buildStaticConversationReply(prompt);
+        const finalText =
+          typeof reply === "string"
+            ? reply.trim()
+            : reply?.text?.trim();
+        const sourceUrls = typeof reply === "string" ? [] : reply?.sourceUrls ?? [];
+        const normalizedFinalText = finalText || buildStaticConversationReply(prompt);
         const detail = chatStore.updateMessage(chatId, placeholderMessageId, {
-          text: finalText,
+          text: normalizedFinalText,
           role: "assistant"
         });
         await recordKnowledgeInteraction?.({
           origin: "local-chat",
           prompt,
-          answer: finalText,
+          answer: normalizedFinalText,
+          sourceUrls,
           memoryWrites
         });
         logActivity?.({
           kind: "local_result",
           status: "success",
           title: "Local assistant reply",
-          detail: finalText,
+          detail: normalizedFinalText,
           chatId
         });
         onChatUpdated?.(detail);

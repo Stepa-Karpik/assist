@@ -40,8 +40,10 @@ import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
+  type ConversationMemoryEventListResponse,
   type DevicePresenceResponse,
   type PairingStateResponse,
+  type RemoteConversationMemoryEvent,
   type RemoteTaskRecord,
   type RemoteAppCatalogItem,
   createSyncClient
@@ -352,8 +354,87 @@ async function pollTaskState() {
       runtimeState: taskRuntimeState
     });
     updateTaskSnapshot(await hydrateTaskSnapshot(nextSnapshot));
+    await pollConversationMemoryEvents();
   } finally {
     taskPollInFlight = false;
+  }
+}
+
+async function applyKnowledgeInteraction(input: {
+  origin: "local-chat" | "telegram-chat" | "remote-task";
+  prompt: string;
+  answer: string;
+  sourceUrls?: string[];
+  memoryWrites?: Array<{
+    target: "assist/profile" | "assist/preferences" | "assist/docs/websites" | "assist/docs/papers";
+    key: string;
+    value: string;
+  }>;
+}) {
+  const profilePatch: OwnerProfileInput = {};
+
+  for (const write of input.memoryWrites ?? []) {
+    if (write.target !== "assist/profile") {
+      continue;
+    }
+
+    if (write.key === "full_name") {
+      profilePatch.fullName = write.value;
+    } else if (write.key === "occupation") {
+      profilePatch.occupation = write.value;
+    }
+  }
+
+  if (ownerProfileStore !== null && Object.keys(profilePatch).length > 0) {
+    ownerProfileStore.save(profilePatch);
+    await syncOwnerProfileState().catch((error: unknown) => {
+      console.error("Failed to sync owner profile state", error);
+    });
+  }
+
+  await knowledgeBackgroundWriter?.recordInteraction(input);
+}
+
+async function pollConversationMemoryEvents() {
+  if (vaultSettingsStore?.getVaultRoot() === null) {
+    return;
+  }
+
+  const response = await syncClient.fetchConversationMemoryEvents();
+
+  if (!response.ok) {
+    logResponseError("Fetching conversation memory events", response);
+    return;
+  }
+
+  const payload = (await response.json()) as ConversationMemoryEventListResponse;
+
+  for (const event of payload.items) {
+    await applyConversationMemoryEvent(event);
+  }
+}
+
+async function applyConversationMemoryEvent(event: RemoteConversationMemoryEvent) {
+  if (knowledgeBackgroundWriter === null) {
+    return;
+  }
+
+  try {
+    await applyKnowledgeInteraction({
+      origin: "telegram-chat",
+      prompt: event.prompt,
+      answer: event.answer,
+      sourceUrls: event.source_urls,
+      memoryWrites: event.memory_writes
+    });
+  } catch (error) {
+    console.error("Failed to apply conversation memory event", error);
+    return;
+  }
+
+  const ackResponse = await syncClient.ackConversationMemoryEvent(event.event_id);
+  if (!ackResponse.ok) {
+    logResponseError("Acknowledging conversation memory event", ackResponse);
   }
 }
 
@@ -1041,40 +1122,25 @@ async function bootstrap() {
         return "";
       }
 
-      return localChatResponder.reply(prompt, {
+      const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
+      const text = await localChatResponder.reply(prompt, {
         ownerProfileContext:
           ownerProfileStore === null
             ? null
             : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
-        knowledgeContext: chatKnowledgeRetriever.lookup(prompt)
+        knowledgeContext: knowledgeLookup.context
       });
+
+      return {
+        text,
+        sourceUrls: knowledgeLookup.sourceUrls
+      };
     },
     onChatUpdated: (detail) => {
       emitLocalChatUpdated(detail);
     },
     recordKnowledgeInteraction: async (input) => {
-      const profilePatch: OwnerProfileInput = {};
-
-      for (const write of input.memoryWrites ?? []) {
-        if (write.target !== "assist/profile") {
-          continue;
-        }
-
-        if (write.key === "full_name") {
-          profilePatch.fullName = write.value;
-        } else if (write.key === "occupation") {
-          profilePatch.occupation = write.value;
-        }
-      }
-
-      if (ownerProfileStore !== null && Object.keys(profilePatch).length > 0) {
-        ownerProfileStore.save(profilePatch);
-        await syncOwnerProfileState().catch((error: unknown) => {
-          console.error("Failed to sync owner profile state", error);
-        });
-      }
-
-      await knowledgeBackgroundWriter?.recordInteraction(input);
+      await applyKnowledgeInteraction(input);
     },
     persistLocalApproval: async (intent, draft) => {
       localApprovalStore?.saveDraft(intent, draft);

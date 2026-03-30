@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("createChatKnowledgeRetriever", () => {
-  it("returns snippets from user and assist notes for known topics", () => {
+  it("returns snippets from user and assist notes for known topics", async () => {
     const vaultRoot = createVaultRoot();
     const userNote = path.join(vaultRoot, "user", "Backend", "Python", "FastAPI", "FastAPI.md");
     const assistNote = path.join(
@@ -37,7 +37,10 @@ describe("createChatKnowledgeRetriever", () => {
 
     fs.mkdirSync(path.dirname(userNote), { recursive: true });
     fs.mkdirSync(path.dirname(assistNote), { recursive: true });
-    fs.writeFileSync(userNote, "# FastAPI\n\n## Практическая выжимка\n\nFastAPI хорошо подходит для типизированных API.");
+    fs.writeFileSync(
+      userNote,
+      "# FastAPI\n\n## Практическая выжимка\n\nFastAPI хорошо подходит для типизированных API."
+    );
     fs.writeFileSync(
       assistNote,
       "# FastAPI\n\n## Внутренние выводы\n\nПолезно смотреть changelog и docs перед ответом."
@@ -47,19 +50,41 @@ describe("createChatKnowledgeRetriever", () => {
       getVaultRoot: () => vaultRoot
     });
 
-    const snippet = retriever.lookup("что нового в FastAPI?");
+    const lookup = await retriever.lookup("что нового в FastAPI?");
 
-    expect(snippet).toContain("user:");
-    expect(snippet).toContain("assist:");
-    expect(snippet).toContain("FastAPI хорошо подходит");
-    expect(snippet).toContain("Полезно смотреть changelog");
+    expect(lookup.context).toContain("user:");
+    expect(lookup.context).toContain("assist:");
+    expect(lookup.context).toContain("FastAPI хорошо подходит");
+    expect(lookup.context).toContain("Полезно смотреть changelog");
+    expect(lookup.sourceUrls).toEqual([]);
   });
 
-  it("returns null when no matching vault context exists", () => {
+  it("returns an empty lookup result when no matching vault context exists", async () => {
     const retriever = createChatKnowledgeRetriever({
-      getVaultRoot: () => null
+      getVaultRoot: () => null,
+      fetchImpl: async () => new Response("", { status: 404 })
     });
 
-    expect(retriever.lookup("что нового в FastAPI?")).toBeNull();
+    await expect(retriever.lookup("что нового в FastAPI?")).resolves.toEqual({
+      context: null,
+      sourceUrls: []
+    });
+  });
+
+  it("falls back to external docs when local vault context is missing", async () => {
+    const retriever = createChatKnowledgeRetriever({
+      getVaultRoot: () => createVaultRoot(),
+      fetchImpl: async () =>
+        new Response(
+          "<html><body><h1>FastAPI Release Notes</h1><p>FastAPI 0.120 improved dependency handling and form models.</p></body></html>",
+          { status: 200 }
+        )
+    });
+
+    const lookup = await retriever.lookup("что нового в FastAPI?");
+
+    expect(lookup.context).toContain("External docs");
+    expect(lookup.context).toContain("FastAPI Release Notes");
+    expect(lookup.sourceUrls).toContain("https://fastapi.tiangolo.com/release-notes/");
   });
 });
