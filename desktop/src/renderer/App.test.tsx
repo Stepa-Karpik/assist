@@ -92,6 +92,11 @@ type VaultSettingsState = {
   isConfigured: boolean;
 };
 
+type LocalChatStreamEvent = {
+  chatId: string;
+  detail: LocalChatDetail;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -571,6 +576,13 @@ const sendLocalChatMessage = vi.fn(
     return updatedChat;
   }
 );
+const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) => void) => {
+  subscribeLocalChatEvents.listener = listener;
+  return () => {
+    subscribeLocalChatEvents.listener = null;
+  };
+});
+subscribeLocalChatEvents.listener = null as ((event: LocalChatStreamEvent) => void) | null;
 
 describe("App navigation", () => {
   beforeEach(() => {
@@ -611,6 +623,7 @@ describe("App navigation", () => {
       refreshDiscoveredApps,
       submitQuickRequest,
       sendLocalChatMessage,
+      subscribeLocalChatEvents,
       saveAuthConfig,
       saveAppRegistryEntry,
       saveAppPreferences,
@@ -658,6 +671,8 @@ describe("App navigation", () => {
     refreshDiscoveredApps.mockClear();
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
+    subscribeLocalChatEvents.mockClear();
+    subscribeLocalChatEvents.listener = null;
     saveAuthConfig.mockClear();
     saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
@@ -848,6 +863,83 @@ describe("App navigation", () => {
       text: "status"
     });
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("updates the local chat view when the assistant reply streams in later", async () => {
+    localChatsState = [
+      {
+        chatId: "local-chat-stream-ui",
+        source: "desktop_chat",
+        title: "Execution chat",
+        createdAt: "2026-03-30T12:00:00.000Z",
+        updatedAt: "2026-03-30T12:00:00.000Z",
+        messageCount: 0,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo",
+        messages: []
+      }
+    ];
+
+    sendLocalChatMessage.mockImplementationOnce(async (payload: { chatId: string; text: string }) => {
+      const updatedChat: LocalChatDetail = {
+        ...localChatsState[0],
+        updatedAt: "2026-03-30T12:01:00.000Z",
+        messageCount: 2,
+        messages: [
+          {
+            messageId: "user-stream-1",
+            role: "user",
+            text: payload.text,
+            createdAt: "2026-03-30T12:01:00.000Z"
+          },
+          {
+            messageId: "assistant-stream-1",
+            role: "assistant",
+            text: "Ассистент отвечает...",
+            createdAt: "2026-03-30T12:01:01.000Z"
+          }
+        ]
+      };
+
+      localChatsState = [updatedChat];
+      return updatedChat;
+    });
+
+    await renderMainView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
+    fireEvent.change(await screen.findByLabelText("Local request"), {
+      target: { value: "что нового в FastAPI?" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Отправить" }));
+
+    expect(await screen.findByText("Ассистент отвечает...")).toBeInTheDocument();
+
+    subscribeLocalChatEvents.listener?.({
+      chatId: "local-chat-stream-ui",
+      detail: {
+        ...localChatsState[0],
+        updatedAt: "2026-03-30T12:01:03.000Z",
+        messageCount: 2,
+        messages: [
+          {
+            messageId: "user-stream-1",
+            role: "user",
+            text: "что нового в FastAPI?",
+            createdAt: "2026-03-30T12:01:00.000Z"
+          },
+          {
+            messageId: "assistant-stream-1",
+            role: "assistant",
+            text: "FastAPI недавно обновился.",
+            createdAt: "2026-03-30T12:01:01.000Z"
+          }
+        ]
+      }
+    });
+
+    expect(await screen.findByText("FastAPI недавно обновился.")).toBeInTheDocument();
   });
 
   it("shows pairing controls and workspace registry settings", async () => {

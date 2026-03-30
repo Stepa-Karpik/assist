@@ -23,6 +23,66 @@ afterEach(() => {
 });
 
 describe("createLocalChatRuntime", () => {
+  it("returns immediately with a pending assistant placeholder for conversational replies", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-30T14:00:00.000Z"),
+      generateChatId: () => "local-chat-stream"
+    });
+    chatStore.createDesktopChat({
+      title: "Streaming chat"
+    });
+
+    let resolveReply: ((value: string) => void) | null = null;
+    const streamReply = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReply = resolve;
+        })
+    );
+    const onChatUpdated = vi.fn();
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      streamReply,
+      onChatUpdated
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-stream",
+      text: "что нового в FastAPI?"
+    });
+
+    expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      "user:что нового в FastAPI?",
+      "assistant:Ассистент отвечает..."
+    ]);
+    expect(streamReply).toHaveBeenCalledWith({
+      chatId: "local-chat-stream",
+      prompt: "что нового в FastAPI?"
+    });
+
+    resolveReply?.("FastAPI недавно обновился.");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onChatUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "local-chat-stream",
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            text: "FastAPI недавно обновился."
+          })
+        ])
+      })
+    );
+  });
+
   it("appends user and assistant messages for successful local execution", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
