@@ -1137,22 +1137,37 @@ async function bootstrap() {
     chatRunStore,
     executeTask: (task) => taskExecutor!.execute(task),
     replyToConversation: async ({ prompt }) => {
-      if (localChatResponder === null) {
-        return "";
+      const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
+
+      if (localChatResponder !== null) {
+        const text = await localChatResponder.reply(prompt, {
+          ownerProfileContext:
+            ownerProfileStore === null
+              ? null
+              : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
+          knowledgeContext: knowledgeLookup.context
+        });
+
+        return {
+          text,
+          sourceUrls: knowledgeLookup.sourceUrls
+        };
       }
 
-      const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
-      const text = await localChatResponder.reply(prompt, {
-        ownerProfileContext:
-          ownerProfileStore === null
-            ? null
-            : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
-        knowledgeContext: knowledgeLookup.context
+      const response = await syncClient.createConversationReply({
+        prompt,
+        knowledgeContext: knowledgeLookup.context,
+        includeExternalDocs: true
       });
 
+      if (!response.ok) {
+        throw new Error(`Failed to fetch server conversation reply: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as import("./syncClient").ConversationReplyResponse;
       return {
-        text,
-        sourceUrls: knowledgeLookup.sourceUrls
+        text: payload.text,
+        sourceUrls: [...knowledgeLookup.sourceUrls, ...payload.source_urls]
       };
     },
     onChatUpdated: (detail) => {

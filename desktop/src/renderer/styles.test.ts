@@ -25,4 +25,20 @@ describe("renderer stylesheet", () => {
     expect(shellLayoutOverrideIndex).toBeGreaterThan(-1);
     expect(standaloneOverrideIndex).toBeGreaterThan(shellLayoutOverrideIndex);
   });
+
+  it("keeps chat list, thread, and composer on independent scroll/layout tracks", () => {
+    const cssPath = path.resolve(process.cwd(), "src", "renderer", "styles.css");
+    const css = fs.readFileSync(cssPath, "utf8");
+
+    expect(css).toContain(".reference-chat-page__sidebar-column");
+    expect(css).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(css).toContain(".reference-chat-list");
+    expect(css).toContain("overflow-y: auto");
+    expect(css).toContain(".reference-thread-shell");
+    expect(css).toContain("overflow: hidden");
+    expect(css).toContain(".reference-thread-shell__messages");
+    expect(css).toContain("overflow-y: auto");
+    expect(css).toContain(".reference-thread-shell__composer");
+    expect(css).toContain("position: sticky");
+  });
 });

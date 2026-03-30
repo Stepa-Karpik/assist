@@ -210,6 +210,18 @@ export type ConversationMemoryEventListResponse = {
   items: RemoteConversationMemoryEvent[];
 };
 
+export type ConversationReplyRequest = {
+  device_id: string;
+  prompt: string;
+  knowledge_context: string | null;
+  include_external_docs: boolean;
+};
+
+export type ConversationReplyResponse = {
+  text: string;
+  source_urls: string[];
+};
+
 export type AuthEventListResponse = {
   items: AuthInputEvent[];
 };
@@ -577,6 +589,26 @@ export function createSyncClient({
     ackConversationMemoryEvent(eventId: string) {
       return fetchImpl(`${baseUrl}/api/chat-memory/events/${eventId}/ack`, {
         method: "POST"
+      });
+    },
+
+    createConversationReply(input: {
+      prompt: string;
+      knowledgeContext?: string | null;
+      includeExternalDocs?: boolean;
+    }) {
+      const payload: ConversationReplyRequest = {
+        device_id: deviceId,
+        prompt: input.prompt,
+        knowledge_context: input.knowledgeContext ?? null,
+        include_external_docs: input.includeExternalDocs ?? true
+      };
+      return fetchImpl(`${baseUrl}/api/chat/respond`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
       });
     },
 

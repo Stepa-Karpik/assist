@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.apps import router as apps_router
+from app.api.chat import router as chat_router
 from app.api.device import router as device_router
 from app.api.challenges import router as challenges_router
 from app.api.conversation_memory import router as conversation_memory_router
@@ -13,6 +14,7 @@ from app.api.tasks import router as tasks_router
 from app.config import get_settings
 from app.services.app_catalog_store import InMemoryAppCatalogStore
 from app.services.challenge_store import InMemoryChallengeStore
+from app.services.chat_responder import create_chat_responder
 from app.services.device_presence_store import InMemoryDevicePresenceStore
 from app.services.conversation_memory_store import InMemoryConversationMemoryStore
 from app.services.delivery_store import InMemoryDeliveryStore
@@ -45,8 +47,13 @@ def create_app() -> FastAPI:
     application.state.conversation_memory_store = InMemoryConversationMemoryStore(
         state_backend=state_backend
     )
+    application.state.chat_responder = create_chat_responder(
+        api_key=settings.deepseek_api_key,
+        model=settings.deepseek_model,
+    )
     application.include_router(health_router)
     application.include_router(apps_router, prefix=settings.api_prefix)
+    application.include_router(chat_router, prefix=settings.api_prefix)
     application.include_router(device_router, prefix=settings.api_prefix)
     application.include_router(profile_router, prefix=settings.api_prefix)
     application.include_router(tasks_router, prefix=settings.api_prefix)

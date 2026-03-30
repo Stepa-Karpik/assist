@@ -93,6 +93,47 @@ describe("createLocalChatRuntime", () => {
     );
   });
 
+  it("keeps the final streamed reply visible when knowledge recording fails", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-30T14:02:00.000Z"),
+      generateChatId: () => "local-chat-memory-failure"
+    });
+    chatStore.createDesktopChat({
+      title: "Memory failure chat"
+    });
+
+    const onChatUpdated = vi.fn();
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      streamReply: vi.fn(async () => "В мире обычно считают 195 государств."),
+      recordKnowledgeInteraction: vi.fn(async () => {
+        throw new Error("knowledge write failed");
+      }),
+      onChatUpdated,
+      streamDelayMs: 0
+    });
+
+    await runtime.sendMessage({
+      chatId: "local-chat-memory-failure",
+      text: "сколько стран в мире?"
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const finalDetail = chatStore.getChat("local-chat-memory-failure");
+    expect(finalDetail?.messages.at(-1)?.text).toBe("В мире обычно считают 195 государств.");
+    expect(onChatUpdated.mock.lastCall?.[0]?.messages.at(-1)?.text).toBe(
+      "В мире обычно считают 195 государств."
+    );
+  });
+
   it("appends user and assistant messages for successful local execution", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),

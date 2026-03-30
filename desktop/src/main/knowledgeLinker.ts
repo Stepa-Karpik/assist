@@ -11,7 +11,11 @@ import {
 
 type KnowledgeLinkerOptions = {
   vaultRoot: string;
+  fetchImpl?: KnowledgeFetch;
 };
+
+type FetchTextResponse = Pick<Response, "ok" | "text">;
+type KnowledgeFetch = (input: string) => Promise<FetchTextResponse>;
 
 type LinkSourceToTopicInput = {
   topicRelativePath: string;
@@ -45,9 +49,50 @@ function deriveTopicTitle(topicRelativePath: string): string {
   return path.posix.parse(topicRelativePath).name;
 }
 
-function deriveSourceTitle(sourceUrl: URL, preferredTitle?: string): string {
+function extractHtmlTitle(html: string): string | null {
+  const ogTitleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+
+  if (ogTitleMatch?.[1]) {
+    return normalizeTitle(ogTitleMatch[1]);
+  }
+
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+  if (titleMatch?.[1]) {
+    return normalizeTitle(titleMatch[1]);
+  }
+
+  const headingMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+
+  if (headingMatch?.[1]) {
+    return normalizeTitle(headingMatch[1]);
+  }
+
+  return null;
+}
+
+async function deriveSourceTitle(
+  sourceUrl: URL,
+  preferredTitle?: string,
+  fetchImpl: KnowledgeFetch = fetchSourceHtml
+): Promise<string> {
   if (preferredTitle && preferredTitle.trim().length > 0) {
     return normalizeTitle(preferredTitle);
+  }
+
+  try {
+    const response = await fetchImpl(sourceUrl.toString());
+
+    if (response.ok) {
+      const html = await response.text();
+      const extractedTitle = extractHtmlTitle(html);
+
+      if (extractedTitle) {
+        return extractedTitle;
+      }
+    }
+  } catch {
+    // Ignore transient lookup errors and fall back to URL-derived titles.
   }
 
   const lastSegment = sourceUrl.pathname
@@ -60,9 +105,11 @@ function deriveSourceTitle(sourceUrl: URL, preferredTitle?: string): string {
 
 export class KnowledgeLinker {
   private readonly vaultRoot: string;
+  private readonly fetchImpl: KnowledgeFetch;
 
-  constructor({ vaultRoot }: KnowledgeLinkerOptions) {
+  constructor({ vaultRoot, fetchImpl = fetchSourceHtml }: KnowledgeLinkerOptions) {
     this.vaultRoot = vaultRoot;
+    this.fetchImpl = fetchImpl;
   }
 
   async linkSourceToTopic({
@@ -75,7 +122,7 @@ export class KnowledgeLinker {
     const source = new URL(sourceUrl);
     const domain = source.hostname;
     const topicTitle = deriveTopicTitle(topicRelativePath);
-    const displayTitle = deriveSourceTitle(source, sourceTitle);
+    const displayTitle = await deriveSourceTitle(source, sourceTitle, this.fetchImpl);
     const registryRoot = path.join(this.vaultRoot, "assist", "docs", "registry");
     const websitesRoot = path.join(this.vaultRoot, "assist", "docs", "websites");
     const papersRoot = path.join(this.vaultRoot, "assist", "docs", "papers", domain);
@@ -124,4 +171,8 @@ export class KnowledgeLinker {
       await fs.writeFile(filePath, nextContent, "utf8");
     }
   }
+}
+
+async function fetchSourceHtml(input: string): Promise<FetchTextResponse> {
+  return fetch(input);
 }

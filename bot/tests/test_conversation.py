@@ -63,6 +63,7 @@ class FakeTaskClient:
         cancel_result: TaskStatusResult | None = None,
         app_catalog: list[FakeAppCatalogEntry] | None = None,
         owner_profile_context: str | None = None,
+        publish_memory_error: Exception | None = None,
     ) -> None:
         self.task_result = task_result or TaskWorkflowResult(status="ignored")
         self.auth_result = auth_result or TaskWorkflowResult(status="ignored")
@@ -73,6 +74,7 @@ class FakeTaskClient:
         self.cancel_result = cancel_result or TaskStatusResult(found=False)
         self.app_catalog = app_catalog or []
         self.owner_profile_context = owner_profile_context
+        self.publish_memory_error = publish_memory_error
         self.conversation_memory_calls: list[dict[str, object]] = []
         self.task_calls: list[dict[str, object]] = []
         self.auth_calls: list[dict[str, object]] = []
@@ -158,6 +160,8 @@ class FakeTaskClient:
         source_urls: list[str],
         memory_writes: list[dict[str, str]],
     ) -> None:
+        if self.publish_memory_error is not None:
+            raise self.publish_memory_error
         self.conversation_memory_calls.append(
             {
                 "prompt": prompt,
@@ -697,3 +701,27 @@ def test_article_message_that_mentions_codex_stays_conversational() -> None:
     assert reply == BotReply(text="Да, это материал про то, как Codex работает на практике.")
     assert client.task_calls == []
     assert len(client.conversation_memory_calls) == 1
+
+
+def test_conversational_reply_still_returns_when_memory_publish_fails() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(
+        owner_profile_context="Р’Р»Р°РґРµР»РµС†: РЎС‚РµРїР°РЅ РљР°СЂРїРѕРІ",
+        publish_memory_error=RuntimeError("memory publish failed"),
+    )
+    responder = FakeChatResponder("В мире обычно считают 195 государств.")
+
+    reply = process_text_message(
+        "сколько стран в мире?",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=FakeIntentResolver(
+            IntentResolution(kind="task", risk="high", intent="codex сколько стран в мире?")
+        ),
+        chat_responder=responder,
+    )
+
+    assert reply == BotReply(text="В мире обычно считают 195 государств.")
+    assert client.task_calls == []

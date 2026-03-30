@@ -54,4 +54,17 @@ describe("decideKnowledgeWrites", () => {
       })
     ]);
   });
+  it("does not turn pronouns into topic names for article questions", () => {
+    const plan = decideKnowledgeWrites({
+      origin: "telegram-chat",
+      prompt:
+        "читаю на хабре https://habr.com/ru/articles/912576/, например про то, как работает codex, знаешь что нибудь об этом?",
+      answer: "Codex помогает работать с кодовой базой и запускать изменения из CLI."
+    });
+
+    expect(plan.userWrites).toHaveLength(1);
+    expect(plan.assistWrites).toHaveLength(1);
+    expect(plan.userWrites[0]?.preferredLeaf).toBe("Codex");
+    expect(plan.assistWrites[0]?.preferredLeaf).toBe("Codex");
+  });
 });

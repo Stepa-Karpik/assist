@@ -27,6 +27,8 @@ services:
       KARPIK_DATABASE_URL: postgresql://${POSTGRES_USER:-karpik}:${POSTGRES_PASSWORD:-karpik}@postgres:5432/${POSTGRES_DB:-karpik}
       KARPIK_DATABASE_CONNECT_TIMEOUT: ${KARPIK_DATABASE_CONNECT_TIMEOUT:-5}
       KARPIK_API_PREFIX: /api
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
     healthcheck:
       test:
         [

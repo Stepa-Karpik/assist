@@ -45,6 +45,30 @@ const knowledgeIntentPattern =
   /\b(документац|запомни|сохрани|добавь|объясни|обьясни|расскажи|разбери|как работает|что такое|guide|docs?)\b/i;
 const greetingPattern = /^(привет|hello|hi|здравствуй|добрый день)\b/i;
 
+const stopTopicWords = new Set([
+  "то",
+  "это",
+  "этом",
+  "этим",
+  "эти",
+  "эта",
+  "этот",
+  "как",
+  "что",
+  "про",
+  "по",
+  "о",
+  "например",
+  "статьи",
+  "статья",
+  "хабре",
+  "хабр",
+  "на",
+  "об",
+  "работает",
+  "работают"
+]);
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -60,6 +84,34 @@ function normalizeTopicPhrase(value: string): string {
   return normalized.length > 0 ? normalized : "Новая тема";
 }
 
+function toTitleCase(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function extractFallbackTopic(prompt: string): string {
+  const tokens = prompt.match(/[A-Za-zА-Яа-я0-9+!._-]+/g) ?? [];
+
+  for (const token of tokens) {
+    const normalizedToken = token.toLowerCase();
+
+    if (stopTopicWords.has(normalizedToken) || /^https?$/i.test(normalizedToken)) {
+      continue;
+    }
+
+    if (/^\d+$/.test(normalizedToken)) {
+      continue;
+    }
+
+    return normalizeTopicPhrase(toTitleCase(token));
+  }
+
+  return normalizeTopicPhrase(prompt.split(/\s+/).slice(0, 3).join(" "));
+}
+
 function resolveTopic(prompt: string): TopicResolution {
   const explicitMappings: Array<{
     pattern: RegExp;
@@ -70,6 +122,11 @@ function resolveTopic(prompt: string): TopicResolution {
       pattern: /\bmcp\b/i,
       topicTrail: ["AI", "models", "MCP"],
       preferredLeaf: "MCP"
+    },
+    {
+      pattern: /\bcodex\b/i,
+      topicTrail: ["AI", "agents", "Codex"],
+      preferredLeaf: "Codex"
     },
     {
       pattern: /\bfastapi\b/i,
@@ -120,7 +177,11 @@ function resolveTopic(prompt: string): TopicResolution {
   const topicMatch = prompt.match(
     /(?:документац(?:ию|ия)\s+по|добавь\s+документац(?:ию|ия)\s+по|объясни|обьясни|расскажи|разбери|про|по|о)\s+([A-Za-zА-Яа-я0-9+!._-]+)/i
   );
-  const rawTopic = normalizeTopicPhrase(topicMatch?.[1] ?? prompt.split(/\s+/).slice(0, 3).join(" "));
+  const matchedTopic = topicMatch?.[1];
+  const rawTopic =
+    matchedTopic && !stopTopicWords.has(matchedTopic.toLowerCase())
+      ? normalizeTopicPhrase(toTitleCase(matchedTopic))
+      : extractFallbackTopic(prompt);
 
   return {
     topicTrail: ["Темы", rawTopic],

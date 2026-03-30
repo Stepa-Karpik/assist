@@ -984,6 +984,70 @@ describe("App navigation", () => {
     expect(await screen.findByText("FastAPI недавно обновился.")).toBeInTheDocument();
   });
 
+  it("shows the user message immediately before local chat delivery resolves", async () => {
+    localChatsState = [
+      {
+        chatId: "local-chat-optimistic",
+        source: "desktop_chat",
+        title: "Optimistic chat",
+        createdAt: "2026-03-30T12:00:00.000Z",
+        updatedAt: "2026-03-30T12:00:00.000Z",
+        messageCount: 0,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo",
+        messages: []
+      }
+    ];
+
+    let resolveDelivery!: (detail: LocalChatDetail) => void;
+    sendLocalChatMessage.mockImplementationOnce(
+      () =>
+        new Promise<LocalChatDetail>((resolve) => {
+          resolveDelivery = resolve;
+        })
+    );
+
+    await renderMainView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
+    fireEvent.change(await screen.findByLabelText("Local request"), {
+      target: { value: "как твои дела?" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Отправить" }));
+
+    expect(await screen.findByText("как твои дела?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Остановить ответ" })).toBeInTheDocument();
+
+    resolveDelivery({
+      ...localChatsState[0],
+      updatedAt: "2026-03-30T12:01:00.000Z",
+      messageCount: 3,
+      messages: [
+        {
+          messageId: "user-optimistic-1",
+          role: "user",
+          text: "как твои дела?",
+          createdAt: "2026-03-30T12:01:00.000Z"
+        },
+        {
+          messageId: "assistant-ack-1",
+          role: "assistant",
+          text: "Сейчас посмотрю и отвечу по сути.",
+          createdAt: "2026-03-30T12:01:01.000Z"
+        },
+        {
+          messageId: "assistant-stream-1",
+          role: "assistant",
+          text: "Ассистент отвечает...",
+          createdAt: "2026-03-30T12:01:02.000Z"
+        }
+      ]
+    });
+
+    expect(await screen.findByText("Ассистент отвечает...")).toBeInTheDocument();
+  });
+
   it("shows pairing controls and workspace registry settings", async () => {
     await renderMainView();
 

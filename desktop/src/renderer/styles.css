@@ -1708,6 +1708,9 @@ body,
   gap: 12px;
   grid-template-columns: 226px minmax(0, 1fr);
   min-height: calc(100vh - 134px);
+  height: calc(100vh - 134px);
+  overflow: hidden;
+  align-items: stretch;
 }
 
 .reference-chat-page__sidebar-column,
@@ -1716,6 +1719,7 @@ body,
   grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .reference-chat-page__heading {
@@ -1765,7 +1769,8 @@ body,
   align-content: start;
   gap: 8px;
   padding: 20px 10px 20px 12px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .reference-chat-list__item {
@@ -1798,6 +1803,7 @@ body,
   gap: 14px;
   padding: 22px 22px 16px;
   overflow: hidden;
+  min-height: 0;
 }
 
 .reference-thread-shell__glow {
@@ -1846,7 +1852,8 @@ body,
   display: grid;
   align-content: start;
   gap: 18px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 6px;
 }
 
@@ -1939,13 +1946,15 @@ body,
   z-index: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: end;
   gap: 12px;
   min-height: 48px;
   padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   background: rgba(8, 10, 15, 0.7);
+  position: sticky;
+  bottom: 0;
 }
 
 .reference-thread-shell__attach {
@@ -1960,10 +1969,38 @@ body,
   outline: 0;
   background: transparent;
   color: #f1f4fb;
+  resize: none;
+  min-height: 24px;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.45;
 }
 
 .reference-thread-shell__input::placeholder {
   color: rgba(240, 243, 251, 0.48);
+}
+
+.reference-thread-shell__submit {
+  transition:
+    transform 120ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+.reference-thread-shell__submit.is-busy {
+  animation: send-button-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes send-button-pulse {
+  from {
+    transform: scale(1);
+    box-shadow: 0 10px 20px rgba(62, 80, 206, 0.3);
+  }
+
+  to {
+    transform: scale(1.06);
+    box-shadow: 0 14px 28px rgba(88, 111, 255, 0.42);
+  }
 }
 
 .reference-empty-state {

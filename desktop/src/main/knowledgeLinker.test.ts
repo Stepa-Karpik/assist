@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { KnowledgeLinker } from "./knowledgeLinker";
 import { DOCS_REGISTRY_FILE_NAME, TRUSTED_SITES_FILE_NAME } from "./knowledgeVaultConstants";
@@ -56,5 +56,36 @@ describe("KnowledgeLinker", () => {
     expect(trustedSitesContent).toContain("[[habr.com]]");
     expect(websiteContent).toContain("[[MCP]]");
     expect(docsRegistryContent).toContain("https://habr.com/ru/articles/899088/");
+  });
+
+  it("uses fetched page title when sourceTitle is not provided", async () => {
+    const vaultRoot = createVaultRoot();
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        "<html><head><title>Как работает Codex на практике</title></head><body>body</body></html>"
+    }));
+    const linker = new KnowledgeLinker({ vaultRoot, fetchImpl });
+
+    await linker.linkSourceToTopic({
+      topicRelativePath: "user/Темы/Codex/Codex.md",
+      sourceUrl: "https://habr.com/ru/articles/912576/"
+    });
+
+    const docsRegistryFile = path.join(
+      vaultRoot,
+      "assist",
+      "docs",
+      "registry",
+      DOCS_REGISTRY_FILE_NAME
+    );
+    const papersRoot = path.join(vaultRoot, "assist", "docs", "papers", "habr.com");
+    const docsRegistryContent = fs.readFileSync(docsRegistryFile, "utf8");
+    const paperFiles = fs.readdirSync(papersRoot);
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://habr.com/ru/articles/912576/");
+    expect(docsRegistryContent).toContain("Как работает Codex на практике");
+    expect(paperFiles).toContain("Как работает Codex на практике.md");
+    expect(paperFiles).not.toContain("912576.md");
   });
 });

@@ -11,6 +11,8 @@ class Settings:
     state_file: Path = Path(__file__).resolve().parents[1] / ".tmp" / "runtime-state.json"
     database_url: str | None = None
     database_connect_timeout: int = 5
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
 
 
 def get_settings() -> Settings:
@@ -26,4 +28,6 @@ def get_settings() -> Settings:
         ),
         database_url=getenv("KARPIK_DATABASE_URL"),
         database_connect_timeout=int(getenv("KARPIK_DATABASE_CONNECT_TIMEOUT", "5")),
+        deepseek_api_key=getenv("DEEPSEEK_API_KEY", ""),
+        deepseek_model=getenv("DEEPSEEK_MODEL", "deepseek-chat"),
     )

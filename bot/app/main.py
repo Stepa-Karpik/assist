@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from contextlib import suppress
+import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
@@ -47,8 +48,11 @@ from app.handlers.task import (
     resolve_status_command,
 )
 from app.intent_resolver import DeepSeekIntentResolver, RuleBasedIntentResolver
+from app.message_delivery import publish_final_reply
 from app.pairing_client import PairingServerClient
 from app.task_client import TaskServerClient
+
+logger = logging.getLogger(__name__)
 
 
 def to_inline_keyboard(reply: BotReply) -> InlineKeyboardMarkup | None:
@@ -140,11 +144,34 @@ def create_dispatcher(
                     else "Не удалось подготовить ответ. Попробуй уточнить запрос."
                 )
 
-                with suppress(Exception):
-                    await placeholder.edit_text(reply_text, reply_markup=reply_markup)
+                await publish_final_reply(
+                    message=message,
+                    placeholder=placeholder,
+                    text=reply_text,
+                    reply_markup=reply_markup,
+                    ack=ack,
+                )
                 with suppress(Exception):
                     await ack.delete()
             except Exception:
+                logger.exception("Failed to prepare conversational reply")
+                await publish_final_reply(
+                    message=message,
+                    placeholder=placeholder,
+                    text="РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚. РџРѕРїСЂРѕР±СѓР№ СѓС‚РѕС‡РЅРёС‚СЊ Р·Р°РїСЂРѕСЃ.",
+                    ack=ack,
+                )
+                with suppress(Exception):
+                    await ack.delete()
+                return
+                await publish_final_reply(
+                    message=message,
+                    placeholder=placeholder,
+                    text="РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚. РџРѕРїСЂРѕР±СѓР№ СѓС‚РѕС‡РЅРёС‚СЊ Р·Р°РїСЂРѕСЃ.",
+                )
+                with suppress(Exception):
+                    await ack.delete()
+                return
                 with suppress(Exception):
                     await placeholder.edit_text(
                         "Не удалось подготовить ответ. Попробуй уточнить запрос."

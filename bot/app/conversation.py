@@ -605,14 +605,18 @@ def process_text_message(
                 if source_url not in source_urls:
                     source_urls.append(source_url)
 
-            task_client.publish_conversation_memory(
-                prompt=normalized_text,
-                answer=reply_text,
-                source_urls=source_urls,
-                memory_writes=serialize_memory_writes(
-                    extract_memory_writes(normalized_text)
-                ),
-            )
+            try:
+                task_client.publish_conversation_memory(
+                    prompt=normalized_text,
+                    answer=reply_text,
+                    source_urls=source_urls,
+                    memory_writes=serialize_memory_writes(
+                        extract_memory_writes(normalized_text)
+                    ),
+                )
+            except Exception:
+                # Memory publication is best-effort and must not break the visible reply.
+                pass
             return BotReply(text=reply_text)
 
         return _create_task_from_intent(

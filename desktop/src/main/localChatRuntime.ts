@@ -149,8 +149,8 @@ export function createLocalChatRuntime({
       return "Пожалуйста.";
     }
 
-    return ACK_TEXT;
-  }
+  return "РќРµ СЃРјРѕРі СЃСЂР°Р·Сѓ РґР°С‚СЊ РЅРѕСЂРјР°Р»СЊРЅС‹Р№ РѕС‚РІРµС‚. РЈС‚РѕС‡РЅРё, С‡С‚Рѕ РёРјРµРЅРЅРѕ С‚РµР±Рµ РІР°Р¶РЅРѕ, Рё СЏ СЂР°Р·Р±РµСЂСѓ СЌС‚Рѕ РїРѕ С€Р°РіР°Рј.";
+}
 
   function removeAckMessage(chatId: string, ackMessageId: string): LocalChatDetail {
     const detail = chatStore.deleteMessage(chatId, ackMessageId);
@@ -158,7 +158,7 @@ export function createLocalChatRuntime({
     return detail;
   }
 
-  async function streamAssistantText(input: {
+async function streamAssistantText(input: {
     chatId: string;
     runId: string;
     placeholderMessageId: string;
@@ -186,7 +186,9 @@ export function createLocalChatRuntime({
         role: "assistant"
       });
       onChatUpdated?.(detail);
-      await delay(streamDelayMs);
+      if (streamDelayMs > 0) {
+        await delay(streamDelayMs);
+      }
     }
 
     return {
@@ -253,13 +255,23 @@ export function createLocalChatRuntime({
           return;
         }
 
-        await recordKnowledgeInteraction?.({
-          origin: "local-chat",
-          prompt,
-          answer: normalizedFinalText,
-          sourceUrls,
-          memoryWrites
-        });
+        try {
+          await recordKnowledgeInteraction?.({
+            origin: "local-chat",
+            prompt,
+            answer: normalizedFinalText,
+            sourceUrls,
+            memoryWrites
+          });
+        } catch (error: unknown) {
+          logActivity?.({
+            kind: "local_result",
+            status: "warning",
+            title: "Knowledge write skipped",
+            detail: error instanceof Error ? error.message : "Knowledge write failed",
+            chatId
+          });
+        }
         logActivity?.({
           kind: "local_result",
           status: "success",
@@ -352,12 +364,22 @@ export function createLocalChatRuntime({
           const memoryWrites = extractMemoryWrites(plan);
 
           if (resolvedConversation.kind === "reply") {
-            await recordKnowledgeInteraction?.({
-              origin: "local-chat",
-              prompt: normalizedText,
-              answer: resolvedConversation.text,
-              memoryWrites
-            });
+            try {
+              await recordKnowledgeInteraction?.({
+                origin: "local-chat",
+                prompt: normalizedText,
+                answer: resolvedConversation.text,
+                memoryWrites
+              });
+            } catch (error: unknown) {
+              logActivity?.({
+                kind: "local_result",
+                status: "warning",
+                title: "Knowledge write skipped",
+                detail: error instanceof Error ? error.message : "Knowledge write failed",
+                chatId
+              });
+            }
             logActivity?.({
               kind: "local_result",
               status: "success",
@@ -413,11 +435,21 @@ export function createLocalChatRuntime({
       const resolvedInput = await resolveInput(normalizedText);
 
       if (resolvedInput.kind === "reply") {
-        await recordKnowledgeInteraction?.({
-          origin: "local-chat",
-          prompt: normalizedText,
-          answer: resolvedInput.text
-        });
+        try {
+          await recordKnowledgeInteraction?.({
+            origin: "local-chat",
+            prompt: normalizedText,
+            answer: resolvedInput.text
+          });
+        } catch (error: unknown) {
+          logActivity?.({
+            kind: "local_result",
+            status: "warning",
+            title: "Knowledge write skipped",
+            detail: error instanceof Error ? error.message : "Knowledge write failed",
+            chatId
+          });
+        }
         logActivity?.({
           kind: "local_result",
           status: "success",
