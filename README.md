@@ -28,6 +28,7 @@ Current state:
 - FastAPI control plane and Telegram bot wired end-to-end
 - pairing, auth challenge, task queue, screenshot delivery, and local approval flows
 - desktop updater support for installed Windows builds through a Squirrel feed
+- `Knowledge / Review` uses a configured Obsidian-friendly vault root with `user/` and `assist/`
 
 Operational entry points:
 

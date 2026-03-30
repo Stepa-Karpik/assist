@@ -1,65 +1,28 @@
 # Knowledge Browser Design
 
-## Goal
+## Status
 
-Сделать `Knowledge / Review` рабочей desktop-вкладкой, где видны пользовательские материалы из runtime-папок и можно быстро открыть текстовый preview.
+Superseded by [2026-03-30-knowledge-vault-foundation-design.md](./2026-03-30-knowledge-vault-foundation-design.md).
 
-## Scope
+## Why It Was Superseded
 
-Срез остаётся полностью локальным. Он не меняет сервер, Telegram или task protocol.
+The original knowledge browser described a read-only view over runtime folders such as:
 
-Покрываем четыре runtime-источника:
+- `docs/user/master_info`
+- `docs/user/knowledge`
+- `docs/user/docs/notes`
+- `docs/user/websites`
 
-- `master_info`
-- `knowledge`
-- `docs/notes`
-- `websites`
+The current product direction has moved to a configurable Obsidian-friendly vault with:
 
-## Architecture
+- `user/`
+- `assist/`
 
-### Main-side knowledge store
+Knowledge is now expected to be:
 
-Desktop получает отдельный `knowledgeStore`, который знает allowlisted roots и умеет:
+- browsed from the configured vault root
+- written quietly in the background after useful interactions
+- linked through markdown and wiki-links
+- split between user-facing knowledge and assistant-facing memory/docs
 
-- перечислить доступные файлы по секциям
-- безопасно читать конкретный файл по `section + relativePath`
-
-Store не редактирует файлы. Это browser/read-only слой.
-
-### Safe path model
-
-У каждой секции свой root:
-
-- `master_info -> docs/user/master_info`
-- `knowledge -> docs/user/knowledge`
-- `notes -> docs/user/docs/notes`
-- `websites -> docs/user/websites`
-
-Любая попытка traversal за пределы секции отклоняется.
-
-### Renderer flow
-
-`KnowledgePage` грузит список секций и файлов, выбирает первый доступный файл и показывает preview. При выборе другого файла renderer делает отдельный запрос на чтение.
-
-### Non-goals
-
-- редактирование файлов
-- binary preview
-- rich markdown rendering
-- server sync
-
-## UX
-
-Страница состоит из двух колонок:
-
-- слева секции и список файлов
-- справа preview выбранного файла
-
-Если секция пуста, показывается пустой state. Если файл не читается, показывается короткая ошибка.
-
-## Testing
-
-- unit tests для safe listing/reading
-- renderer test для knowledge page с выбором файла и preview
-- полный regression desktop/server/bot после реализации
-
+Keep this file only as historical context for the earlier slice.
