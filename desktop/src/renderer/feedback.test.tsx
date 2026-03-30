@@ -160,6 +160,7 @@ describe("desktop renderer feedback", () => {
       getLocalApprovals: vi.fn(async () => []),
       getLocalChats: vi.fn(async () => []),
       getLocalChatDetail: vi.fn(async () => null),
+      subscribeLocalChatEvents: vi.fn(() => () => undefined),
       getPairingState: vi.fn(async () => ({
         code: null,
         expiresAt: null,

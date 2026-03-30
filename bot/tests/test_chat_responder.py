@@ -49,7 +49,7 @@ def test_chat_responder_returns_russian_fallback_on_invalid_response(monkeypatch
 
     assert (
         responder.reply("привет")
-        == "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+        == "Не смог сразу нормально ответить. Попробуй уточнить запрос, и я разберу его по шагам."
     )
 
 

@@ -63,6 +63,17 @@ type AppendMessageInput = {
   remoteTaskSignature?: string | null;
 };
 
+type UpdateMessageInput = {
+  text?: string;
+  role?: LocalChatMessage["role"];
+  artifact?: {
+    kind: LocalChatMessageArtifactKind;
+    mimeType: string;
+    fileName: string;
+    contentBase64: string;
+  } | null;
+};
+
 type MirrorRemoteTaskUpdateInput = {
   telegramChatId: number;
   taskId: string;
@@ -396,6 +407,44 @@ export class LocalChatStore {
       updatedAt: nextMessage.createdAt,
       messageCount: chat.messages.length + 1,
       messages: [...chat.messages, nextMessage]
+    };
+
+    this.chats = sortChats([nextChat, ...this.chats.filter((candidate) => candidate.chatId !== chatId)]);
+    this.persist();
+    return cloneDetail(nextChat);
+  }
+
+  updateMessage(chatId: string, messageId: string, input: UpdateMessageInput): LocalChatDetail {
+    const chat = this.chats.find((candidate) => candidate.chatId === chatId);
+
+    if (chat === undefined) {
+      throw new Error("Local chat not found.");
+    }
+
+    const nextMessages = chat.messages.map((message) => {
+      if (message.messageId !== messageId) {
+        return message;
+      }
+
+      return {
+        ...message,
+        role: input.role ?? message.role,
+        text: input.text ?? message.text,
+        artifactKind: input.artifact === null ? undefined : input.artifact?.kind ?? message.artifactKind,
+        artifactMimeType:
+          input.artifact === null ? undefined : input.artifact?.mimeType ?? message.artifactMimeType,
+        artifactFileName:
+          input.artifact === null ? undefined : input.artifact?.fileName ?? message.artifactFileName,
+        artifactBase64:
+          input.artifact === null ? undefined : input.artifact?.contentBase64 ?? message.artifactBase64
+      };
+    });
+
+    const nextChat: LocalChatDetail = {
+      ...chat,
+      updatedAt: this.now().toISOString(),
+      messageCount: nextMessages.length,
+      messages: nextMessages
     };
 
     this.chats = sortChats([nextChat, ...this.chats.filter((candidate) => candidate.chatId !== chatId)]);

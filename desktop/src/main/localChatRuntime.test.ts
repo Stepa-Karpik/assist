@@ -33,7 +33,7 @@ describe("createLocalChatRuntime", () => {
       title: "Streaming chat"
     });
 
-    let resolveReply: ((value: string) => void) | null = null;
+    let resolveReply!: (value: string) => void;
     const streamReply = vi.fn(
       () =>
         new Promise<string>((resolve) => {
@@ -61,12 +61,14 @@ describe("createLocalChatRuntime", () => {
       "user:что нового в FastAPI?",
       "assistant:Ассистент отвечает..."
     ]);
-    expect(streamReply).toHaveBeenCalledWith({
-      chatId: "local-chat-stream",
-      prompt: "что нового в FastAPI?"
-    });
+    expect(streamReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "local-chat-stream",
+        prompt: "что нового в FastAPI?"
+      })
+    );
 
-    resolveReply?.("FastAPI недавно обновился.");
+    resolveReply("FastAPI недавно обновился.");
     await Promise.resolve();
     await Promise.resolve();
 

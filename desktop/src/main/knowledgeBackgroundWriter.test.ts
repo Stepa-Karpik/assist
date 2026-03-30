@@ -93,4 +93,51 @@ describe("createKnowledgeBackgroundWriter", () => {
       })
     ]);
   });
+
+  it("stores extracted profile and preference memory writes under assist notes", async () => {
+    const root = createRoot();
+    const vaultRoot = path.join(root, "vault");
+    const writer = createKnowledgeBackgroundWriter({
+      getVaultRoot: () => vaultRoot
+    });
+
+    const result = await writer.recordInteraction({
+      origin: "local-chat",
+      prompt: "Меня зовут Карпов Степан Викторович, я программист на Python и FastAPI.",
+      answer: "Понял, буду учитывать твой стек.",
+      memoryWrites: [
+        {
+          target: "assist/profile",
+          key: "full_name",
+          value: "Карпов Степан Викторович"
+        },
+        {
+          target: "assist/profile",
+          key: "occupation",
+          value: "программист"
+        },
+        {
+          target: "assist/preferences",
+          key: "preferred_stack",
+          value: "Python, FastAPI"
+        }
+      ]
+    });
+
+    expect(result).toEqual({
+      applied: true,
+      pendingApproval: false,
+      userWriteCount: 0,
+      assistWriteCount: 3
+    });
+    expect(
+      fs.readFileSync(path.join(vaultRoot, "assist", "profile", "Профиль владельца.md"), "utf8")
+    ).toContain("Карпов Степан Викторович");
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "preferences", "Предпочтения общения.md"),
+        "utf8"
+      )
+    ).toContain("Python, FastAPI");
+  });
 });

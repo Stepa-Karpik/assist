@@ -109,6 +109,7 @@ beforeEach(() => {
     })),
     getLocalChats: vi.fn(async () => []),
     getLocalChatDetail: vi.fn(async () => null),
+    subscribeLocalChatEvents: vi.fn(() => () => undefined),
     getActivityLog: vi.fn(async () => []),
     getAppsState: vi.fn(async () => ({ items: [] })),
     getAssistantProcesses: vi.fn(async () => []),

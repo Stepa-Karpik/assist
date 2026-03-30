@@ -36,7 +36,7 @@ describe("createDeepSeekChatResponder", () => {
     });
 
     await expect(responder.reply("привет")).resolves.toBe(
-      "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+      "Не смог сразу нормально ответить. Попробуй уточнить запрос, и я разберу его по шагам."
     );
   });
 
@@ -71,5 +71,39 @@ describe("createDeepSeekChatResponder", () => {
 
     expect(payload.messages[0]?.content).toContain("Владелец: Степан Карпов");
     expect(payload.messages[0]?.content).toContain("Город: Москва");
+  });
+
+  it("injects knowledge context into the system prompt", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "Принято."
+              }
+            }
+          ]
+        }),
+        { status: 200 }
+      )
+    );
+    const responder = createDeepSeekChatResponder({
+      apiKey: "test-key",
+      fetchImpl
+    });
+
+    await responder.reply("что нового в FastAPI?", {
+      knowledgeContext: "user: FastAPI note\n\nassist: changelog note"
+    });
+
+    const requestInit = ((fetchImpl.mock.calls as unknown) as Array<[string, RequestInit]>)[0]?.[1];
+    const payload = JSON.parse(String(requestInit?.body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+
+    expect(payload.messages[0]?.content).toContain("Релевантные заметки из локальной базы знаний");
+    expect(payload.messages[0]?.content).toContain("FastAPI note");
+    expect(payload.messages[0]?.content).toContain("changelog note");
   });
 });

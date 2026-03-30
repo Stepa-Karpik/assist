@@ -17,6 +17,16 @@ contextBridge.exposeInMainWorld("karpik", {
     ipcRenderer.invoke("auth:confirm-totp-enrollment", payload),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
+  subscribeLocalChatEvents: (listener: (event: { chatId: string; detail: unknown }) => void) => {
+    const channel = "chats:updated";
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { chatId: string; detail: unknown }) => {
+      listener(payload);
+    };
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
+  },
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),
   getKnowledgeState: () => ipcRenderer.invoke("knowledge:get-state"),
   getLocalApprovals: () => ipcRenderer.invoke("tasks:get-local-approvals"),

@@ -8,6 +8,7 @@ type DeepSeekChatResponderOptions = {
 
 type DeepSeekReplyOptions = {
   ownerProfileContext?: string | null;
+  knowledgeContext?: string | null;
 };
 
 export function createDeepSeekChatResponder({
@@ -18,12 +19,21 @@ export function createDeepSeekChatResponder({
   return {
     async reply(text: string, options: DeepSeekReplyOptions = {}): Promise<string> {
       const systemPromptBase =
-        "Ты Karpik, краткий русскоязычный desktop-ассистент. Отвечай по-русски, без упоминания DeepSeek.";
+        "Ты Karpik, естественный русскоязычный персональный ассистент. Отвечай по-русски, спокойно и по делу, без роботизированных формулировок и без упоминания DeepSeek. Когда это уместно, заверши ответ одним коротким следующим полезным шагом.";
       const ownerProfileContext = options.ownerProfileContext?.trim();
+      const knowledgeContext = options.knowledgeContext?.trim();
       const systemPrompt =
-        ownerProfileContext && ownerProfileContext.length > 0
-          ? `${systemPromptBase}\n\nКонтекст владельца устройства:\n${ownerProfileContext}`
-          : systemPromptBase;
+        [
+          systemPromptBase,
+          ownerProfileContext && ownerProfileContext.length > 0
+            ? `Контекст владельца устройства:\n${ownerProfileContext}`
+            : null,
+          knowledgeContext && knowledgeContext.length > 0
+            ? `Релевантные заметки из локальной базы знаний:\n${knowledgeContext}`
+            : null
+        ]
+          .filter(Boolean)
+          .join("\n\n");
 
       try {
         const response = await fetchImpl("https://api.deepseek.com/chat/completions", {
@@ -66,7 +76,7 @@ export function createDeepSeekChatResponder({
 
         return content;
       } catch {
-        return "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос.";
+        return "Не смог сразу нормально ответить. Попробуй уточнить запрос, и я разберу его по шагам.";
       }
     }
   };

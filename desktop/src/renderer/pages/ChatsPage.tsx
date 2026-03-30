@@ -185,6 +185,23 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     };
   }, [activeChatId]);
 
+  useEffect(() => {
+    if (!window.karpik?.subscribeLocalChatEvents) {
+      return;
+    }
+
+    const unsubscribe = window.karpik.subscribeLocalChatEvents(({ chatId, detail }) => {
+      setLocalChats((currentChats) => upsertChatSummary(currentChats, toSummary(detail)));
+      if (chatId === activeChatId) {
+        setActiveChat(detail);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeChatId]);
+
   async function handleSendLocalRequest() {
     if (!window.karpik?.sendLocalChatMessage || activeChatId === null) {
       setError("API локального выполнения недоступен в этом окружении.");

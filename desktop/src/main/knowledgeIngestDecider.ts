@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { ChatKnowledgeWrite } from "./chatPlan";
 
 export type KnowledgeWriteInstruction = {
   topicTrail: string[];
@@ -26,6 +27,7 @@ export type KnowledgeIngestInput = {
   answer: string;
   sourceUrls?: string[];
   skillChangeSeverity?: "minor" | "significant";
+  memoryWrites?: ChatKnowledgeWrite[];
 };
 
 export type KnowledgeWritePlan = {

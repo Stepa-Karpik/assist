@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+import { createChatPlanner } from "./chatPlanner";
+import type { ChatKnowledgeWrite, ChatPlan } from "./chatPlan";
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
 import type { LocalChatDetail, LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter, type LocalConversationResolution } from "./localConversationRouter";
@@ -17,11 +19,24 @@ type LocalChatRuntimeOptions = {
     origin: "local-chat";
     prompt: string;
     answer: string;
+    memoryWrites?: ChatKnowledgeWrite[];
   }) => Promise<void> | void;
   persistLocalApproval?: (
     intent: string,
     draft: CodexWritePreviewDraft
   ) => Promise<void> | void;
+  streamReply?: (input: {
+    chatId: string;
+    prompt: string;
+    plan: ChatPlan;
+  }) => Promise<string>;
+  replyToConversation?: (input: {
+    chatId: string;
+    prompt: string;
+    plan: ChatPlan;
+  }) => Promise<string> | string;
+  onChatUpdated?: (detail: LocalChatDetail) => void;
+  planMessage?: (text: string) => ChatPlan;
   getWorkspaceRootForChat?: (chatId: string) => string | null | undefined;
   resolveInput?: (text: string) => Promise<LocalConversationResolution> | LocalConversationResolution;
   generateTaskId?: () => string;
@@ -39,11 +54,115 @@ export function createLocalChatRuntime({
   executeTask,
   recordKnowledgeInteraction,
   persistLocalApproval,
+  streamReply,
+  replyToConversation,
+  onChatUpdated,
+  planMessage = createChatPlanner().plan,
   getWorkspaceRootForChat,
   resolveInput = createLocalConversationRouter().resolve,
   generateTaskId = () => crypto.randomUUID(),
   logActivity
 }: LocalChatRuntimeOptions) {
+  function extractMemoryWrites(plan: ChatPlan): ChatKnowledgeWrite[] {
+    return plan.actions
+      .filter(
+        (
+          action
+        ): action is Extract<ChatPlan["actions"][number], { kind: "knowledge_write"; writes: ChatKnowledgeWrite[] }> =>
+          action.kind === "knowledge_write"
+      )
+      .flatMap((action) => action.writes);
+  }
+
+  function buildStaticConversationReply(text: string): string {
+    const normalized = text.trim().toLowerCase();
+
+    if (
+      normalized.startsWith("привет") ||
+      normalized.startsWith("здравствуй") ||
+      normalized.startsWith("здравствуйте") ||
+      normalized.startsWith("hello") ||
+      normalized.startsWith("hi")
+    ) {
+      return "Привет. Чем помочь?";
+    }
+
+    if (
+      normalized.includes("спасибо") ||
+      normalized.includes("благодарю") ||
+      normalized.includes("thanks") ||
+      normalized.includes("thank you")
+    ) {
+      return "Пожалуйста.";
+    }
+
+    return "Сейчас посмотрю и отвечу по сути.";
+  }
+
+  function startBackgroundConversationReply({
+    chatId,
+    prompt,
+    plan,
+    placeholderMessageId
+  }: {
+    chatId: string;
+    prompt: string;
+    plan: ChatPlan;
+    placeholderMessageId: string;
+  }): void {
+    void (async () => {
+      try {
+        const memoryWrites = extractMemoryWrites(plan);
+        const answer =
+          streamReply !== undefined
+            ? await streamReply({
+                chatId,
+                prompt,
+                plan
+              })
+            : await replyToConversation?.({
+                chatId,
+                prompt,
+                plan
+              });
+
+        const finalText = answer?.trim() || buildStaticConversationReply(prompt);
+        const detail = chatStore.updateMessage(chatId, placeholderMessageId, {
+          text: finalText,
+          role: "assistant"
+        });
+        await recordKnowledgeInteraction?.({
+          origin: "local-chat",
+          prompt,
+          answer: finalText,
+          memoryWrites
+        });
+        logActivity?.({
+          kind: "local_result",
+          status: "success",
+          title: "Local assistant reply",
+          detail: finalText,
+          chatId
+        });
+        onChatUpdated?.(detail);
+      } catch (error: unknown) {
+        const fallbackText = "Не удалось подготовить ответ. Попробуй уточнить запрос.";
+        const detail = chatStore.updateMessage(chatId, placeholderMessageId, {
+          text: fallbackText,
+          role: "assistant"
+        });
+        logActivity?.({
+          kind: "local_result",
+          status: "error",
+          title: "Local assistant reply failed",
+          detail: error instanceof Error ? error.message : fallbackText,
+          chatId
+        });
+        onChatUpdated?.(detail);
+      }
+    })();
+  }
+
   return {
     async sendMessage({ chatId, text }: SendLocalChatMessageInput): Promise<LocalChatDetail> {
       const normalizedText = text.trim();
@@ -63,6 +182,54 @@ export function createLocalChatRuntime({
         detail: normalizedText,
         chatId
       });
+
+      const plan = planMessage(normalizedText);
+
+      if (plan.mode === "conversation") {
+        if (streamReply === undefined && replyToConversation === undefined) {
+          const resolvedConversation = await resolveInput(normalizedText);
+          const memoryWrites = extractMemoryWrites(plan);
+
+          if (resolvedConversation.kind === "reply") {
+            await recordKnowledgeInteraction?.({
+              origin: "local-chat",
+              prompt: normalizedText,
+              answer: resolvedConversation.text,
+              memoryWrites
+            });
+            logActivity?.({
+              kind: "local_result",
+              status: "success",
+              title: "Local assistant reply",
+              detail: resolvedConversation.text,
+              chatId
+            });
+            return chatStore.appendMessage(chatId, {
+              role: "assistant",
+              text: resolvedConversation.text
+            });
+          }
+        }
+
+        const pendingDetail = chatStore.appendMessage(chatId, {
+          role: "assistant",
+          text: "Ассистент отвечает..."
+        });
+        const placeholderMessageId = pendingDetail.messages.at(-1)?.messageId;
+
+        if (!placeholderMessageId) {
+          throw new Error("Failed to create assistant placeholder message.");
+        }
+
+        onChatUpdated?.(pendingDetail);
+        startBackgroundConversationReply({
+          chatId,
+          prompt: normalizedText,
+          plan,
+          placeholderMessageId
+        });
+        return pendingDetail;
+      }
 
       const resolvedInput = await resolveInput(normalizedText);
 
@@ -85,10 +252,17 @@ export function createLocalChatRuntime({
         });
       }
 
+      const deviceTaskAction = plan.actions.find(
+        (
+          action
+        ): action is Extract<ChatPlan["actions"][number], { kind: "device_task"; intent: string }> =>
+          action.kind === "device_task"
+      );
+      const deviceTaskIntent = deviceTaskAction?.intent ?? resolvedInput.intent;
       const workspaceRoot = getWorkspaceRootForChat?.(chatId);
       const executionResult = await executeTask({
         task_id: generateTaskId(),
-        intent: resolvedInput.intent,
+        intent: deviceTaskIntent,
         workspace_root: workspaceRoot ?? undefined
       });
 

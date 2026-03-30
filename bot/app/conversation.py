@@ -26,6 +26,7 @@ from app.handlers.task import (
 )
 from app.intent_resolver import (
     ClarificationResolution,
+    IntentResolution,
     SupportsIntentResolver,
     message_explicitly_requests_codex,
     message_requires_codex,
@@ -390,6 +391,27 @@ def _create_task_from_intent(
     return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
 
 
+def should_use_chat_responder(
+    text: str,
+    *,
+    resolution: SupportsIntentResolver | IntentResolution,
+    chat_responder: SupportsChatResponder | None,
+) -> bool:
+    if chat_responder is None:
+        return False
+
+    resolved = resolution.resolve(text) if hasattr(resolution, "resolve") else resolution
+    normalized_text = text.strip()
+    default_codex_intent = f"codex {normalized_text}"
+
+    return (
+        resolved.kind == "task"
+        and resolved.intent == default_codex_intent
+        and not message_explicitly_requests_codex(text)
+        and not message_requires_codex(text)
+    )
+
+
 def _resolve_operator_text(
     text: str,
     *,
@@ -538,12 +560,8 @@ def process_text_message(
         return BotReply(text="Какой экран отправить?", buttons=SCREENSHOT_BUTTONS)
 
     if resolution.kind == "task" and resolution.intent is not None:
-        default_codex_intent = f"codex {normalized_text}"
-        if (
-            chat_responder is not None
-            and resolution.intent == default_codex_intent
-            and not message_explicitly_requests_codex(text)
-            and not message_requires_codex(text)
+        if should_use_chat_responder(
+            text, resolution=resolution, chat_responder=chat_responder
         ):
             return BotReply(
                 text=chat_responder.reply(

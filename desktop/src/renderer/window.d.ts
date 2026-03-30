@@ -157,6 +157,11 @@ type LocalChatDetail = LocalChatItem & {
   messages: LocalChatMessageItem[];
 };
 
+type LocalChatStreamEvent = {
+  chatId: string;
+  detail: LocalChatDetail;
+};
+
 type QuickAccessState = {
   targetChat: LocalChatItem | null;
   localChatCount: number;
@@ -227,6 +232,9 @@ declare global {
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
+      subscribeLocalChatEvents: (
+        listener: (event: LocalChatStreamEvent) => void
+      ) => () => void;
       getPairingState: () => Promise<PairingState>;
       getQuickAccessState: () => Promise<QuickAccessState | null>;
       getRuntimeStatus: () => Promise<RuntimeStatus>;

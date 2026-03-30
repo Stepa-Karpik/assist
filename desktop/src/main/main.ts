@@ -18,6 +18,7 @@ import {
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
+import { createChatKnowledgeRetriever } from "./chatKnowledgeRetriever";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
@@ -96,6 +97,13 @@ const serverUrl = process.env.KARPIK_SERVER_URL ?? "http://127.0.0.1:8000";
 const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
 let syncClient!: ReturnType<typeof createSyncClient>;
 const devicePresenceTracker = createDevicePresenceTracker();
+
+function emitLocalChatUpdated(detail: ReturnType<LocalChatStore["getChat"]> extends infer T ? NonNullable<T> : never) {
+  mainWindow?.webContents.send("chats:updated", {
+    chatId: detail.chatId,
+    detail
+  });
+}
 
 if (started) {
   app.quit();
@@ -1022,10 +1030,50 @@ async function bootstrap() {
           apiKey: process.env.DEEPSEEK_API_KEY
         })
       : null;
+  const chatKnowledgeRetriever = createChatKnowledgeRetriever({
+    getVaultRoot: () => vaultSettingsStore?.getVaultRoot() ?? null
+  });
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
     executeTask: (task) => taskExecutor!.execute(task),
+    replyToConversation: async ({ prompt }) => {
+      if (localChatResponder === null) {
+        return "";
+      }
+
+      return localChatResponder.reply(prompt, {
+        ownerProfileContext:
+          ownerProfileStore === null
+            ? null
+            : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
+        knowledgeContext: chatKnowledgeRetriever.lookup(prompt)
+      });
+    },
+    onChatUpdated: (detail) => {
+      emitLocalChatUpdated(detail);
+    },
     recordKnowledgeInteraction: async (input) => {
+      const profilePatch: OwnerProfileInput = {};
+
+      for (const write of input.memoryWrites ?? []) {
+        if (write.target !== "assist/profile") {
+          continue;
+        }
+
+        if (write.key === "full_name") {
+          profilePatch.fullName = write.value;
+        } else if (write.key === "occupation") {
+          profilePatch.occupation = write.value;
+        }
+      }
+
+      if (ownerProfileStore !== null && Object.keys(profilePatch).length > 0) {
+        ownerProfileStore.save(profilePatch);
+        await syncOwnerProfileState().catch((error: unknown) => {
+          console.error("Failed to sync owner profile state", error);
+        });
+      }
+
       await knowledgeBackgroundWriter?.recordInteraction(input);
     },
     persistLocalApproval: async (intent, draft) => {

@@ -97,6 +97,12 @@ type LocalChatStreamEvent = {
   detail: LocalChatDetail;
 };
 
+type SubscribeLocalChatEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatStreamEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatStreamEvent) => void) | null;
+};
+
 const getAuthConfigState = vi.fn(async () => ({
   passwordConfigured: false,
   totpConfigured: false
@@ -581,8 +587,8 @@ const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) 
   return () => {
     subscribeLocalChatEvents.listener = null;
   };
-});
-subscribeLocalChatEvents.listener = null as ((event: LocalChatStreamEvent) => void) | null;
+}) as SubscribeLocalChatEventsMock;
+subscribeLocalChatEvents.listener = null;
 
 describe("App navigation", () => {
   beforeEach(() => {
