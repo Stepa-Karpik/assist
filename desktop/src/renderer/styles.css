@@ -248,6 +248,10 @@ body,
   background-color: #050608;
 }
 
+.desktop-layout.desktop-layout--standalone {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar-shell {
   position: sticky;
   top: 0;

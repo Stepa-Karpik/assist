@@ -13,4 +13,14 @@ describe("renderer stylesheet", () => {
     expect(css).toContain('body[data-karpik-view="quick-popup"]');
     expect(css).toContain("overflow: hidden");
   });
+
+  it("restores a single-column layout for standalone onboarding screens after shell overrides", () => {
+    const cssPath = path.resolve(process.cwd(), "src", "renderer", "styles.css");
+    const css = fs.readFileSync(cssPath, "utf8");
+    const shellLayoutOverrideIndex = css.lastIndexOf(".desktop-layout {\n  grid-template-columns: 88px minmax(0, 1fr);");
+    const standaloneOverrideIndex = css.lastIndexOf(".desktop-layout.desktop-layout--standalone {");
+
+    expect(shellLayoutOverrideIndex).toBeGreaterThan(-1);
+    expect(standaloneOverrideIndex).toBeGreaterThan(shellLayoutOverrideIndex);
+  });
 });
