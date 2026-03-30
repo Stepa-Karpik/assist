@@ -407,6 +407,26 @@ class TaskServerClient:
         parsed = self._get_json(f"/api/profile?{urlencode({'device_id': self.device_id})}")
         return build_owner_profile_context(parsed)
 
+    def publish_conversation_memory(
+        self,
+        *,
+        prompt: str,
+        answer: str,
+        source_urls: list[str],
+        memory_writes: list[dict[str, str]],
+    ) -> None:
+        self._post_json(
+            "/api/chat-memory/events",
+            {
+                "device_id": self.device_id,
+                "origin": "telegram-chat",
+                "prompt": prompt,
+                "answer": answer,
+                "source_urls": source_urls,
+                "memory_writes": memory_writes,
+            },
+        )
+
     def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:
         query = {
             "device_id": self.device_id,

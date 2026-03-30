@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.apps import router as apps_router
 from app.api.device import router as device_router
 from app.api.challenges import router as challenges_router
+from app.api.conversation_memory import router as conversation_memory_router
 from app.api.delivery import router as delivery_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
@@ -13,6 +14,7 @@ from app.config import get_settings
 from app.services.app_catalog_store import InMemoryAppCatalogStore
 from app.services.challenge_store import InMemoryChallengeStore
 from app.services.device_presence_store import InMemoryDevicePresenceStore
+from app.services.conversation_memory_store import InMemoryConversationMemoryStore
 from app.services.delivery_store import InMemoryDeliveryStore
 from app.services.pairing_store import InMemoryPairingStore
 from app.services.owner_profile_store import InMemoryOwnerProfileStore
@@ -40,6 +42,9 @@ def create_app() -> FastAPI:
     application.state.task_store = InMemoryTaskStore(state_backend=state_backend)
     application.state.challenge_store = InMemoryChallengeStore(state_backend=state_backend)
     application.state.delivery_store = InMemoryDeliveryStore(state_backend=state_backend)
+    application.state.conversation_memory_store = InMemoryConversationMemoryStore(
+        state_backend=state_backend
+    )
     application.include_router(health_router)
     application.include_router(apps_router, prefix=settings.api_prefix)
     application.include_router(device_router, prefix=settings.api_prefix)
@@ -49,6 +54,7 @@ def create_app() -> FastAPI:
     application.include_router(events_router, prefix=settings.api_prefix)
     application.include_router(challenges_router, prefix=settings.api_prefix)
     application.include_router(delivery_router, prefix=settings.api_prefix)
+    application.include_router(conversation_memory_router, prefix=settings.api_prefix)
     return application
 
 

@@ -78,6 +78,7 @@ describe("LocalApprovalStore", () => {
 
     expect(store.list()).toEqual([
       expect.objectContaining({
+        kind: "codex_write",
         taskId: "task-1",
         intent: "codex-write update the readme",
         summaryText: "Updated file",
@@ -139,5 +140,39 @@ describe("LocalApprovalStore", () => {
       "Workspace changed since preview generation."
     );
     expect(store.list()).toHaveLength(1);
+  });
+
+  it("persists assist skill drafts and writes them on approve", async () => {
+    const root = createTempRoot();
+    const targetPath = path.join(root, "vault", "assist", "skills", "Навык MCP.md");
+    const store = new LocalApprovalStore({
+      stateRoot: path.join(root, "state")
+    });
+
+    store.saveSkillDraft("научись workflow", {
+      taskId: "skill-1",
+      kind: "assist_skill",
+      intent: "научись workflow",
+      title: "Навык MCP",
+      summaryText: "Значимое обновление навыка ассистента.",
+      previewText: "Новый workflow.",
+      changedFiles: ["assist/skills/Навык MCP.md"],
+      targetPath,
+      content: "# Навык MCP\n\n## Черновик навыка\n\nНовый workflow.\n"
+    });
+
+    expect(store.list()).toEqual([
+      expect.objectContaining({
+        kind: "assist_skill",
+        taskId: "skill-1",
+        title: "Навык MCP"
+      })
+    ]);
+
+    const result = await store.approve("skill-1");
+
+    expect(result.resultText).toContain("Applied locally.");
+    expect(fs.readFileSync(targetPath, "utf8")).toContain("Новый workflow.");
+    expect(store.list()).toEqual([]);
   });
 });

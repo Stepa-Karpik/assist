@@ -46,6 +46,11 @@ type OnboardingState = {
   requiresOnboarding: boolean;
 };
 
+type VaultSettingsState = {
+  vaultRoot: string | null;
+  isConfigured: boolean;
+};
+
 type AppRegistryItem = {
   appId: string;
   displayName: string;
@@ -104,8 +109,10 @@ type TaskSnapshotItem = {
 };
 
 type LocalApprovalItem = {
+  kind: "codex_write" | "assist_skill";
   taskId: string;
   intent: string;
+  title: string;
   summaryText: string;
   previewText: string;
   changedFiles: string[];
@@ -150,6 +157,25 @@ type LocalChatDetail = LocalChatItem & {
   messages: LocalChatMessageItem[];
 };
 
+type LocalChatStreamEvent = {
+  chatId: string;
+  detail: LocalChatDetail;
+};
+
+type LocalChatRunState = {
+  runId: string;
+  chatId: string;
+  status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
+  cancelRequested: boolean;
+  ackMessageId: string;
+  replyMessageId: string;
+};
+
+type LocalChatRunEvent = {
+  chatId: string;
+  run: LocalChatRunState | null;
+};
+
 type QuickAccessState = {
   targetChat: LocalChatItem | null;
   localChatCount: number;
@@ -187,23 +213,18 @@ type UpdateState = {
   message: string | null;
 };
 
-type KnowledgeSectionId = "master_info" | "knowledge" | "notes" | "websites";
-
-type KnowledgeEntry = {
+type KnowledgeTreeNode = {
+  id: string;
+  title: string;
   relativePath: string;
-  displayName: string;
-};
-
-type KnowledgeSection = {
-  id: KnowledgeSectionId;
-  label: string;
-  entries: KnowledgeEntry[];
+  kind: "directory" | "note";
+  children: KnowledgeTreeNode[];
 };
 
 type KnowledgeEntryDetail = {
-  sectionId: KnowledgeSectionId;
-  relativePath: string;
   content: string;
+  title: string;
+  relativePath: string;
 };
 
 declare global {
@@ -214,16 +235,24 @@ declare global {
       getAppsState: () => Promise<AppRegistryState>;
       getAssistantProcesses: () => Promise<AssistantProcessItem[]>;
       getAppPreferences: () => Promise<AppPreferencesState>;
+      getVaultSettings: () => Promise<VaultSettingsState>;
       getOnboardingState: () => Promise<OnboardingState | null>;
       getOwnerProfileState: () => Promise<OwnerProfileState | null>;
       getAuthConfigState: () => Promise<AuthConfigState>;
       createTotpEnrollment: () => Promise<TotpEnrollment>;
       confirmTotpEnrollment: (payload: { code: string }) => Promise<AuthConfigState>;
       getCodexConfigState: () => Promise<CodexConfigState>;
-      getKnowledgeState: () => Promise<KnowledgeSection[]>;
+      getKnowledgeState: () => Promise<KnowledgeTreeNode[]>;
       getLocalApprovals: () => Promise<LocalApprovalItem[]>;
       getLocalChatDetail: (chatId: string) => Promise<LocalChatDetail | null>;
+      getLocalChatRunState: (chatId: string) => Promise<LocalChatRunState | null>;
       getLocalChats: () => Promise<LocalChatItem[]>;
+      subscribeLocalChatEvents: (
+        listener: (event: LocalChatStreamEvent) => void
+      ) => () => void;
+      subscribeLocalChatRunEvents: (
+        listener: (event: LocalChatRunEvent) => void
+      ) => () => void;
       getPairingState: () => Promise<PairingState>;
       getQuickAccessState: () => Promise<QuickAccessState | null>;
       getRuntimeStatus: () => Promise<RuntimeStatus>;
@@ -244,12 +273,10 @@ declare global {
       openPairingSession: () => Promise<PairingState>;
       installUpdate: () => Promise<void>;
       refreshDiscoveredApps: () => Promise<AppRegistryState>;
-      readKnowledgeEntry: (payload: {
-        sectionId: KnowledgeSectionId;
-        relativePath: string;
-      }) => Promise<KnowledgeEntryDetail | null>;
+      readKnowledgeEntry: (payload: { relativePath: string }) => Promise<KnowledgeEntryDetail | null>;
       rejectLocalApproval: (taskId: string) => Promise<void>;
       cancelTask: (taskId: string) => Promise<void>;
+      cancelLocalChatRun: (chatId: string) => Promise<boolean>;
       retryTask: (taskId: string) => Promise<void>;
       sendLocalChatMessage: (payload: {
         chatId: string;
@@ -264,6 +291,7 @@ declare global {
       }>;
       saveAuthConfig: (payload: { password?: string; totpSecret?: string }) => Promise<AuthConfigState>;
       saveAppPreferences: (payload: Partial<AppPreferencesState>) => Promise<AppPreferencesState>;
+      saveVaultRoot: (vaultRoot: string) => Promise<VaultSettingsState>;
       saveOwnerProfile: (payload: Partial<OwnerProfileState>) => Promise<OwnerProfileState>;
       saveAppRegistryEntry: (payload: {
         appId?: string;

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("karpik", {
   getAppsState: () => ipcRenderer.invoke("apps:get-state"),
   getAssistantProcesses: () => ipcRenderer.invoke("apps:get-active-processes"),
   getAppPreferences: () => ipcRenderer.invoke("app-preferences:get"),
+  getVaultSettings: () => ipcRenderer.invoke("vault:get-settings"),
   getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
   getOwnerProfileState: () => ipcRenderer.invoke("profile:get-state"),
   getAuthConfigState: () => ipcRenderer.invoke("auth:get-config-state"),
@@ -16,6 +17,27 @@ contextBridge.exposeInMainWorld("karpik", {
     ipcRenderer.invoke("auth:confirm-totp-enrollment", payload),
   getLocalChats: () => ipcRenderer.invoke("chats:get-local"),
   getLocalChatDetail: (chatId: string) => ipcRenderer.invoke("chats:get-detail", chatId),
+  getLocalChatRunState: (chatId: string) => ipcRenderer.invoke("chats:get-run-state", chatId),
+  subscribeLocalChatEvents: (listener: (event: { chatId: string; detail: unknown }) => void) => {
+    const channel = "chats:updated";
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { chatId: string; detail: unknown }) => {
+      listener(payload);
+    };
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
+  },
+  subscribeLocalChatRunEvents: (listener: (event: { chatId: string; run: unknown }) => void) => {
+    const channel = "chats:run-updated";
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { chatId: string; run: unknown }) => {
+      listener(payload);
+    };
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
+  },
   getCodexConfigState: () => ipcRenderer.invoke("codex:get-config-state"),
   getKnowledgeState: () => ipcRenderer.invoke("knowledge:get-state"),
   getLocalApprovals: () => ipcRenderer.invoke("tasks:get-local-approvals"),
@@ -34,10 +56,8 @@ contextBridge.exposeInMainWorld("karpik", {
     title?: string;
     workspaceId?: string | null;
   }) => ipcRenderer.invoke("chats:create-continuation", payload),
-  readKnowledgeEntry: (payload: {
-    sectionId: "master_info" | "knowledge" | "notes" | "websites";
-    relativePath: string;
-  }) => ipcRenderer.invoke("knowledge:read-entry", payload),
+  readKnowledgeEntry: (payload: { relativePath: string }) =>
+    ipcRenderer.invoke("knowledge:read-entry", payload),
   refreshDiscoveredApps: () => ipcRenderer.invoke("apps:refresh-discovered"),
   sendLocalChatMessage: (payload: { chatId: string; text: string }) =>
     ipcRenderer.invoke("chats:send-message", payload),
@@ -47,6 +67,7 @@ contextBridge.exposeInMainWorld("karpik", {
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   rejectLocalApproval: (taskId: string) => ipcRenderer.invoke("tasks:reject-local-approval", taskId),
   cancelTask: (taskId: string) => ipcRenderer.invoke("tasks:cancel", taskId),
+  cancelLocalChatRun: (chatId: string) => ipcRenderer.invoke("chats:cancel-run", chatId),
   retryTask: (taskId: string) => ipcRenderer.invoke("tasks:retry", taskId),
   saveAuthConfig: (payload: { password?: string; totpSecret?: string }) =>
     ipcRenderer.invoke("auth:save-config", payload),
@@ -55,6 +76,7 @@ contextBridge.exposeInMainWorld("karpik", {
     startHiddenOnLaunch?: boolean;
     closeToTrayOnClose?: boolean;
   }) => ipcRenderer.invoke("app-preferences:save", payload),
+  saveVaultRoot: (vaultRoot: string) => ipcRenderer.invoke("vault:set-root", vaultRoot),
   saveOwnerProfile: (payload: {
     fullName?: string | null;
     gender?: string | null;

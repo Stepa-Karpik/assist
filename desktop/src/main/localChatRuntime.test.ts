@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createChatRunStore } from "./chatRunStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
 import { createLocalChatRuntime } from "./localChatRuntime";
@@ -23,6 +24,75 @@ afterEach(() => {
 });
 
 describe("createLocalChatRuntime", () => {
+  it("returns immediately with ack and a pending assistant placeholder for conversational replies", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-30T14:00:00.000Z"),
+      generateChatId: () => "local-chat-stream"
+    });
+    chatStore.createDesktopChat({
+      title: "Streaming chat"
+    });
+
+    let resolveReply!: (value: string) => void;
+    const streamReply = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReply = resolve;
+        })
+    );
+    const onChatUpdated = vi.fn();
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      streamReply,
+      onChatUpdated,
+      streamDelayMs: 0
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-stream",
+      text: "что нового в FastAPI?"
+    });
+
+    expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      "user:что нового в FastAPI?",
+      "assistant:Сейчас посмотрю и отвечу по сути.",
+      "assistant:Ассистент отвечает..."
+    ]);
+    expect(streamReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "local-chat-stream",
+        prompt: "что нового в FastAPI?"
+      })
+    );
+
+    resolveReply("FastAPI недавно обновился.");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onChatUpdated.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        chatId: "local-chat-stream",
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            text: "что нового в FastAPI?"
+          }),
+          expect.objectContaining({
+            role: "assistant",
+            text: "FastAPI недавно обновился."
+          })
+        ])
+      })
+    );
+  });
+
   it("appends user and assistant messages for successful local execution", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
@@ -36,11 +106,15 @@ describe("createLocalChatRuntime", () => {
       ok: true as const,
       resultText: "desktop-local is online"
     }));
+    const recordKnowledgeInteraction = vi.fn(async () => undefined);
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask,
+      recordKnowledgeInteraction,
       generateTaskId: () => "local-task-1",
-      getWorkspaceRootForChat: () => "D:\\Projects\\assist"
+      getWorkspaceRootForChat: () => "D:\\Projects\\assist",
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({
@@ -52,6 +126,11 @@ describe("createLocalChatRuntime", () => {
       task_id: "local-task-1",
       intent: "status",
       workspace_root: "D:\\Projects\\assist"
+    });
+    expect(recordKnowledgeInteraction).toHaveBeenCalledWith({
+      origin: "local-chat",
+      prompt: "status",
+      answer: "desktop-local is online"
     });
     expect(detail.messages.map((message) => message.text)).toEqual(["status", "desktop-local is online"]);
   });
@@ -71,8 +150,10 @@ describe("createLocalChatRuntime", () => {
     }));
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask,
-      generateTaskId: () => "local-task-2"
+      generateTaskId: () => "local-task-2",
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({
@@ -106,8 +187,10 @@ describe("createLocalChatRuntime", () => {
     }));
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask,
-      generateTaskId: () => "local-task-2b"
+      generateTaskId: () => "local-task-2b",
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({
@@ -140,12 +223,14 @@ describe("createLocalChatRuntime", () => {
     };
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask,
       generateTaskId: () => "local-task-context",
       resolveInput: createLocalConversationRouter({
         chatResponder,
         getOwnerProfileContext: () => "Владелец: Степан Карпов\nГород: Москва"
-      }).resolve
+      }).resolve,
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({
@@ -175,6 +260,7 @@ describe("createLocalChatRuntime", () => {
     const persistLocalApproval = vi.fn(async () => undefined);
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask: async () => ({
         ok: true as const,
         requiresLocalApproval: true,
@@ -190,7 +276,8 @@ describe("createLocalChatRuntime", () => {
         }
       }),
       generateTaskId: () => "local-task-3",
-      persistLocalApproval
+      persistLocalApproval,
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({
@@ -221,6 +308,7 @@ describe("createLocalChatRuntime", () => {
     });
     const runtime = createLocalChatRuntime({
       chatStore,
+      chatRunStore: createChatRunStore(),
       executeTask: async () => ({
         ok: true as const,
         resultText: "Screenshot captured.",
@@ -231,7 +319,8 @@ describe("createLocalChatRuntime", () => {
           contentBase64: "aGVsbG8="
         }
       }),
-      generateTaskId: () => "local-task-4"
+      generateTaskId: () => "local-task-4",
+      streamDelayMs: 0
     });
 
     const detail = await runtime.sendMessage({

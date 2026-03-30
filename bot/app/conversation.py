@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from app.chat_knowledge_lookup import lookup_external_docs
+from app.chat_memory_extractor import (
+    extract_memory_writes,
+    extract_source_urls,
+    serialize_memory_writes,
+)
 from app.handlers.task import (
     get_auth_password_prompt_text,
     get_auth_success_text,
@@ -26,9 +32,10 @@ from app.handlers.task import (
 )
 from app.intent_resolver import (
     ClarificationResolution,
+    IntentResolution,
     SupportsIntentResolver,
-    message_explicitly_requests_codex,
     message_requires_codex,
+    normalize_match_key,
 )
 from app.task_client import TaskWorkflowResult
 
@@ -119,9 +126,23 @@ class SupportsTaskWorkflow(Protocol):
 
     def fetch_owner_profile_context(self) -> str | None: ...
 
+    def publish_conversation_memory(
+        self,
+        *,
+        prompt: str,
+        answer: str,
+        source_urls: list[str],
+        memory_writes: list[dict[str, str]],
+    ) -> None: ...
+
 
 class SupportsChatResponder(Protocol):
-    def reply(self, text: str, owner_profile_context: str | None = None) -> str: ...
+    def reply(
+        self,
+        text: str,
+        owner_profile_context: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +411,38 @@ def _create_task_from_intent(
     return _reply_from_workflow_result(result, chat_id=chat_id, store=store)
 
 
+def should_use_chat_responder(
+    text: str,
+    *,
+    resolution: SupportsIntentResolver | IntentResolution,
+    chat_responder: SupportsChatResponder | None,
+) -> bool:
+    def has_explicit_codex_override(value: str) -> bool:
+        normalized = normalize_match_key(value)
+        tokens = [token for token in normalized.split() if token]
+        first_token = tokens[0] if tokens else None
+        last_token = tokens[-1] if tokens else None
+        return (
+            first_token in {"codex", "кодекс"}
+            or last_token in {"codex", "кодекс"}
+            or "через codex" in normalized
+        )
+
+    if chat_responder is None:
+        return False
+
+    resolved = resolution.resolve(text) if hasattr(resolution, "resolve") else resolution
+    normalized_text = text.strip()
+    default_codex_intent = f"codex {normalized_text}"
+
+    return (
+        resolved.kind == "task"
+        and resolved.intent == default_codex_intent
+        and not has_explicit_codex_override(text)
+        and not message_requires_codex(text)
+    )
+
+
 def _resolve_operator_text(
     text: str,
     *,
@@ -538,19 +591,29 @@ def process_text_message(
         return BotReply(text="Какой экран отправить?", buttons=SCREENSHOT_BUTTONS)
 
     if resolution.kind == "task" and resolution.intent is not None:
-        default_codex_intent = f"codex {normalized_text}"
-        if (
-            chat_responder is not None
-            and resolution.intent == default_codex_intent
-            and not message_explicitly_requests_codex(text)
-            and not message_requires_codex(text)
+        if should_use_chat_responder(
+            text, resolution=resolution, chat_responder=chat_responder
         ):
-            return BotReply(
-                text=chat_responder.reply(
-                    normalized_text,
-                    owner_profile_context=task_client.fetch_owner_profile_context(),
-                )
+            knowledge_lookup = lookup_external_docs(normalized_text)
+            reply_text = chat_responder.reply(
+                normalized_text,
+                owner_profile_context=task_client.fetch_owner_profile_context(),
+                knowledge_context=knowledge_lookup.context,
             )
+            source_urls = extract_source_urls(normalized_text, reply_text)
+            for source_url in knowledge_lookup.source_urls:
+                if source_url not in source_urls:
+                    source_urls.append(source_url)
+
+            task_client.publish_conversation_memory(
+                prompt=normalized_text,
+                answer=reply_text,
+                source_urls=source_urls,
+                memory_writes=serialize_memory_writes(
+                    extract_memory_writes(normalized_text)
+                ),
+            )
+            return BotReply(text=reply_text)
 
         return _create_task_from_intent(
             telegram_user_id=telegram_user_id,

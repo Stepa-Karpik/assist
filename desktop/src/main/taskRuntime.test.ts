@@ -93,6 +93,7 @@ describe("runTaskSyncCycle", () => {
     const failTask = vi.fn();
     const awaitLocalApproval = vi.fn();
     const blockTask = vi.fn();
+    const recordKnowledgeInteraction = vi.fn(async () => undefined);
     const startTaskExecution = vi.fn(() =>
       startImmediateTaskExecution({
         ok: true as const,
@@ -110,7 +111,8 @@ describe("runTaskSyncCycle", () => {
         completeTask,
         failTask
       },
-      startTaskExecution
+      startTaskExecution,
+      recordKnowledgeInteraction
     });
 
     expect(fetchTaskSnapshot).toHaveBeenCalledTimes(2);
@@ -124,6 +126,11 @@ describe("runTaskSyncCycle", () => {
     expect(completeTask).toHaveBeenCalledWith("task-1", {
       resultText: "desktop-local is online",
       artifact: undefined
+    });
+    expect(recordKnowledgeInteraction).toHaveBeenCalledWith({
+      origin: "remote-task",
+      prompt: "status",
+      answer: "desktop-local is online"
     });
     expect(failTask).not.toHaveBeenCalled();
     expect(awaitLocalApproval).not.toHaveBeenCalled();

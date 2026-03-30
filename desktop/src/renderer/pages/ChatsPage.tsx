@@ -6,6 +6,10 @@ type LocalChatDetail = NonNullable<
   Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalChatDetail"]>>
 >;
 
+type LocalChatRunState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getLocalChatRunState"]>
+>;
+
 function buildArtifactDataUrl(message: LocalChatDetail["messages"][number]): string | null {
   if (message.artifactKind !== "image_base64" || !message.artifactMimeType || !message.artifactBase64) {
     return null;
@@ -38,13 +42,6 @@ function upsertChatSummary(chats: LocalChatItem[], nextChat: LocalChatItem): Loc
   return sortChats([nextChat, ...chats.filter((chat) => chat.chatId !== nextChat.chatId)]);
 }
 
-function createEmptyDetail(chat: LocalChatItem): LocalChatDetail {
-  return {
-    ...chat,
-    messages: []
-  };
-}
-
 function buildChatSubtitle(chat: LocalChatItem): string {
   if (chat.referenceLabel) {
     return chat.referenceLabel;
@@ -54,7 +51,7 @@ function buildChatSubtitle(chat: LocalChatItem): string {
     return `workspace ${chat.workspaceId}`;
   }
 
-  return chat.source === "local_continuation_chat" ? "Продолжение Telegram диалога" : "Локальный диалог";
+  return chat.source === "local_continuation_chat" ? "Продолжение Telegram-диалога" : "Локальный диалог";
 }
 
 type ChatsPageProps = {
@@ -66,6 +63,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
   const [localChats, setLocalChats] = useState<LocalChatItem[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(selectedChatId ?? null);
   const [activeChat, setActiveChat] = useState<LocalChatDetail | null>(null);
+  const [activeRun, setActiveRun] = useState<LocalChatRunState>(null);
   const [requestText, setRequestText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -76,6 +74,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     () => localChats.find((chat) => chat.chatId === activeChatId) ?? null,
     [activeChatId, localChats]
   );
+  const isChatBusy = activeRun !== null;
 
   useEffect(() => {
     let isSubscribed = true;
@@ -147,7 +146,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
       }
 
       if (!window.karpik?.getLocalChatDetail) {
-        setError("Local chat API недоступен в этом окружении.");
+        setError("API локальных чатов недоступен в этом окружении.");
         return;
       }
 
@@ -185,6 +184,68 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     };
   }, [activeChatId]);
 
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function loadRunState() {
+      if (activeChatId === null || !window.karpik?.getLocalChatRunState) {
+        setActiveRun(null);
+        return;
+      }
+
+      try {
+        const run = await window.karpik.getLocalChatRunState(activeChatId);
+
+        if (isSubscribed) {
+          setActiveRun(run);
+        }
+      } catch {
+        if (isSubscribed) {
+          setActiveRun(null);
+        }
+      }
+    }
+
+    void loadRunState();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (!window.karpik?.subscribeLocalChatEvents) {
+      return;
+    }
+
+    const unsubscribe = window.karpik.subscribeLocalChatEvents(({ chatId, detail }) => {
+      setLocalChats((currentChats) => upsertChatSummary(currentChats, toSummary(detail)));
+      if (chatId === activeChatId) {
+        setActiveChat(detail);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (!window.karpik?.subscribeLocalChatRunEvents) {
+      return;
+    }
+
+    const unsubscribe = window.karpik.subscribeLocalChatRunEvents(({ chatId, run }) => {
+      if (chatId === activeChatId) {
+        setActiveRun(run);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeChatId]);
+
   async function handleSendLocalRequest() {
     if (!window.karpik?.sendLocalChatMessage || activeChatId === null) {
       setError("API локального выполнения недоступен в этом окружении.");
@@ -193,7 +254,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
     const normalizedRequest = requestText.trim();
 
-    if (!normalizedRequest) {
+    if (!normalizedRequest || isChatBusy) {
       return;
     }
 
@@ -222,6 +283,15 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     }
   }
 
+  async function handleCancelLocalRun() {
+    if (!window.karpik?.cancelLocalChatRun || activeChatId === null) {
+      return;
+    }
+
+    setError(null);
+    await window.karpik.cancelLocalChatRun(activeChatId);
+  }
+
   function handleSelectChat(chatId: string) {
     setActiveChatId(chatId);
     onSelectChat?.(chatId);
@@ -232,7 +302,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
       <aside className="reference-chat-page__sidebar-column">
         <div className="reference-chat-page__heading">
           <h2>{activeChatSummary?.title ?? "Локальный чат"}</h2>
-          <p>{activeChatSummary?.referenceLabel ?? "Локальный диалог"}</p>
+          <p>{activeChatSummary ? buildChatSubtitle(activeChatSummary) : "Локальный диалог"}</p>
         </div>
 
         <div className="reference-chat-list">
@@ -290,14 +360,15 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
 
         <div className="reference-thread-shell__composer">
           <button aria-label="Прикрепить" className="reference-thread-shell__attach" type="button">
-            ⌕
+            +
           </button>
           <input
             aria-label="Local request"
             className="reference-thread-shell__input"
+            disabled={isChatBusy}
             onChange={(event) => setRequestText(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !isChatBusy) {
                 event.preventDefault();
                 void handleSendLocalRequest();
               }
@@ -307,15 +378,20 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
             value={requestText}
           />
           <button
-            aria-label="Отправить"
+            aria-label={isChatBusy ? "Остановить ответ" : "Отправить"}
             className="reference-thread-shell__submit"
-            disabled={isSending || requestText.trim().length === 0}
+            disabled={isSending || (!isChatBusy && requestText.trim().length === 0)}
             onClick={() => {
+              if (isChatBusy) {
+                void handleCancelLocalRun();
+                return;
+              }
+
               void handleSendLocalRequest();
             }}
             type="button"
           >
-            ↑
+            {isChatBusy ? "■" : "↑"}
           </button>
         </div>
 

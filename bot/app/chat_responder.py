@@ -7,7 +7,7 @@ from urllib.request import Request, urlopen
 
 
 FALLBACK_REPLY = (
-    "Сейчас не получилось обработать обычный вопрос. Попробуйте ещё раз или уточните запрос."
+    "Не смог сразу нормально ответить. Попробуй уточнить запрос, и я разберу его по шагам."
 )
 
 
@@ -17,16 +17,27 @@ class DeepSeekChatResponder:
     model: str = "deepseek-chat"
     timeout_seconds: float = 10.0
 
-    def reply(self, text: str, owner_profile_context: str | None = None) -> str:
+    def reply(
+        self,
+        text: str,
+        owner_profile_context: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str:
         system_prompt = (
-            "You are Karpik, a concise Russian-speaking desktop assistant. "
-            "Answer in Russian. Be direct and helpful. "
-            "Do not mention DeepSeek or that you are a separate model."
+            "You are Karpik, a natural Russian-speaking personal assistant. "
+            "Answer in Russian. Sound human, calm and practical, not robotic. "
+            "Do not mention DeepSeek or that you are a separate model. "
+            "When it helps, finish with one short next useful step based on the user's context."
         )
         if owner_profile_context is not None and owner_profile_context.strip():
             system_prompt = (
                 f"{system_prompt}\n\n"
                 f"Owner profile context:\n{owner_profile_context.strip()}"
+            )
+        if knowledge_context is not None and knowledge_context.strip():
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                f"Relevant notes and docs:\n{knowledge_context.strip()}"
             )
 
         request_body = {

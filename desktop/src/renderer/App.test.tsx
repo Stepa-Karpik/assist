@@ -72,13 +72,12 @@ type UpdateState = {
   message: string | null;
 };
 
-type KnowledgeSection = {
-  id: "master_info" | "knowledge" | "notes" | "websites";
-  label: string;
-  entries: Array<{
-    relativePath: string;
-    displayName: string;
-  }>;
+type KnowledgeTreeNode = {
+  id: string;
+  title: string;
+  relativePath: string;
+  kind: "directory" | "note";
+  children: KnowledgeTreeNode[];
 };
 
 type AppPreferences = {
@@ -86,6 +85,42 @@ type AppPreferences = {
   notificationsEnabled: boolean;
   startHiddenOnLaunch: boolean;
   closeToTrayOnClose: boolean;
+};
+
+type VaultSettingsState = {
+  vaultRoot: string | null;
+  isConfigured: boolean;
+};
+
+type LocalChatStreamEvent = {
+  chatId: string;
+  detail: LocalChatDetail;
+};
+
+type LocalChatRunState = {
+  runId: string;
+  chatId: string;
+  status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
+  cancelRequested: boolean;
+  ackMessageId: string;
+  replyMessageId: string;
+};
+
+type LocalChatRunEvent = {
+  chatId: string;
+  run: LocalChatRunState | null;
+};
+
+type SubscribeLocalChatEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatStreamEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatStreamEvent) => void) | null;
+};
+
+type SubscribeLocalChatRunEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatRunEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatRunEvent) => void) | null;
 };
 
 const getAuthConfigState = vi.fn(async () => ({
@@ -113,6 +148,14 @@ const saveAppPreferences = vi.fn(async () => ({
   notificationsEnabled: false,
   startHiddenOnLaunch: false,
   closeToTrayOnClose: false
+}));
+const getVaultSettings = vi.fn<() => Promise<VaultSettingsState>>(async () => ({
+  vaultRoot: "D:\\KarpikVault",
+  isConfigured: true
+}));
+const saveVaultRoot = vi.fn(async (vaultRoot: string) => ({
+  vaultRoot,
+  isConfigured: true
 }));
 const getOwnerProfileState = vi.fn(async () => ({
   fullName: "Степан Карпов",
@@ -264,8 +307,10 @@ const getTaskSnapshot = vi.fn<() => Promise<TaskSnapshot>>(async () => []);
 const getLocalApprovals = vi.fn<
   () => Promise<
     Array<{
+      kind: "codex_write" | "assist_skill";
       taskId: string;
       intent: string;
+      title: string;
       summaryText: string;
       previewText: string;
       changedFiles: string[];
@@ -367,42 +412,100 @@ const checkForUpdates = vi.fn(async () => ({
   message: "Checking for updates..."
 }));
 const installUpdate = vi.fn(async () => undefined);
-const getKnowledgeState = vi.fn<() => Promise<KnowledgeSection[]>>(async () => [
+const getKnowledgeState = vi.fn<() => Promise<KnowledgeTreeNode[]>>(async () => [
   {
-    id: "knowledge",
-    label: "Knowledge",
-    entries: [
+    id: "user",
+    title: "user",
+    relativePath: "user",
+    kind: "directory",
+    children: [
       {
-        relativePath: "review.md",
-        displayName: "review.md"
-      },
-      {
-        relativePath: "weekly.md",
-        displayName: "weekly.md"
+        id: "user/AI",
+        title: "AI",
+        relativePath: "user/AI",
+        kind: "directory",
+        children: [
+          {
+            id: "user/AI/models",
+            title: "models",
+            relativePath: "user/AI/models",
+            kind: "directory",
+            children: [
+              {
+                id: "user/AI/models/MCP",
+                title: "MCP",
+                relativePath: "user/AI/models/MCP",
+                kind: "directory",
+                children: [
+                  {
+                    id: "user/AI/models/MCP/MCP.md",
+                    title: "MCP",
+                    relativePath: "user/AI/models/MCP/MCP.md",
+                    kind: "note",
+                    children: []
+                  },
+                  {
+                    id: "user/AI/models/MCP/Источники.md",
+                    title: "Источники",
+                    relativePath: "user/AI/models/MCP/Источники.md",
+                    kind: "note",
+                    children: []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     ]
   },
   {
-    id: "notes",
-    label: "Notes",
-    entries: [
+    id: "assist",
+    title: "assist",
+    relativePath: "assist",
+    kind: "directory",
+    children: [
       {
-        relativePath: "daily.txt",
-        displayName: "daily.txt"
+        id: "assist/docs",
+        title: "docs",
+        relativePath: "assist/docs",
+        kind: "directory",
+        children: [
+          {
+            id: "assist/docs/registry",
+            title: "registry",
+            relativePath: "assist/docs/registry",
+            kind: "directory",
+            children: [
+              {
+                id: "assist/docs/registry/Документации.md",
+                title: "Документации",
+                relativePath: "assist/docs/registry/Документации.md",
+                kind: "note",
+                children: []
+              }
+            ]
+          }
+        ]
       }
     ]
   }
 ]);
 const readKnowledgeEntry = vi.fn(
-  async (payload: { sectionId: KnowledgeSection["id"]; relativePath: string }) => ({
-    sectionId: payload.sectionId,
+  async (payload: { relativePath: string }) => ({
+    title:
+      payload.relativePath === "assist/docs/registry/Документации.md"
+        ? "Документации"
+        : payload.relativePath === "user/AI/models/MCP/Источники.md"
+          ? "Источники"
+          : "MCP",
     relativePath: payload.relativePath,
     content:
-      payload.relativePath === "weekly.md"
-        ? "weekly review"
-        : payload.relativePath === "daily.txt"
-          ? "daily note"
-          : "review body"
+      payload.relativePath === "assist/docs/registry/Документации.md"
+        ? "known docs"
+        : payload.relativePath === "user/AI/models/MCP/Источники.md"
+          ? "sources"
+          : "MCP note body"
   })
 );
 
@@ -499,6 +602,22 @@ const sendLocalChatMessage = vi.fn(
     return updatedChat;
   }
 );
+const getLocalChatRunState = vi.fn(async (_chatId: string) => null as LocalChatRunState | null);
+const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) => void) => {
+  subscribeLocalChatEvents.listener = listener;
+  return () => {
+    subscribeLocalChatEvents.listener = null;
+  };
+}) as SubscribeLocalChatEventsMock;
+subscribeLocalChatEvents.listener = null;
+const subscribeLocalChatRunEvents = vi.fn((listener: (event: LocalChatRunEvent) => void) => {
+  subscribeLocalChatRunEvents.listener = listener;
+  return () => {
+    subscribeLocalChatRunEvents.listener = null;
+  };
+}) as SubscribeLocalChatRunEventsMock;
+subscribeLocalChatRunEvents.listener = null;
+const cancelLocalChatRun = vi.fn(async (_chatId: string) => true);
 
 describe("App navigation", () => {
   beforeEach(() => {
@@ -509,6 +628,7 @@ describe("App navigation", () => {
       getAppsState,
       getAssistantProcesses,
       getAppPreferences,
+      getVaultSettings,
       getOnboardingState,
       getOwnerProfileState,
       getAuthConfigState,
@@ -519,6 +639,7 @@ describe("App navigation", () => {
       getLocalApprovals,
       getLocalChats,
       getLocalChatDetail,
+      getLocalChatRunState,
       getPairingState,
       getQuickAccessState,
       getRuntimeStatus,
@@ -538,9 +659,13 @@ describe("App navigation", () => {
       refreshDiscoveredApps,
       submitQuickRequest,
       sendLocalChatMessage,
+      subscribeLocalChatEvents,
+      subscribeLocalChatRunEvents,
+      cancelLocalChatRun,
       saveAuthConfig,
       saveAppRegistryEntry,
       saveAppPreferences,
+      saveVaultRoot,
       saveOwnerProfile,
       saveChatWorkspaceBinding,
       saveCodexConfig,
@@ -554,6 +679,7 @@ describe("App navigation", () => {
     getAppsState.mockClear();
     getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
+    getVaultSettings.mockClear();
     getOnboardingState.mockClear();
     completeOnboarding.mockClear();
     getOwnerProfileState.mockClear();
@@ -565,6 +691,7 @@ describe("App navigation", () => {
     getLocalApprovals.mockClear();
     getLocalChats.mockClear();
     getLocalChatDetail.mockClear();
+    getLocalChatRunState.mockClear();
     getPairingState.mockClear();
     getQuickAccessState.mockClear();
     getRuntimeStatus.mockClear();
@@ -583,9 +710,15 @@ describe("App navigation", () => {
     refreshDiscoveredApps.mockClear();
     submitQuickRequest.mockClear();
     sendLocalChatMessage.mockClear();
+    subscribeLocalChatEvents.mockClear();
+    subscribeLocalChatRunEvents.mockClear();
+    cancelLocalChatRun.mockClear();
+    subscribeLocalChatRunEvents.listener = null;
+    subscribeLocalChatEvents.listener = null;
     saveAuthConfig.mockClear();
     saveAppRegistryEntry.mockClear();
     saveAppPreferences.mockClear();
+    saveVaultRoot.mockClear();
     saveOwnerProfile.mockClear();
     saveChatWorkspaceBinding.mockClear();
     saveCodexConfig.mockClear();
@@ -616,6 +749,10 @@ describe("App navigation", () => {
       completedInstallationFingerprint: "install-a",
       requiresOnboarding: true
     });
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: null,
+      isConfigured: false
+    });
     getPairingState.mockResolvedValueOnce({
       code: null,
       expiresAt: null,
@@ -626,10 +763,22 @@ describe("App navigation", () => {
     render(<App />);
 
     expect(await screen.findByText("Первичная настройка устройства")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Путь к vault")).toBeInTheDocument();
     expect(
       await screen.findByText("Этот ПК уже привязан к Telegram. При желании можно открыть новый pairing-код.")
     ).toBeInTheDocument();
     expect(document.querySelector("main.desktop-layout")).toHaveClass("desktop-layout--standalone");
+
+    fireEvent.change(await screen.findByLabelText("Путь к vault"), {
+      target: {
+        value: "D:\\KarpikVault"
+      }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить vault" }));
+
+    await waitFor(() => {
+      expect(saveVaultRoot).toHaveBeenCalledWith("D:\\KarpikVault");
+    });
 
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить в приложение" }));
 
@@ -644,6 +793,10 @@ describe("App navigation", () => {
       installationFingerprint: "install-b",
       completedInstallationFingerprint: "install-a",
       requiresOnboarding: true
+    });
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: null,
+      isConfigured: false
     });
     getPairingState.mockResolvedValueOnce({
       code: null,
@@ -666,6 +819,30 @@ describe("App navigation", () => {
       await screen.findByText("Быстрый старт: https://t.me/Desktop_assist_bot?start=pair_PAIR42")
     ).toBeInTheDocument();
     expect(await screen.findByText("Резервная команда: /pair PAIR42")).toBeInTheDocument();
+  });
+
+  it("shows vault root in settings and saves the updated path", async () => {
+    getVaultSettings.mockResolvedValueOnce({
+      vaultRoot: "D:\\KarpikVault",
+      isConfigured: true
+    });
+
+    await renderMainView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    expect(await screen.findByDisplayValue("D:\\KarpikVault")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Путь к knowledge vault"), {
+      target: {
+        value: "E:\\Vault"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить vault" }));
+
+    await waitFor(() => {
+      expect(saveVaultRoot).toHaveBeenCalledWith("E:\\Vault");
+    });
+    expect(await screen.findByText("Vault path saved locally.")).toBeInTheDocument();
   });
 
   it("shows linked applications and assistant-started processes", async () => {
@@ -728,6 +905,83 @@ describe("App navigation", () => {
       text: "status"
     });
     expect(await screen.findByText("desktop-local is online")).toBeInTheDocument();
+  });
+
+  it("updates the local chat view when the assistant reply streams in later", async () => {
+    localChatsState = [
+      {
+        chatId: "local-chat-stream-ui",
+        source: "desktop_chat",
+        title: "Execution chat",
+        createdAt: "2026-03-30T12:00:00.000Z",
+        updatedAt: "2026-03-30T12:00:00.000Z",
+        messageCount: 0,
+        referenceLabel: null,
+        telegramChatId: null,
+        workspaceId: "assist-repo",
+        messages: []
+      }
+    ];
+
+    sendLocalChatMessage.mockImplementationOnce(async (payload: { chatId: string; text: string }) => {
+      const updatedChat: LocalChatDetail = {
+        ...localChatsState[0],
+        updatedAt: "2026-03-30T12:01:00.000Z",
+        messageCount: 2,
+        messages: [
+          {
+            messageId: "user-stream-1",
+            role: "user",
+            text: payload.text,
+            createdAt: "2026-03-30T12:01:00.000Z"
+          },
+          {
+            messageId: "assistant-stream-1",
+            role: "assistant",
+            text: "Ассистент отвечает...",
+            createdAt: "2026-03-30T12:01:01.000Z"
+          }
+        ]
+      };
+
+      localChatsState = [updatedChat];
+      return updatedChat;
+    });
+
+    await renderMainView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
+    fireEvent.change(await screen.findByLabelText("Local request"), {
+      target: { value: "что нового в FastAPI?" }
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Отправить" }));
+
+    expect(await screen.findByText("Ассистент отвечает...")).toBeInTheDocument();
+
+    subscribeLocalChatEvents.listener?.({
+      chatId: "local-chat-stream-ui",
+      detail: {
+        ...localChatsState[0],
+        updatedAt: "2026-03-30T12:01:03.000Z",
+        messageCount: 2,
+        messages: [
+          {
+            messageId: "user-stream-1",
+            role: "user",
+            text: "что нового в FastAPI?",
+            createdAt: "2026-03-30T12:01:00.000Z"
+          },
+          {
+            messageId: "assistant-stream-1",
+            role: "assistant",
+            text: "FastAPI недавно обновился.",
+            createdAt: "2026-03-30T12:01:01.000Z"
+          }
+        ]
+      }
+    });
+
+    expect(await screen.findByText("FastAPI недавно обновился.")).toBeInTheDocument();
   });
 
   it("shows pairing controls and workspace registry settings", async () => {
@@ -1039,8 +1293,10 @@ describe("App navigation", () => {
     ]);
     getLocalApprovals.mockResolvedValue([
       {
+        kind: "codex_write",
         taskId: "task-approval",
         intent: "codex-write update README",
+        title: "task-approval",
         summaryText: "Updated README",
         previewText: "diff preview",
         changedFiles: ["README.md"],
@@ -1057,6 +1313,34 @@ describe("App navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Подтвердить" }));
 
     expect(approveLocalApproval).toHaveBeenCalledWith("task-approval");
+  });
+
+  it("shows standalone assist skill approvals without a matching remote task", async () => {
+    getTaskSnapshot.mockResolvedValue([]);
+    getLocalApprovals.mockResolvedValue([
+      {
+        kind: "assist_skill",
+        taskId: "skill-approval-1",
+        intent: "научись workflow triage багов",
+        title: "Навык workflow triage багов",
+        summaryText: "Значимое обновление навыка ассистента.",
+        previewText: "Буду раскладывать инциденты по severity и owner.",
+        changedFiles: ["assist/skills/Навык workflow triage багов.md"],
+        createdAt: "2026-03-30T12:00:00Z"
+      }
+    ]);
+
+    await renderMainView();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
+
+    expect(await screen.findByText("Навык workflow triage багов")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Буду раскладывать инциденты по severity и owner.")
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Подтвердить" }));
+
+    expect(approveLocalApproval).toHaveBeenCalledWith("skill-approval-1");
   });
 
   it("submits a quick popup request into the last active local chat", async () => {
@@ -1372,14 +1656,14 @@ describe("App navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Knowledge / Review" }));
 
-    expect(await screen.findByText("review.md")).toBeInTheDocument();
-    expect(await screen.findByText("review body")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "weekly.md" }));
+    expect(await screen.findByText("user")).toBeInTheDocument();
+    expect(await screen.findByText("assist")).toBeInTheDocument();
+    expect(await screen.findByText("MCP note body")).toBeInTheDocument();
+    fireEvent.click((await screen.findByText("Документации")).closest("button")!);
 
     expect(readKnowledgeEntry).toHaveBeenCalledWith({
-      sectionId: "knowledge",
-      relativePath: "weekly.md"
+      relativePath: "assist/docs/registry/Документации.md"
     });
-    expect(await screen.findByText("weekly review")).toBeInTheDocument();
+    expect(await screen.findByText("known docs")).toBeInTheDocument();
   });
 });

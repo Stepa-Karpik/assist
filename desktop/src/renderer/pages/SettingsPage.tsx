@@ -45,6 +45,11 @@ type CodexConfigState = {
   chatBindings: Record<string, string>;
 };
 
+type VaultSettingsState = {
+  vaultRoot: string | null;
+  isConfigured: boolean;
+};
+
 type WorkspaceDraft = {
   id: string;
   name: string;
@@ -74,6 +79,10 @@ const emptyCodexConfigState: CodexConfigState = {
   workspaces: [],
   defaultWorkspaceId: "",
   chatBindings: {}
+};
+const emptyVaultSettingsState: VaultSettingsState = {
+  vaultRoot: null,
+  isConfigured: false
 };
 
 const supportedRemoteTasks = [
@@ -176,6 +185,8 @@ export function SettingsPage() {
   const [authConfigState, setAuthConfigState] = useState<AuthConfigState>(emptyAuthConfigState);
   const [appPreferences, setAppPreferences] = useState<AppPreferencesState>(emptyAppPreferencesState);
   const [codexConfigState, setCodexConfigState] = useState<CodexConfigState>(emptyCodexConfigState);
+  const [vaultSettings, setVaultSettings] = useState<VaultSettingsState>(emptyVaultSettingsState);
+  const [vaultRootDraft, setVaultRootDraft] = useState("");
   const [password, setPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
   const [pendingTotpEnrollment, setPendingTotpEnrollment] = useState<TotpEnrollment | null>(null);
@@ -189,10 +200,12 @@ export function SettingsPage() {
   const [isConfirmingTotpEnrollment, setIsConfirmingTotpEnrollment] = useState(false);
   const [isSavingAppPreferences, setIsSavingAppPreferences] = useState(false);
   const [isSavingCodexConfig, setIsSavingCodexConfig] = useState(false);
+  const [isSavingVaultRoot, setIsSavingVaultRoot] = useState(false);
   const [pairingFeedback, setPairingFeedback] = useState<string | null>(null);
   const [authFeedback, setAuthFeedback] = useState<string | null>(null);
   const [appPreferencesFeedback, setAppPreferencesFeedback] = useState<string | null>(null);
   const [codexFeedback, setCodexFeedback] = useState<string | null>(null);
+  const [vaultFeedback, setVaultFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const workspaceOptions = useMemo(() => buildWorkspacePayload(workspaceDrafts), [workspaceDrafts]);
@@ -203,12 +216,13 @@ export function SettingsPage() {
 
     async function loadSettingsState() {
       try {
-        const [nextPairingState, nextAuthConfigState, nextAppPreferences, nextCodexConfigState] =
+        const [nextPairingState, nextAuthConfigState, nextAppPreferences, nextCodexConfigState, nextVaultSettings] =
           await Promise.all([
             window.karpik?.getPairingState?.() ?? Promise.resolve(emptyPairingState),
             window.karpik?.getAuthConfigState?.() ?? Promise.resolve(emptyAuthConfigState),
             window.karpik?.getAppPreferences?.() ?? Promise.resolve(emptyAppPreferencesState),
-            window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState)
+            window.karpik?.getCodexConfigState?.() ?? Promise.resolve(emptyCodexConfigState),
+            window.karpik?.getVaultSettings?.() ?? Promise.resolve(emptyVaultSettingsState)
           ]);
 
         if (isSubscribed) {
@@ -216,6 +230,8 @@ export function SettingsPage() {
           setAuthConfigState(nextAuthConfigState);
           setAppPreferences(nextAppPreferences);
           setCodexConfigState(nextCodexConfigState);
+          setVaultSettings(nextVaultSettings);
+          setVaultRootDraft(nextVaultSettings.vaultRoot ?? "");
           setWorkspaceDrafts(buildWorkspaceDrafts(nextCodexConfigState));
           setSelectedDefaultWorkspaceId(nextCodexConfigState.defaultWorkspaceId);
         }
@@ -431,6 +447,28 @@ export function SettingsPage() {
     }
   }
 
+  async function handleSaveVaultRoot() {
+    if (!window.karpik?.saveVaultRoot) {
+      setError("Vault API недоступен в этом окружении.");
+      return;
+    }
+
+    setError(null);
+    setVaultFeedback(null);
+    setIsSavingVaultRoot(true);
+
+    try {
+      const nextVaultSettings = await window.karpik.saveVaultRoot(vaultRootDraft);
+      setVaultSettings(nextVaultSettings);
+      setVaultRootDraft(nextVaultSettings.vaultRoot ?? "");
+      setVaultFeedback("Vault path saved locally.");
+    } catch {
+      setError("Не удалось сохранить путь к knowledge vault.");
+    } finally {
+      setIsSavingVaultRoot(false);
+    }
+  }
+
   function handleWorkspaceDraftChange(index: number, field: "name" | "rootPath", value: string) {
     setCodexFeedback(null);
     setWorkspaceDrafts((currentDrafts) =>
@@ -469,6 +507,40 @@ export function SettingsPage() {
         Здесь управляются pairing-код, доверенные Telegram ID и локальная политика доступа.
       </p>
       {error !== null ? <p className="task-error status-feedback">{error}</p> : null}
+
+      <section className="quick-card">
+        <p className="section-label">Knowledge vault</p>
+        <label className="section-label" htmlFor="settings-vault-root">
+          Путь к knowledge vault
+        </label>
+        <input
+          className="quick-input"
+          id="settings-vault-root"
+          onChange={(event) => {
+            setVaultFeedback(null);
+            setVaultRootDraft(event.target.value);
+          }}
+          type="text"
+          value={vaultRootDraft}
+        />
+        <p className="muted-text">
+          {vaultSettings.isConfigured && vaultSettings.vaultRoot
+            ? `Текущий vault: ${vaultSettings.vaultRoot}`
+            : "Путь ещё не сохранён."}
+        </p>
+        <button
+          aria-busy={isSavingVaultRoot}
+          className={buildButtonClass(isSavingVaultRoot, vaultFeedback !== null)}
+          disabled={isLoading || isSavingVaultRoot}
+          onClick={() => {
+            void handleSaveVaultRoot();
+          }}
+          type="button"
+        >
+          {isSavingVaultRoot ? "Сохраняем..." : "Сохранить vault"}
+        </button>
+        {vaultFeedback !== null ? <p className="task-success status-feedback">{vaultFeedback}</p> : null}
+      </section>
 
       <section className="quick-card">
         <p className="section-label">Remote auth</p>

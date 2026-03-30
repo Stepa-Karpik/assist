@@ -38,6 +38,11 @@ export type TaskRuntimeState = {
 type TaskRuntimeOptions = {
   client: TaskSyncClient;
   startTaskExecution: StartTaskExecution;
+  recordKnowledgeInteraction?: (input: {
+    origin: "remote-task";
+    prompt: string;
+    answer: string;
+  }) => Promise<void> | void;
   persistLocalApproval?: (
     task: RemoteTaskRecord,
     draft: CodexWritePreviewDraft
@@ -59,6 +64,7 @@ async function finalizeExecutionResult({
   client,
   task,
   executionResult,
+  recordKnowledgeInteraction,
   persistLocalApproval,
   discardLocalApproval,
   cancelledByOperator
@@ -66,6 +72,11 @@ async function finalizeExecutionResult({
   client: TaskSyncClient;
   task: RemoteTaskRecord;
   executionResult: TaskExecutionResult;
+  recordKnowledgeInteraction?: (input: {
+    origin: "remote-task";
+    prompt: string;
+    answer: string;
+  }) => Promise<void> | void;
   persistLocalApproval?: (
     task: RemoteTaskRecord,
     draft: CodexWritePreviewDraft
@@ -106,6 +117,16 @@ async function finalizeExecutionResult({
   }
 
   if (executionResult.ok) {
+    try {
+      await recordKnowledgeInteraction?.({
+        origin: "remote-task",
+        prompt: task.intent,
+        answer: executionResult.resultText
+      });
+    } catch {
+      // Knowledge ingestion is best-effort and must not fail task delivery.
+    }
+
     const completeResponse = await client.completeTask(task.task_id, {
       resultText: executionResult.resultText,
       artifact: executionResult.artifact
@@ -131,6 +152,7 @@ async function finalizeExecutionResult({
 export async function runTaskSyncCycle({
   client,
   startTaskExecution,
+  recordKnowledgeInteraction,
   persistLocalApproval,
   discardLocalApproval,
   runtimeState = {
@@ -176,6 +198,7 @@ export async function runTaskSyncCycle({
         client,
         task,
         executionResult,
+        recordKnowledgeInteraction,
         persistLocalApproval,
         discardLocalApproval,
         cancelledByOperator: false
@@ -191,6 +214,7 @@ export async function runTaskSyncCycle({
           client,
           task,
           executionResult,
+          recordKnowledgeInteraction,
           persistLocalApproval,
           discardLocalApproval,
           cancelledByOperator: activeExecution.cancelRequested

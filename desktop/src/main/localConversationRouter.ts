@@ -29,7 +29,7 @@ type LocalConversationRouterOptions = {
   getOwnerProfileContext?: () => string | null | undefined;
 };
 
-function buildFallbackReply(text: string): string {
+function buildHumanFallbackReply(text: string): string {
   const normalized = text.trim().toLowerCase();
 
   if (
@@ -51,7 +51,7 @@ function buildFallbackReply(text: string): string {
     return "Пожалуйста.";
   }
 
-  return "Сформулируйте задачу обычным текстом или добавьте «кодекс», если нужен анализ проекта.";
+  return "Понял запрос. Сейчас разберусь и отвечу по сути.";
 }
 
 export function createLocalConversationRouter({
@@ -71,7 +71,7 @@ export function createLocalConversationRouter({
       ) {
         const replyText =
           chatResponder === null
-            ? buildFallbackReply(text)
+            ? buildHumanFallbackReply(text)
             : await chatResponder.reply(normalizedText, {
                 ownerProfileContext: getOwnerProfileContext?.() ?? null
               });

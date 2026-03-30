@@ -18,9 +18,14 @@ import {
 import { createCodexWritePreviewGenerator } from "./codexWritePreview";
 import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
+import { createChatKnowledgeRetriever } from "./chatKnowledgeRetriever";
+import { createChatRunStore } from "./chatRunStore";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
-import { createKnowledgeStore } from "./knowledgeStore";
+import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
+import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
+import { createKnowledgeVaultStore } from "./knowledgeVaultStore";
+import { VaultSettingsStore } from "./vaultSettingsStore";
 import { LocalApprovalStore } from "./localApprovalStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
@@ -36,8 +41,10 @@ import { createQuickAccessRuntime } from "./quickAccessRuntime";
 import { mirrorRemoteTaskUpdates } from "./remoteTaskMirror";
 import {
   type AuthEventListResponse,
+  type ConversationMemoryEventListResponse,
   type DevicePresenceResponse,
   type PairingStateResponse,
+  type RemoteConversationMemoryEvent,
   type RemoteTaskRecord,
   type RemoteAppCatalogItem,
   createSyncClient
@@ -64,12 +71,15 @@ let appRegistryStore: AppRegistryStore | null = null;
 let authStore: AuthStore | null = null;
 let codexSettingsStore: CodexSettingsStore | null = null;
 let activityLogStore: ActivityLogStore | null = null;
-let knowledgeStore: ReturnType<typeof createKnowledgeStore> | null = null;
+let knowledgeStore: ReturnType<typeof createKnowledgeVaultStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let chatRunStore: ReturnType<typeof createChatRunStore> | null = null;
+let knowledgeBackgroundWriter: ReturnType<typeof createKnowledgeBackgroundWriter> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
+let vaultSettingsStore: VaultSettingsStore | null = null;
 let quickAccessRuntime: ReturnType<typeof createQuickAccessRuntime> | null = null;
 let taskExecutor: ReturnType<typeof createTaskExecutor> | null = null;
 let updateService: ReturnType<typeof createUpdateService> | null = null;
@@ -92,12 +102,35 @@ const updateFeedUrl = process.env.KARPIK_UPDATE_FEED_URL ?? null;
 let syncClient!: ReturnType<typeof createSyncClient>;
 const devicePresenceTracker = createDevicePresenceTracker();
 
+function emitLocalChatUpdated(detail: ReturnType<LocalChatStore["getChat"]> extends infer T ? NonNullable<T> : never) {
+  mainWindow?.webContents.send("chats:updated", {
+    chatId: detail.chatId,
+    detail
+  });
+}
+
+function emitLocalChatRunUpdated(chatId: string, run: ReturnType<ReturnType<typeof createChatRunStore>["getRun"]>) {
+  mainWindow?.webContents.send("chats:run-updated", {
+    chatId,
+    run
+  });
+}
+
 if (started) {
   app.quit();
 }
 
 function logResponseError(action: string, response: Response) {
   console.error(`${action} failed`, response.status, response.statusText);
+}
+
+function getVaultSettingsState() {
+  const vaultRoot = vaultSettingsStore?.getVaultRoot() ?? null;
+
+  return {
+    vaultRoot,
+    isConfigured: vaultRoot !== null
+  };
 }
 
 function buildInstallationFingerprint(): string {
@@ -318,6 +351,9 @@ async function pollTaskState() {
     const nextSnapshot = await runTaskSyncCycle({
       client: syncClient,
       startTaskExecution: (task) => taskExecutor!.start(task),
+      recordKnowledgeInteraction: async (input) => {
+        await knowledgeBackgroundWriter?.recordInteraction(input);
+      },
       persistLocalApproval: async (task, draft) => {
         localApprovalStore?.saveDraft(task.intent, draft);
       },
@@ -327,8 +363,87 @@ async function pollTaskState() {
       runtimeState: taskRuntimeState
     });
     updateTaskSnapshot(await hydrateTaskSnapshot(nextSnapshot));
+    await pollConversationMemoryEvents();
   } finally {
     taskPollInFlight = false;
+  }
+}
+
+async function applyKnowledgeInteraction(input: {
+  origin: "local-chat" | "telegram-chat" | "remote-task";
+  prompt: string;
+  answer: string;
+  sourceUrls?: string[];
+  memoryWrites?: Array<{
+    target: "assist/profile" | "assist/preferences" | "assist/docs/websites" | "assist/docs/papers";
+    key: string;
+    value: string;
+  }>;
+}) {
+  const profilePatch: OwnerProfileInput = {};
+
+  for (const write of input.memoryWrites ?? []) {
+    if (write.target !== "assist/profile") {
+      continue;
+    }
+
+    if (write.key === "full_name") {
+      profilePatch.fullName = write.value;
+    } else if (write.key === "occupation") {
+      profilePatch.occupation = write.value;
+    }
+  }
+
+  if (ownerProfileStore !== null && Object.keys(profilePatch).length > 0) {
+    ownerProfileStore.save(profilePatch);
+    await syncOwnerProfileState().catch((error: unknown) => {
+      console.error("Failed to sync owner profile state", error);
+    });
+  }
+
+  await knowledgeBackgroundWriter?.recordInteraction(input);
+}
+
+async function pollConversationMemoryEvents() {
+  if (vaultSettingsStore?.getVaultRoot() === null) {
+    return;
+  }
+
+  const response = await syncClient.fetchConversationMemoryEvents();
+
+  if (!response.ok) {
+    logResponseError("Fetching conversation memory events", response);
+    return;
+  }
+
+  const payload = (await response.json()) as ConversationMemoryEventListResponse;
+
+  for (const event of payload.items) {
+    await applyConversationMemoryEvent(event);
+  }
+}
+
+async function applyConversationMemoryEvent(event: RemoteConversationMemoryEvent) {
+  if (knowledgeBackgroundWriter === null) {
+    return;
+  }
+
+  try {
+    await applyKnowledgeInteraction({
+      origin: "telegram-chat",
+      prompt: event.prompt,
+      answer: event.answer,
+      sourceUrls: event.source_urls,
+      memoryWrites: event.memory_writes
+    });
+  } catch (error) {
+    console.error("Failed to apply conversation memory event", error);
+    return;
+  }
+
+  const ackResponse = await syncClient.ackConversationMemoryEvent(event.event_id);
+  if (!ackResponse.ok) {
+    logResponseError("Acknowledging conversation memory event", ackResponse);
   }
 }
 
@@ -612,6 +727,7 @@ function registerIpcHandlers() {
     return state;
   });
   ipcMain.handle("app-preferences:get", () => appPreferencesStore?.getState());
+  ipcMain.handle("vault:get-settings", () => getVaultSettingsState());
   ipcMain.handle("onboarding:get-state", () => onboardingStateStore?.getState() ?? null);
   ipcMain.handle("onboarding:complete", () => {
     if (onboardingStateStore === null) {
@@ -627,7 +743,20 @@ function registerIpcHandlers() {
   ipcMain.handle("codex:get-config-state", () => codexSettingsStore?.getState());
   ipcMain.handle("chats:get-local", () => localChatStore?.list() ?? []);
   ipcMain.handle("chats:get-detail", (_event, chatId: string) => localChatStore?.getChat(chatId) ?? null);
-  ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listSections() ?? []);
+  ipcMain.handle("chats:get-run-state", (_event, chatId: string) => chatRunStore?.getRun(chatId) ?? null);
+  ipcMain.handle("knowledge:get-state", () => knowledgeStore?.listRoots() ?? []);
+  ipcMain.handle("vault:set-root", (_event, vaultRoot: string) => {
+    if (vaultSettingsStore === null) {
+      throw new Error("Vault settings store is not initialized");
+    }
+
+    const normalizedVaultRoot = vaultSettingsStore.setVaultRoot(vaultRoot);
+    ensureKnowledgeVault(normalizedVaultRoot);
+    knowledgeStore = createKnowledgeVaultStore({
+      vaultRoot: normalizedVaultRoot
+    });
+    return getVaultSettingsState();
+  });
   ipcMain.handle(
     "apps:save",
     async (_event, payload: AppRegistryInput) => {
@@ -661,8 +790,7 @@ function registerIpcHandlers() {
   );
   ipcMain.handle(
     "knowledge:read-entry",
-    (_event, payload: { sectionId: "master_info" | "knowledge" | "notes" | "websites"; relativePath: string }) =>
-      knowledgeStore?.readEntry(payload) ?? null
+    (_event, payload: { relativePath: string }) => knowledgeStore?.readNote(payload.relativePath) ?? null
   );
   ipcMain.handle("quick-access:get-state", () => quickAccessRuntime?.getState());
   ipcMain.handle("runtime:get-status", () => {
@@ -798,6 +926,13 @@ function registerIpcHandlers() {
       return localChatRuntime.sendMessage(payload);
     }
   );
+  ipcMain.handle("chats:cancel-run", (_event, chatId: string) => {
+    if (localChatRuntime === null) {
+      throw new Error("Local chat runtime is not initialized");
+    }
+
+    return localChatRuntime.cancelRun(chatId);
+  });
   ipcMain.handle(
     "quick-access:submit-request",
     async (_event, payload: { chatId?: string; text: string }) => {
@@ -821,7 +956,13 @@ function registerIpcHandlers() {
       throw new Error("Local approval store is not initialized");
     }
 
+    const approval = localApprovalStore.getSummary(taskId);
     const result = await localApprovalStore.approve(taskId);
+
+    if (approval?.kind === "assist_skill") {
+      return;
+    }
+
     const response = await syncClient.completeTask(taskId, {
       resultText: result.resultText
     });
@@ -835,6 +976,13 @@ function registerIpcHandlers() {
   ipcMain.handle("tasks:reject-local-approval", async (_event, taskId: string) => {
     if (localApprovalStore === null) {
       throw new Error("Local approval store is not initialized");
+    }
+
+    const approval = localApprovalStore.getSummary(taskId);
+
+    if (approval?.kind === "assist_skill") {
+      await localApprovalStore.reject(taskId);
+      return;
     }
 
     const response = await syncClient.blockTask(taskId, "Rejected locally.");
@@ -901,6 +1049,9 @@ async function bootstrap() {
   appPreferencesStore = new AppPreferencesStore({
     settingsRoot: runtimeFolders.settings
   });
+  vaultSettingsStore = new VaultSettingsStore({
+    settingsRoot: runtimeFolders.settings
+  });
   onboardingStateStore = new OnboardingStateStore({
     settingsRoot: runtimeFolders.settings,
     installationFingerprint: buildInstallationFingerprint()
@@ -912,18 +1063,28 @@ async function bootstrap() {
     settingsRoot: runtimeFolders.settings
   });
   appPreferencesStore.applyLoginItemSettings(app);
+  const configuredVaultRoot = vaultSettingsStore.getVaultRoot();
+  if (configuredVaultRoot !== null) {
+    ensureKnowledgeVault(configuredVaultRoot);
+    knowledgeStore = createKnowledgeVaultStore({
+      vaultRoot: configuredVaultRoot
+    });
+  }
   authStore = new AuthStore({
     secretsRoot: runtimeFolders.secrets,
     totpAccountName: deviceId
-  });
-  knowledgeStore = createKnowledgeStore({
-    runtimeRoot: runtimeFolders.root
   });
   activityLogStore = new ActivityLogStore({
     stateRoot: runtimeFolders.state
   });
   localApprovalStore = new LocalApprovalStore({
     stateRoot: runtimeFolders.state
+  });
+  knowledgeBackgroundWriter = createKnowledgeBackgroundWriter({
+    getVaultRoot: () => vaultSettingsStore?.getVaultRoot() ?? null,
+    persistSkillApprovalDraft: async (draft) => {
+      localApprovalStore?.saveSkillDraft(draft.intent, draft);
+    }
   });
   localChatStore = new LocalChatStore({
     stateRoot: runtimeFolders.state
@@ -967,9 +1128,42 @@ async function bootstrap() {
           apiKey: process.env.DEEPSEEK_API_KEY
         })
       : null;
+  const chatKnowledgeRetriever = createChatKnowledgeRetriever({
+    getVaultRoot: () => vaultSettingsStore?.getVaultRoot() ?? null
+  });
+  chatRunStore = createChatRunStore();
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
+    chatRunStore,
     executeTask: (task) => taskExecutor!.execute(task),
+    replyToConversation: async ({ prompt }) => {
+      if (localChatResponder === null) {
+        return "";
+      }
+
+      const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
+      const text = await localChatResponder.reply(prompt, {
+        ownerProfileContext:
+          ownerProfileStore === null
+            ? null
+            : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
+        knowledgeContext: knowledgeLookup.context
+      });
+
+      return {
+        text,
+        sourceUrls: knowledgeLookup.sourceUrls
+      };
+    },
+    onChatUpdated: (detail) => {
+      emitLocalChatUpdated(detail);
+    },
+    onRunUpdated: ({ chatId, run }) => {
+      emitLocalChatRunUpdated(chatId, run);
+    },
+    recordKnowledgeInteraction: async (input) => {
+      await applyKnowledgeInteraction(input);
+    },
     persistLocalApproval: async (intent, draft) => {
       localApprovalStore?.saveDraft(intent, draft);
     },
