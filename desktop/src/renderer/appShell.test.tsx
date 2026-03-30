@@ -34,7 +34,17 @@ beforeEach(() => {
   window.karpik = {
     view: "main",
     getOwnerProfileState,
+    getOnboardingState: vi.fn(async () => ({
+      installationFingerprint: "install-a",
+      completedInstallationFingerprint: "install-a",
+      requiresOnboarding: false
+    })),
     saveOwnerProfile,
+    completeOnboarding: vi.fn(async () => ({
+      installationFingerprint: "install-a",
+      completedInstallationFingerprint: "install-a",
+      requiresOnboarding: false
+    })),
     getRuntimeStatus: vi.fn(async () => ({
       deviceId: "stepa-desktop",
       serverUrl: "http://127.0.0.1:8080",

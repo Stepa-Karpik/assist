@@ -122,6 +122,7 @@ export type QueuePollPayload = {
 
 export type PairingOpenPayload = {
   device_id: string;
+  code: string;
   expires_at: string;
 };
 
@@ -142,6 +143,20 @@ export type PairAttemptEvent = {
 
 export type PairingEventListResponse = {
   items: PairAttemptEvent[];
+};
+
+export type PairingStateResponse = {
+  device_id: string;
+  trusted_telegram_user_ids: number[];
+  session:
+    | {
+        device_id: string;
+        code: string | null;
+        status: "active" | "inactive" | "consumed" | "expired" | "cancelled";
+        expires_at: string;
+        attempt_count: number;
+      }
+    | null;
 };
 
 export type PairingEventResolutionInput = {
@@ -229,10 +244,12 @@ function buildTaskHistoryParams(deviceId: string, { limit }: TaskHistoryOptions 
 
 export function buildPairingOpenPayload(
   deviceId: string,
+  code: string,
   expiresAt: string
 ): PairingOpenPayload {
   return {
     device_id: deviceId,
+    code,
     expires_at: expiresAt
   };
 }
@@ -455,13 +472,20 @@ export function createSyncClient({
       });
     },
 
-    openPairingSession(expiresAt: string) {
+    openPairingSession(code: string, expiresAt: string) {
       return fetchImpl(`${baseUrl}/api/pairing/open`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(buildPairingOpenPayload(deviceId, expiresAt))
+        body: JSON.stringify(buildPairingOpenPayload(deviceId, code, expiresAt))
+      });
+    },
+
+    fetchPairingState() {
+      const params = new URLSearchParams(buildQueuePollPayload(deviceId));
+      return fetchImpl(`${baseUrl}/api/pairing/state?${params.toString()}`, {
+        method: "GET"
       });
     },
 

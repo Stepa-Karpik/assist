@@ -125,9 +125,19 @@ describe("desktop renderer feedback", () => {
         closeToTrayOnClose: true
       })),
       getOwnerProfileState,
+      getOnboardingState: vi.fn(async () => ({
+        installationFingerprint: "install-a",
+        completedInstallationFingerprint: "install-a",
+        requiresOnboarding: false
+      })),
       getAuthConfigState: vi.fn(async () => ({
         passwordConfigured: false,
         totpConfigured: false
+      })),
+      completeOnboarding: vi.fn(async () => ({
+        installationFingerprint: "install-a",
+        completedInstallationFingerprint: "install-a",
+        requiresOnboarding: false
       })),
       createTotpEnrollment,
       confirmTotpEnrollment,
@@ -276,8 +286,13 @@ describe("desktop renderer feedback", () => {
     cleanup();
   });
 
-  it("shows a visible success message after saving auth settings", async () => {
+  async function renderMainView() {
     render(<App />);
+    await screen.findByRole("button", { name: "Настройки" });
+  }
+
+  it("shows a visible success message after saving auth settings", async () => {
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.change(await screen.findByLabelText("Пароль для remote auth"), {
@@ -292,7 +307,7 @@ describe("desktop renderer feedback", () => {
   });
 
   it("supports qr-based totp enrollment before saving the secret", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByRole("button", { name: "Создать QR для TOTP" }));
@@ -313,7 +328,7 @@ describe("desktop renderer feedback", () => {
   });
 
   it("shows a visible success message after saving workspaces", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save workspaces" }));
@@ -322,7 +337,7 @@ describe("desktop renderer feedback", () => {
   });
 
   it("shows a visible success message after binding a telegram chat to a workspace", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
     fireEvent.click(await screen.findByRole("button", { name: "Сохранить workspace" }));

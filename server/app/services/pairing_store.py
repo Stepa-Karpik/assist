@@ -33,6 +33,21 @@ class InMemoryPairingStore:
             self._persist()
             return session
 
+    def get_active_session(self, device_id: str) -> PairingSession | None:
+        with self._lock:
+            session = self._sessions.get(device_id)
+
+            if session is None:
+                return None
+
+            if session.status != "active" or session.expires_at <= datetime.now(UTC):
+                if session.status == "active":
+                    session.status = "expired"
+                    self._persist()
+                return None
+
+            return session.model_copy()
+
     def close_session(self, device_id: str) -> PairingSession | None:
         with self._lock:
             session = self._sessions.get(device_id)
@@ -46,16 +61,27 @@ class InMemoryPairingStore:
 
     def create_pair_attempt(self, event: PairAttemptEvent) -> PairAttemptEvent | None:
         with self._lock:
-            session = self._sessions.get(event.device_id)
+            session = self._resolve_session_for_attempt_unlocked(event.device_id, event.code)
 
-            if session is None or session.status != "active" or session.expires_at <= datetime.now(UTC):
+            if session is None:
+                if self._has_active_session_for_code_space_unlocked():
+                    event.status = "resolved"
+                    event.result = "invalid_code"
+                    self._events[event.event_id] = event
+                    self._persist()
+                    return event.model_copy()
                 return None
 
             session.attempt_count += 1
+            trusted_users = self._trusted_users.setdefault(session.device_id, set())
+            trusted_users.add(event.telegram_user_id)
+            event.device_id = session.device_id
+            event.status = "resolved"
+            event.result = "paired"
+            session.status = "consumed"
             self._events[event.event_id] = event
-            self._waiters[event.event_id] = Event()
             self._persist()
-            return event
+            return event.model_copy()
 
     def list_pending_events(self, device_id: str) -> list[PairAttemptEvent]:
         with self._lock:
@@ -113,6 +139,39 @@ class InMemoryPairingStore:
     def get_trusted_users(self, device_id: str) -> list[int]:
         with self._lock:
             return sorted(self._trusted_users.get(device_id, set()))
+
+    def _resolve_session_for_attempt_unlocked(
+        self, requested_device_id: str, code: str
+    ) -> PairingSession | None:
+        now = datetime.now(UTC)
+
+        for session in self._sessions.values():
+            if session.status == "active" and session.expires_at <= now:
+                session.status = "expired"
+
+        if requested_device_id:
+            session = self._sessions.get(requested_device_id)
+
+            if (
+                session is not None
+                and session.status == "active"
+                and session.expires_at > now
+                and session.code == code
+            ):
+                return session
+
+        for session in self._sessions.values():
+            if session.status == "active" and session.expires_at > now and session.code == code:
+                return session
+
+        return None
+
+    def _has_active_session_for_code_space_unlocked(self) -> bool:
+        now = datetime.now(UTC)
+        return any(
+            session.status == "active" and session.expires_at > now
+            for session in self._sessions.values()
+        )
 
     def _restore_state(self) -> None:
         if self._state_backend is None:

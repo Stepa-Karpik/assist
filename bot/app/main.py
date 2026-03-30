@@ -28,7 +28,7 @@ from app.delivery import run_delivery_poll_loop
 from app.delivery_client import DeliveryServerClient
 from app.handlers.help import get_help_text
 from app.handlers.pair import resolve_pair_command
-from app.handlers.start import get_start_text
+from app.handlers.start import get_start_text, resolve_start_pair_command
 from app.handlers.task import (
     is_device_command,
     is_last_command,
@@ -108,6 +108,19 @@ def create_dispatcher(
 
     @dispatcher.message(CommandStart())
     async def start_handler(message: Message) -> None:
+        if message.from_user is not None:
+            response = await asyncio.to_thread(
+                resolve_start_pair_command,
+                message.text or "",
+                telegram_user_id=message.from_user.id,
+                chat_id=message.chat.id,
+                pairing_client=resolved_pairing_client,
+            )
+
+            if response is not None:
+                await message.answer(response)
+                return
+
         await message.answer(get_start_text())
 
     @dispatcher.message(Command("help"))

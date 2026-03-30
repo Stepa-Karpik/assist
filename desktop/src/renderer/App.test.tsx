@@ -98,6 +98,16 @@ const getAppPreferences = vi.fn<() => Promise<AppPreferences>>(async () => ({
   startHiddenOnLaunch: true,
   closeToTrayOnClose: true
 }));
+const getOnboardingState = vi.fn(async () => ({
+  installationFingerprint: "install-a",
+  completedInstallationFingerprint: "install-a",
+  requiresOnboarding: false
+}));
+const completeOnboarding = vi.fn(async () => ({
+  installationFingerprint: "install-a",
+  completedInstallationFingerprint: "install-a",
+  requiresOnboarding: false
+}));
 const saveAppPreferences = vi.fn(async () => ({
   launchAtLogin: true,
   notificationsEnabled: false,
@@ -236,7 +246,14 @@ const refreshDiscoveredApps = vi.fn(async () => getAppsState());
 const saveAppRegistryEntry = vi.fn(async () => getAppsState());
 const removeAppRegistryEntry = vi.fn(async () => getAppsState());
 
-const getPairingState = vi.fn(async () => ({
+const getPairingState = vi.fn<
+  () => Promise<{
+    code: string | null;
+    expiresAt: string | null;
+    isActive: boolean;
+    trustedTelegramUserIds: number[];
+  }>
+>(async () => ({
   code: null,
   expiresAt: null,
   isActive: false,
@@ -492,6 +509,7 @@ describe("App navigation", () => {
       getAppsState,
       getAssistantProcesses,
       getAppPreferences,
+      getOnboardingState,
       getOwnerProfileState,
       getAuthConfigState,
       createTotpEnrollment,
@@ -515,6 +533,7 @@ describe("App navigation", () => {
       createDesktopChat,
       createLocalContinuationChat,
       checkForUpdates,
+      completeOnboarding,
       installUpdate,
       refreshDiscoveredApps,
       submitQuickRequest,
@@ -535,6 +554,8 @@ describe("App navigation", () => {
     getAppsState.mockClear();
     getAssistantProcesses.mockClear();
     getAppPreferences.mockClear();
+    getOnboardingState.mockClear();
+    completeOnboarding.mockClear();
     getOwnerProfileState.mockClear();
     getAuthConfigState.mockClear();
     createTotpEnrollment.mockClear();
@@ -571,8 +592,13 @@ describe("App navigation", () => {
     removeAppRegistryEntry.mockClear();
   });
 
-  it("renders all primary sections", () => {
+  async function renderMainView() {
     render(<App />);
+    await screen.findByRole("button", { name: "Чаты" });
+  }
+
+  it("renders all primary sections", async () => {
+    await renderMainView();
 
     expect(screen.getByRole("button", { name: "Чаты" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Чаты Telegram" })).toBeInTheDocument();
@@ -584,8 +610,66 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
   });
 
-  it("shows linked applications and assistant-started processes", async () => {
+  it("shows onboarding for a new installation and allows an already-paired device to continue", async () => {
+    getOnboardingState.mockResolvedValueOnce({
+      installationFingerprint: "install-b",
+      completedInstallationFingerprint: "install-a",
+      requiresOnboarding: true
+    });
+    getPairingState.mockResolvedValueOnce({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: [101]
+    });
+
     render(<App />);
+
+    expect(await screen.findByText("Первичная настройка устройства")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Этот ПК уже привязан к Telegram. При желании можно открыть новый pairing-код.")
+    ).toBeInTheDocument();
+    expect(document.querySelector("main.desktop-layout")).toHaveClass("desktop-layout--standalone");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить в приложение" }));
+
+    await waitFor(() => {
+      expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByRole("button", { name: "Чаты" })).toBeInTheDocument();
+  });
+
+  it("shows pairing deep-link guidance during onboarding after opening a pairing session", async () => {
+    getOnboardingState.mockResolvedValueOnce({
+      installationFingerprint: "install-b",
+      completedInstallationFingerprint: "install-a",
+      requiresOnboarding: true
+    });
+    getPairingState.mockResolvedValueOnce({
+      code: null,
+      expiresAt: null,
+      isActive: false,
+      trustedTelegramUserIds: []
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Первичная настройка устройства")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Открыть pairing" }));
+
+    expect(openPairingSession).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("Pairing-код обновлён. Используй /start-ссылку или fallback-команду /pair.")
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Код: PAIR42")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Быстрый старт: https://t.me/Desktop_assist_bot?start=pair_PAIR42")
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Резервная команда: /pair PAIR42")).toBeInTheDocument();
+  });
+
+  it("shows linked applications and assistant-started processes", async () => {
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Приложения" }));
 
@@ -596,7 +680,7 @@ describe("App navigation", () => {
   });
 
   it("shows local chat empty state and lets the user create a desktop chat", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     expect(await screen.findByText("Локальных чатов пока нет.")).toBeInTheDocument();
@@ -630,7 +714,7 @@ describe("App navigation", () => {
       }
     ];
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     expect(await screen.findByText("Ready.")).toBeInTheDocument();
@@ -647,7 +731,7 @@ describe("App navigation", () => {
   });
 
   it("shows pairing controls and workspace registry settings", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
 
@@ -665,14 +749,36 @@ describe("App navigation", () => {
     expect(await screen.findByText("Pairing не активен")).toBeInTheDocument();
     expect(await screen.findByText("Password: не настроен")).toBeInTheDocument();
     expect(await screen.findByText("TOTP: не настроен")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Пароль и TOTP не обязательны, но без них remote-доступ защищён слабее.")
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/@Desktop_assist_bot/)).toBeInTheDocument();
     expect(getAuthConfigState).toHaveBeenCalledTimes(1);
     expect(getAppPreferences).toHaveBeenCalledTimes(1);
     expect(getCodexConfigState).toHaveBeenCalledTimes(1);
     expect(getPairingState).toHaveBeenCalledTimes(1);
   });
 
-  it("saves desktop operator preferences from the settings page", async () => {
+  it("marks the document body with the active app view", async () => {
+    window.karpik!.view = "main";
+    const { unmount } = render(<App />);
+
+    await waitFor(() => {
+      expect(document.body.dataset.karpikView).toBe("main");
+    });
+
+    unmount();
+
+    window.karpik!.view = "quick-popup";
     render(<App />);
+
+    await waitFor(() => {
+      expect(document.body.dataset.karpikView).toBe("quick-popup");
+    });
+  });
+
+  it("saves desktop operator preferences from the settings page", async () => {
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByLabelText("Launch at login"));
@@ -694,7 +800,7 @@ describe("App navigation", () => {
   });
 
   it("refreshes the visible pairing code after opening a session", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByRole("button", { name: "Открыть pairing" }));
@@ -704,7 +810,7 @@ describe("App navigation", () => {
   });
 
   it("saves auth settings from the settings page", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.change(await screen.findByLabelText("Пароль для remote auth"), {
@@ -724,7 +830,7 @@ describe("App navigation", () => {
   });
 
   it("saves multiple codex workspace settings from the settings page", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
     fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
@@ -770,7 +876,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
 
@@ -781,7 +887,7 @@ describe("App navigation", () => {
   });
 
   it("shows desktop update controls in services and allows installing a downloaded update", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
 
@@ -812,7 +918,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
 
@@ -833,7 +939,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
     fireEvent.change(await screen.findByLabelText("Workspace for chat 5001"), {
@@ -860,7 +966,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты Telegram" }));
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить чат" }));
@@ -887,7 +993,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
 
@@ -910,7 +1016,7 @@ describe("App navigation", () => {
         }
       ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
@@ -942,7 +1048,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
 
@@ -1074,7 +1180,7 @@ describe("App navigation", () => {
       }
     ];
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Чаты" }));
     const image = await screen.findByRole("img", { name: "desktop-local.png" });
@@ -1240,7 +1346,7 @@ describe("App navigation", () => {
       }
     ]);
 
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Логи" }));
 
@@ -1249,7 +1355,7 @@ describe("App navigation", () => {
   });
 
   it("shows runtime service status in the services page", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Сервисы" }));
 
@@ -1262,7 +1368,7 @@ describe("App navigation", () => {
   });
 
   it("shows knowledge files and switches preview", async () => {
-    render(<App />);
+    await renderMainView();
 
     fireEvent.click(screen.getByRole("button", { name: "Knowledge / Review" }));
 

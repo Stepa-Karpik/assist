@@ -47,6 +47,7 @@ def test_pairing_store_reloads_trusted_users(state_file: Path) -> None:
     first_store.open_session(
         PairingSession(
             device_id="desktop-local",
+            code="ABC123",
             status="active",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
@@ -59,10 +60,6 @@ def test_pairing_store_reloads_trusted_users(state_file: Path) -> None:
     )
     created = first_store.create_pair_attempt(event)
     assert created is not None
-    first_store.resolve_event(
-        event.event_id,
-        PairAttemptResolutionRequest(result="paired", trusted_telegram_user_id=101),
-    )
 
     second_store = InMemoryPairingStore(state_backend=JsonStateBackend(state_file))
 
@@ -75,6 +72,7 @@ def test_pairing_store_reloads_active_session_and_pending_events(state_file: Pat
     first_store.open_session(
         PairingSession(
             device_id="desktop-local",
+            code="ABC123",
             status="active",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
@@ -101,9 +99,9 @@ def test_pairing_store_reloads_active_session_and_pending_events(state_file: Pat
         )
     )
 
-    assert len(pending_events) == 1
-    assert pending_events[0].event_id == first_event.event_id
-    assert second_created is not None
+    assert pending_events == []
+    assert second_store.get_trusted_users("desktop-local") == [101]
+    assert second_created is None
 
 
 def test_challenge_store_reloads_auth_config(state_file: Path) -> None:

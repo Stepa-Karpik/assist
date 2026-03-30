@@ -12,6 +12,11 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TelegramChatsPage } from "./pages/TelegramChatsPage";
+import {
+  buildPairingFallbackCommand,
+  buildPairingStartLink,
+  telegramBotHandle
+} from "./pairingInstructions";
 import { formatTaskStatus, type TaskSnapshot } from "./pages/taskSnapshot";
 
 type QuickAccessState = Awaited<
@@ -19,6 +24,9 @@ type QuickAccessState = Awaited<
 >;
 type OwnerProfileState = Awaited<
   ReturnType<NonNullable<Window["karpik"]>["getOwnerProfileState"]>
+>;
+type OnboardingState = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getOnboardingState"]>
 >;
 
 const emptyQuickAccessState: NonNullable<QuickAccessState> = {
@@ -29,6 +37,18 @@ const emptyQuickAccessState: NonNullable<QuickAccessState> = {
 };
 
 const emptyTaskSnapshot: TaskSnapshot = [];
+const emptyOwnerProfile: NonNullable<OwnerProfileState> = {
+  fullName: null,
+  gender: null,
+  age: null,
+  city: null,
+  timezone: null,
+  language: null,
+  contacts: null,
+  occupation: null,
+  bio: null,
+  notes: null
+};
 
 const navigationItems: NavigationItem[] = [
   { id: "home", label: "Главная" },
@@ -400,11 +420,343 @@ function MainWindowView() {
   );
 }
 
+function OnboardingView({
+  initialProfile,
+  onComplete
+}: {
+  initialProfile: NonNullable<OwnerProfileState> | null;
+  onComplete: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<NonNullable<OwnerProfileState>>(initialProfile ?? emptyOwnerProfile);
+  const [pairingState, setPairingState] = useState({
+    code: null as string | null,
+    expiresAt: null as string | null,
+    isActive: false,
+    trustedTelegramUserIds: [] as number[]
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isOpeningPairing, setIsOpeningPairing] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function loadState() {
+      try {
+        const [nextProfile, nextPairing] = await Promise.all([
+          window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null),
+          window.karpik?.getPairingState?.() ??
+            Promise.resolve({
+              code: null,
+              expiresAt: null,
+              isActive: false,
+              trustedTelegramUserIds: []
+            })
+        ]);
+
+        if (!isSubscribed) {
+          return;
+        }
+
+        setDraft((current) => ({
+          ...current,
+          ...(nextProfile ?? {})
+        }));
+        setPairingState(nextPairing);
+      } catch {
+        if (isSubscribed) {
+          setError("Не удалось загрузить стартовое состояние устройства.");
+        }
+      } finally {
+        if (isSubscribed) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadState();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    async function refreshPairingState() {
+      try {
+        const nextPairingState =
+          (await window.karpik?.getPairingState?.()) ??
+          ({
+            code: null,
+            expiresAt: null,
+            isActive: false,
+            trustedTelegramUserIds: []
+          } as const);
+
+        if (isSubscribed) {
+          setPairingState(nextPairingState);
+        }
+      } catch {
+        // Keep the last known state if the background refresh fails.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshPairingState();
+    }, 2000);
+
+    return () => {
+      isSubscribed = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const canContinue =
+    draft.fullName !== null &&
+    draft.fullName.trim().length > 0 &&
+    pairingState.trustedTelegramUserIds.length > 0;
+  const pairingStartLink =
+    pairingState.isActive && pairingState.code ? buildPairingStartLink(pairingState.code) : null;
+  const pairingFallbackCommand =
+    pairingState.isActive && pairingState.code
+      ? buildPairingFallbackCommand(pairingState.code)
+      : null;
+
+  async function handleSaveProfile() {
+    if (!window.karpik?.saveOwnerProfile) {
+      setError("Owner profile API недоступен в этом окружении.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const nextProfile = await window.karpik.saveOwnerProfile(draft);
+      setDraft(nextProfile);
+      setFeedback("Профиль устройства сохранён.");
+    } catch {
+      setError("Не удалось сохранить профиль устройства.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }
+
+  async function handleOpenPairing() {
+    if (!window.karpik?.openPairingSession) {
+      setError("Pairing API недоступен в этом окружении.");
+      return;
+    }
+
+    setIsOpeningPairing(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const nextState = await window.karpik.openPairingSession();
+      setPairingState(nextState);
+      setFeedback("Pairing-код обновлён. Используй /start-ссылку или fallback-команду /pair.");
+    } catch {
+      setError("Не удалось открыть pairing-сессию.");
+    } finally {
+      setIsOpeningPairing(false);
+    }
+  }
+
+  async function handleContinue() {
+    if (!window.karpik?.completeOnboarding) {
+      setError("Onboarding API недоступен в этом окружении.");
+      return;
+    }
+
+    setIsCompleting(true);
+    setError(null);
+
+    try {
+      await window.karpik.completeOnboarding();
+      await onComplete();
+    } catch {
+      setError("Не удалось завершить первичную настройку.");
+    } finally {
+      setIsCompleting(false);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main className="desktop-layout desktop-layout--standalone">
+        <section className="page-shell">
+          <p className="muted-text">Загрузка первичной настройки...</p>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="desktop-layout desktop-layout--standalone">
+      <section className="page-shell profile-shell">
+        <div className="page-header profile-shell__header">
+          <div>
+            <p className="eyebrow">Первый запуск</p>
+            <h2>Первичная настройка устройства</h2>
+            <p className="muted-text">
+              Этот экран показывается после новой установки. Устройство остаётся тем же, поэтому
+              существующая привязка Telegram к этому ПК не теряется.
+            </p>
+          </div>
+        </div>
+
+        <div className="profile-layout">
+          <article className="profile-card profile-form">
+            <label>
+              <span>ФИО</span>
+              <input value={draft.fullName ?? ""} onChange={(event) => setDraft((current) => ({ ...current, fullName: event.target.value || null }))} />
+            </label>
+            <label>
+              <span>Пол</span>
+              <input value={draft.gender ?? ""} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value || null }))} />
+            </label>
+            <label>
+              <span>Возраст</span>
+              <input
+                type="number"
+                value={draft.age ?? ""}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    age: event.target.value.trim().length === 0 ? null : Number(event.target.value)
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Город</span>
+              <input value={draft.city ?? ""} onChange={(event) => setDraft((current) => ({ ...current, city: event.target.value || null }))} />
+            </label>
+            <div className="profile-shell__actions">
+              <button className="shell-primary-button" disabled={isSavingProfile} onClick={() => void handleSaveProfile()} type="button">
+                {isSavingProfile ? "Сохраняем..." : "Сохранить профиль"}
+              </button>
+            </div>
+          </article>
+
+          <article className="profile-card">
+            <p className="section-label">Telegram pairing</p>
+            {pairingState.trustedTelegramUserIds.length > 0 ? (
+              <p className="task-success">Этот ПК уже привязан к Telegram. При желании можно открыть новый pairing-код.</p>
+            ) : (
+              <p className="muted-text">
+                Свяжи этот ПК с Telegram через {telegramBotHandle}. Можно использовать ссылку вида{" "}
+                <code>/start pair_код</code>, а если deep-link недоступен, выполнить <code>/pair код</code>.
+              </p>
+            )}
+            <p>{pairingState.isActive && pairingState.code ? `Код: ${pairingState.code}` : "Pairing не активен"}</p>
+            {pairingState.expiresAt ? <p className="muted-text">Действует до: {new Date(pairingState.expiresAt).toLocaleString("ru-RU")}</p> : null}
+            <p className="muted-text">Доверенные Telegram ID: {pairingState.trustedTelegramUserIds.length}</p>
+            {pairingStartLink !== null ? <p className="muted-text">Быстрый старт: {pairingStartLink}</p> : null}
+            {pairingFallbackCommand !== null ? <p className="muted-text">Резервная команда: {pairingFallbackCommand}</p> : null}
+            <div className="profile-shell__actions">
+              <button className="shell-secondary-button" disabled={isOpeningPairing} onClick={() => void handleOpenPairing()} type="button">
+                {isOpeningPairing ? "Открываем..." : "Открыть pairing"}
+              </button>
+              <button className="shell-primary-button" disabled={!canContinue || isCompleting} onClick={() => void handleContinue()} type="button">
+                {isCompleting ? "Продолжаем..." : "Продолжить в приложение"}
+              </button>
+            </div>
+            {!canContinue ? (
+              <p className="muted-text">
+                Для входа в приложение сохрани профиль и убедись, что Telegram уже привязан к этому ПК.
+              </p>
+            ) : null}
+          </article>
+        </div>
+
+        {feedback ? <p className="task-success">{feedback}</p> : null}
+        {error ? <p className="task-error">{error}</p> : null}
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   const view = window.karpik?.view ?? "main";
+  const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
+  const [isOnboardingLoading, setIsOnboardingLoading] = useState(view === "main");
+  const [cachedProfile, setCachedProfile] = useState<NonNullable<OwnerProfileState> | null>(null);
+
+  useEffect(() => {
+    document.body.dataset.karpikView = view;
+
+    return () => {
+      delete document.body.dataset.karpikView;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== "main") {
+      setIsOnboardingLoading(false);
+      return;
+    }
+
+    let isSubscribed = true;
+
+    async function loadOnboardingState() {
+      try {
+        const [nextOnboardingState, nextProfile] = await Promise.all([
+          window.karpik?.getOnboardingState?.() ?? Promise.resolve(null),
+          window.karpik?.getOwnerProfileState?.() ?? Promise.resolve(null)
+        ]);
+
+        if (!isSubscribed) {
+          return;
+        }
+
+        setOnboardingState(nextOnboardingState);
+        setCachedProfile(nextProfile ?? null);
+      } finally {
+        if (isSubscribed) {
+          setIsOnboardingLoading(false);
+        }
+      }
+    }
+
+    void loadOnboardingState();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [view]);
 
   if (view === "quick-popup") {
     return <QuickPopupView />;
+  }
+
+  if (isOnboardingLoading) {
+    return (
+      <main className="desktop-layout desktop-layout--standalone">
+        <section className="page-shell">
+          <p className="muted-text">Загрузка приложения...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (onboardingState?.requiresOnboarding) {
+    return (
+      <OnboardingView
+        initialProfile={cachedProfile}
+        onComplete={async () => {
+          const nextOnboardingState = await (window.karpik?.getOnboardingState?.() ?? Promise.resolve(null));
+          setOnboardingState(nextOnboardingState);
+        }}
+      />
+    );
   }
 
   return <MainWindowView />;

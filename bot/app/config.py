@@ -5,7 +5,7 @@ from os import getenv
 @dataclass(frozen=True, slots=True)
 class Settings:
     bot_token: str = ""
-    bot_name: str = "Karpik"
+    bot_name: str = "Desktop_assist_bot"
     server_url: str = "http://127.0.0.1:8000"
     device_id: str = "desktop-local"
     deepseek_api_key: str = ""
@@ -30,7 +30,7 @@ def get_float_env(name: str, default: float) -> float:
 def get_settings() -> Settings:
     return Settings(
         bot_token=getenv("KARPIK_TELEGRAM_TOKEN", ""),
-        bot_name=getenv("KARPIK_BOT_NAME", "Karpik"),
+        bot_name=getenv("KARPIK_BOT_NAME", "Desktop_assist_bot"),
         server_url=getenv("KARPIK_SERVER_URL", "http://127.0.0.1:8000"),
         device_id=getenv("KARPIK_DEVICE_ID", "desktop-local"),
         deepseek_api_key=getenv("DEEPSEEK_API_KEY", ""),
