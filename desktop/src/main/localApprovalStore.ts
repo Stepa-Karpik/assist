@@ -4,6 +4,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
+import type { KnowledgeSkillApprovalDraft } from "./knowledgeIngestDecider";
 
 export type { CodexWritePreviewDraft } from "./codexWritePreview";
 
@@ -12,9 +13,11 @@ type LocalApprovalStoreOptions = {
   now?: () => Date;
 };
 
-type PersistedLocalApprovalRecord = {
+type PersistedCodexWriteApprovalRecord = {
+  kind: "codex_write";
   taskId: string;
   intent: string;
+  title: string;
   workspaceRoot: string;
   previewRoot: string;
   summaryText: string;
@@ -24,9 +27,28 @@ type PersistedLocalApprovalRecord = {
   createdAt: string;
 };
 
-export type LocalApprovalSummary = {
+type PersistedAssistSkillApprovalRecord = {
+  kind: "assist_skill";
   taskId: string;
   intent: string;
+  title: string;
+  targetPath: string;
+  content: string;
+  summaryText: string;
+  previewText: string;
+  changedFiles: string[];
+  createdAt: string;
+};
+
+type PersistedLocalApprovalRecord =
+  | PersistedCodexWriteApprovalRecord
+  | PersistedAssistSkillApprovalRecord;
+
+export type LocalApprovalSummary = {
+  kind: "codex_write" | "assist_skill";
+  taskId: string;
+  intent: string;
+  title: string;
   summaryText: string;
   previewText: string;
   changedFiles: string[];
@@ -51,6 +73,19 @@ async function readHashOrNull(targetPath: string): Promise<string | null> {
   }
 }
 
+function toSummary(record: PersistedLocalApprovalRecord): LocalApprovalSummary {
+  return {
+    kind: record.kind,
+    taskId: record.taskId,
+    intent: record.intent,
+    title: record.title,
+    summaryText: record.summaryText,
+    previewText: record.previewText,
+    changedFiles: [...record.changedFiles],
+    createdAt: record.createdAt
+  };
+}
+
 export class LocalApprovalStore {
   private readonly filePath: string;
 
@@ -65,20 +100,20 @@ export class LocalApprovalStore {
   }
 
   list(): LocalApprovalSummary[] {
-    return this.records.map((record) => ({
-      taskId: record.taskId,
-      intent: record.intent,
-      summaryText: record.summaryText,
-      previewText: record.previewText,
-      changedFiles: record.changedFiles,
-      createdAt: record.createdAt
-    }));
+    return this.records.map((record) => toSummary(record));
+  }
+
+  getSummary(taskId: string): LocalApprovalSummary | null {
+    const record = this.records.find((item) => item.taskId === taskId);
+    return record ? toSummary(record) : null;
   }
 
   saveDraft(intent: string, draft: CodexWritePreviewDraft): LocalApprovalSummary {
-    const record: PersistedLocalApprovalRecord = {
+    const record: PersistedCodexWriteApprovalRecord = {
+      kind: "codex_write",
       taskId: draft.taskId,
       intent,
+      title: draft.taskId,
       workspaceRoot: draft.workspaceRoot,
       previewRoot: draft.previewRoot,
       summaryText: draft.summaryText,
@@ -90,7 +125,26 @@ export class LocalApprovalStore {
     this.records = this.records.filter((item) => item.taskId !== record.taskId);
     this.records.unshift(record);
     this.persist();
-    return this.list()[0];
+    return toSummary(record);
+  }
+
+  saveSkillDraft(intent: string, draft: KnowledgeSkillApprovalDraft): LocalApprovalSummary {
+    const record: PersistedAssistSkillApprovalRecord = {
+      kind: "assist_skill",
+      taskId: draft.taskId,
+      intent,
+      title: draft.title,
+      targetPath: draft.targetPath,
+      content: draft.content,
+      summaryText: draft.summaryText,
+      previewText: draft.previewText,
+      changedFiles: [...draft.changedFiles],
+      createdAt: this.now().toISOString()
+    };
+    this.records = this.records.filter((item) => item.taskId !== record.taskId);
+    this.records.unshift(record);
+    this.persist();
+    return toSummary(record);
   }
 
   async discardDraft(draft: CodexWritePreviewDraft): Promise<void> {
@@ -105,6 +159,16 @@ export class LocalApprovalStore {
 
     if (record === undefined) {
       throw new Error("Local approval preview not found.");
+    }
+
+    if (record.kind === "assist_skill") {
+      await fsp.mkdir(path.dirname(record.targetPath), { recursive: true });
+      await fsp.writeFile(record.targetPath, record.content, "utf8");
+      await this.removeRecord(record.taskId);
+
+      return {
+        resultText: `Applied locally. ${record.summaryText}`
+      };
     }
 
     for (const change of record.changes) {
@@ -165,10 +229,13 @@ export class LocalApprovalStore {
 
     this.records = this.records.filter((item) => item.taskId !== taskId);
     this.persist();
-    await fsp.rm(record.previewRoot, {
-      recursive: true,
-      force: true
-    });
+
+    if (record.kind === "codex_write") {
+      await fsp.rm(record.previewRoot, {
+        recursive: true,
+        force: true
+      });
+    }
   }
 
   private load(): PersistedLocalApprovalRecord[] {

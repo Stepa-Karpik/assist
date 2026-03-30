@@ -109,8 +109,10 @@ type TaskSnapshotItem = {
 };
 
 type LocalApprovalItem = {
+  kind: "codex_write" | "assist_skill";
   taskId: string;
   intent: string;
+  title: string;
   summaryText: string;
   previewText: string;
   changedFiles: string[];

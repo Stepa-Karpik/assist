@@ -36,9 +36,11 @@ describe("createLocalChatRuntime", () => {
       ok: true as const,
       resultText: "desktop-local is online"
     }));
+    const recordKnowledgeInteraction = vi.fn(async () => undefined);
     const runtime = createLocalChatRuntime({
       chatStore,
       executeTask,
+      recordKnowledgeInteraction,
       generateTaskId: () => "local-task-1",
       getWorkspaceRootForChat: () => "D:\\Projects\\assist"
     });
@@ -52,6 +54,11 @@ describe("createLocalChatRuntime", () => {
       task_id: "local-task-1",
       intent: "status",
       workspace_root: "D:\\Projects\\assist"
+    });
+    expect(recordKnowledgeInteraction).toHaveBeenCalledWith({
+      origin: "local-chat",
+      prompt: "status",
+      answer: "desktop-local is online"
     });
     expect(detail.messages.map((message) => message.text)).toEqual(["status", "desktop-local is online"]);
   });

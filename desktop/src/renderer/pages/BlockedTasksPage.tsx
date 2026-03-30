@@ -7,7 +7,9 @@ import {
   type TaskSnapshotItem
 } from "./taskSnapshot";
 
-type LocalApprovalItem = Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalApprovals"]>>[number];
+type LocalApprovalItem = Awaited<
+  ReturnType<NonNullable<Window["karpik"]>["getLocalApprovals"]>
+>[number];
 
 type TaskFilter = "all" | "active" | "attention" | "completed";
 
@@ -15,7 +17,7 @@ const filterLabels: Record<TaskFilter, string> = {
   all: "Все",
   active: "Активные",
   attention: "Требуют внимания",
-  completed: "Завершенные"
+  completed: "Завершённые"
 };
 
 function isVisibleTask(task: TaskSnapshotItem): boolean {
@@ -28,7 +30,9 @@ function matchesFilter(task: TaskSnapshotItem, filter: TaskFilter): boolean {
   }
 
   if (filter === "active") {
-    return ["queued", "running", "awaiting_auth", "awaiting_local_approval", "cancel_requested"].includes(task.status);
+    return ["queued", "running", "awaiting_auth", "awaiting_local_approval", "cancel_requested"].includes(
+      task.status
+    );
   }
 
   if (filter === "attention") {
@@ -39,7 +43,9 @@ function matchesFilter(task: TaskSnapshotItem, filter: TaskFilter): boolean {
 }
 
 function canCancel(task: TaskSnapshotItem): boolean {
-  return ["queued", "awaiting_auth", "awaiting_local_approval", "running", "stalled"].includes(task.status);
+  return ["queued", "awaiting_auth", "awaiting_local_approval", "running", "stalled"].includes(
+    task.status
+  );
 }
 
 function canRetry(task: TaskSnapshotItem): boolean {
@@ -47,11 +53,7 @@ function canRetry(task: TaskSnapshotItem): boolean {
 }
 
 function formatIntent(task: TaskSnapshotItem): string {
-  if (task.intent.trim().length > 0) {
-    return task.intent;
-  }
-
-  return "Задача";
+  return task.intent.trim().length > 0 ? task.intent : "Задача";
 }
 
 export function BlockedTasksPage() {
@@ -67,6 +69,20 @@ export function BlockedTasksPage() {
     () => tasks.filter((task) => matchesFilter(task, filter)),
     [filter, tasks]
   );
+  const standaloneApprovals = useMemo(
+    () =>
+      Object.values(localApprovals).filter(
+        (approval) => !tasks.some((task) => task.task_id === approval.taskId)
+      ),
+    [localApprovals, tasks]
+  );
+  const visibleStandaloneApprovals = useMemo(
+    () =>
+      standaloneApprovals.filter((approval) =>
+        filter === "completed" ? false : approval.kind === "assist_skill"
+      ),
+    [filter, standaloneApprovals]
+  );
 
   async function refreshBlockedTasks() {
     const [snapshot, approvals] = await Promise.all([
@@ -78,7 +94,9 @@ export function BlockedTasksPage() {
     setTasks(visibleTasks);
     setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
     setExpandedTaskId((currentTaskId) =>
-      currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId) ? currentTaskId : visibleTasks[0]?.task_id ?? null
+      currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId)
+        ? currentTaskId
+        : visibleTasks[0]?.task_id ?? null
     );
     setIsLoading(false);
   }
@@ -100,7 +118,9 @@ export function BlockedTasksPage() {
       setTasks(visibleTasks);
       setLocalApprovals(Object.fromEntries(approvals.map((approval) => [approval.taskId, approval])));
       setExpandedTaskId((currentTaskId) =>
-        currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId) ? currentTaskId : visibleTasks[0]?.task_id ?? null
+        currentTaskId && visibleTasks.some((task) => task.task_id === currentTaskId)
+          ? currentTaskId
+          : visibleTasks[0]?.task_id ?? null
       );
       setIsLoading(false);
     }
@@ -211,13 +231,58 @@ export function BlockedTasksPage() {
         {isLoading ? <p className="muted-text">Загружаем очередь задач...</p> : null}
         {actionError !== null ? <p className="task-error">{actionError}</p> : null}
 
-        {!isLoading && filteredTasks.length === 0 ? (
+        {!isLoading && filteredTasks.length === 0 && visibleStandaloneApprovals.length === 0 ? (
           <div className="reference-empty-state">
             <strong>Нет задач для выбранного фильтра.</strong>
           </div>
         ) : null}
 
         <div className="reference-task-list" role="list">
+          {visibleStandaloneApprovals.map((approval) => (
+            <article className="reference-task-row expanded" key={approval.taskId} role="listitem">
+              <div className="reference-task-row__summary">
+                <div className="reference-task-row__meta">
+                  <span className="reference-task-row__label">ID</span>
+                  <strong>{approval.taskId}</strong>
+                  <span className="reference-task-row__label">Черновик</span>
+                  <span>{approval.title}</span>
+                </div>
+                <span className="reference-task-row__status reference-task-row__status--awaiting_local_approval">
+                  Ждёт локального подтверждения
+                </span>
+              </div>
+
+              <div className="reference-task-row__details">
+                <p className="task-result">{approval.summaryText}</p>
+                <p className="muted-text">Файлы: {approval.changedFiles.join(", ")}</p>
+                <pre className="task-result task-result--pre">{approval.previewText}</pre>
+
+                <div className="reference-task-row__actions">
+                  <button
+                    className="reference-task-row__action reference-task-row__action--primary"
+                    disabled={busyTaskId === approval.taskId}
+                    onClick={() => {
+                      void handleApprove(approval.taskId);
+                    }}
+                    type="button"
+                  >
+                    Подтвердить
+                  </button>
+                  <button
+                    className="reference-task-row__action"
+                    disabled={busyTaskId === approval.taskId}
+                    onClick={() => {
+                      void handleReject(approval.taskId);
+                    }}
+                    type="button"
+                  >
+                    Отклонить
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+
           {filteredTasks.map((task) => {
             const approval = localApprovals[task.task_id];
             const isExpanded = expandedTaskId === task.task_id;
@@ -226,7 +291,11 @@ export function BlockedTasksPage() {
               <article
                 className={`reference-task-row${isExpanded ? " expanded" : ""}`}
                 key={task.task_id}
-                onClick={() => setExpandedTaskId((currentTaskId) => (currentTaskId === task.task_id ? null : task.task_id))}
+                onClick={() =>
+                  setExpandedTaskId((currentTaskId) =>
+                    currentTaskId === task.task_id ? null : task.task_id
+                  )
+                }
                 role="listitem"
               >
                 <div className="reference-task-row__summary">
@@ -256,7 +325,10 @@ export function BlockedTasksPage() {
 
                     {buildTaskArtifactDataUrl(task) !== null ? (
                       <figure className="task-artifact">
-                        <img alt={task.artifactFileName ?? "task-artifact"} src={buildTaskArtifactDataUrl(task) ?? undefined} />
+                        <img
+                          alt={task.artifactFileName ?? "task-artifact"}
+                          src={buildTaskArtifactDataUrl(task) ?? undefined}
+                        />
                       </figure>
                     ) : null}
 

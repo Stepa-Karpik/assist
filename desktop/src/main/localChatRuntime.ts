@@ -13,6 +13,11 @@ type SendLocalChatMessageInput = {
 type LocalChatRuntimeOptions = {
   chatStore: LocalChatStore;
   executeTask: (task: ExecutableTask) => Promise<TaskExecutionResult>;
+  recordKnowledgeInteraction?: (input: {
+    origin: "local-chat";
+    prompt: string;
+    answer: string;
+  }) => Promise<void> | void;
   persistLocalApproval?: (
     intent: string,
     draft: CodexWritePreviewDraft
@@ -32,6 +37,7 @@ type LocalChatRuntimeOptions = {
 export function createLocalChatRuntime({
   chatStore,
   executeTask,
+  recordKnowledgeInteraction,
   persistLocalApproval,
   getWorkspaceRootForChat,
   resolveInput = createLocalConversationRouter().resolve,
@@ -61,6 +67,11 @@ export function createLocalChatRuntime({
       const resolvedInput = await resolveInput(normalizedText);
 
       if (resolvedInput.kind === "reply") {
+        await recordKnowledgeInteraction?.({
+          origin: "local-chat",
+          prompt: normalizedText,
+          answer: resolvedInput.text
+        });
         logActivity?.({
           kind: "local_result",
           status: "success",
@@ -97,6 +108,11 @@ export function createLocalChatRuntime({
       }
 
       if (executionResult.ok) {
+        await recordKnowledgeInteraction?.({
+          origin: "local-chat",
+          prompt: normalizedText,
+          answer: executionResult.resultText
+        });
         logActivity?.({
           kind: "local_result",
           status: "success",

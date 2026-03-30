@@ -20,6 +20,7 @@ import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
+import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
 import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
 import { createKnowledgeVaultStore } from "./knowledgeVaultStore";
 import { VaultSettingsStore } from "./vaultSettingsStore";
@@ -70,6 +71,7 @@ let knowledgeStore: ReturnType<typeof createKnowledgeVaultStore> | null = null;
 let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
+let knowledgeBackgroundWriter: ReturnType<typeof createKnowledgeBackgroundWriter> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
 let vaultSettingsStore: VaultSettingsStore | null = null;
@@ -330,6 +332,9 @@ async function pollTaskState() {
     const nextSnapshot = await runTaskSyncCycle({
       client: syncClient,
       startTaskExecution: (task) => taskExecutor!.start(task),
+      recordKnowledgeInteraction: async (input) => {
+        await knowledgeBackgroundWriter?.recordInteraction(input);
+      },
       persistLocalApproval: async (task, draft) => {
         localApprovalStore?.saveDraft(task.intent, draft);
       },
@@ -845,7 +850,13 @@ function registerIpcHandlers() {
       throw new Error("Local approval store is not initialized");
     }
 
+    const approval = localApprovalStore.getSummary(taskId);
     const result = await localApprovalStore.approve(taskId);
+
+    if (approval?.kind === "assist_skill") {
+      return;
+    }
+
     const response = await syncClient.completeTask(taskId, {
       resultText: result.resultText
     });
@@ -859,6 +870,13 @@ function registerIpcHandlers() {
   ipcMain.handle("tasks:reject-local-approval", async (_event, taskId: string) => {
     if (localApprovalStore === null) {
       throw new Error("Local approval store is not initialized");
+    }
+
+    const approval = localApprovalStore.getSummary(taskId);
+
+    if (approval?.kind === "assist_skill") {
+      await localApprovalStore.reject(taskId);
+      return;
     }
 
     const response = await syncClient.blockTask(taskId, "Rejected locally.");
@@ -956,6 +974,12 @@ async function bootstrap() {
   localApprovalStore = new LocalApprovalStore({
     stateRoot: runtimeFolders.state
   });
+  knowledgeBackgroundWriter = createKnowledgeBackgroundWriter({
+    getVaultRoot: () => vaultSettingsStore?.getVaultRoot() ?? null,
+    persistSkillApprovalDraft: async (draft) => {
+      localApprovalStore?.saveSkillDraft(draft.intent, draft);
+    }
+  });
   localChatStore = new LocalChatStore({
     stateRoot: runtimeFolders.state
   });
@@ -1001,6 +1025,9 @@ async function bootstrap() {
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
     executeTask: (task) => taskExecutor!.execute(task),
+    recordKnowledgeInteraction: async (input) => {
+      await knowledgeBackgroundWriter?.recordInteraction(input);
+    },
     persistLocalApproval: async (intent, draft) => {
       localApprovalStore?.saveDraft(intent, draft);
     },

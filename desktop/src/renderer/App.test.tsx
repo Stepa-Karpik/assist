@@ -276,8 +276,10 @@ const getTaskSnapshot = vi.fn<() => Promise<TaskSnapshot>>(async () => []);
 const getLocalApprovals = vi.fn<
   () => Promise<
     Array<{
+      kind: "codex_write" | "assist_skill";
       taskId: string;
       intent: string;
+      title: string;
       summaryText: string;
       previewText: string;
       changedFiles: string[];
@@ -1157,8 +1159,10 @@ describe("App navigation", () => {
     ]);
     getLocalApprovals.mockResolvedValue([
       {
+        kind: "codex_write",
         taskId: "task-approval",
         intent: "codex-write update README",
+        title: "task-approval",
         summaryText: "Updated README",
         previewText: "diff preview",
         changedFiles: ["README.md"],
@@ -1175,6 +1179,34 @@ describe("App navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Подтвердить" }));
 
     expect(approveLocalApproval).toHaveBeenCalledWith("task-approval");
+  });
+
+  it("shows standalone assist skill approvals without a matching remote task", async () => {
+    getTaskSnapshot.mockResolvedValue([]);
+    getLocalApprovals.mockResolvedValue([
+      {
+        kind: "assist_skill",
+        taskId: "skill-approval-1",
+        intent: "научись workflow triage багов",
+        title: "Навык workflow triage багов",
+        summaryText: "Значимое обновление навыка ассистента.",
+        previewText: "Буду раскладывать инциденты по severity и owner.",
+        changedFiles: ["assist/skills/Навык workflow triage багов.md"],
+        createdAt: "2026-03-30T12:00:00Z"
+      }
+    ]);
+
+    await renderMainView();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Задачи" })[0]!);
+
+    expect(await screen.findByText("Навык workflow triage багов")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Буду раскладывать инциденты по severity и owner.")
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Подтвердить" }));
+
+    expect(approveLocalApproval).toHaveBeenCalledWith("skill-approval-1");
   });
 
   it("submits a quick popup request into the last active local chat", async () => {
