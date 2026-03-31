@@ -17,6 +17,11 @@ class MockChildProcess extends EventEmitter {
 
   readonly stderr = new MockReadable();
 
+  readonly stdin = {
+    write: vi.fn(),
+    end: vi.fn()
+  };
+
   readonly kill = vi.fn(() => {
     this.emit("close", null);
   });
@@ -82,12 +87,14 @@ describe("createCodexConversationRunner", () => {
         "--full-auto",
         "--sandbox",
         "workspace-write",
-        "Explain FastAPI updates"
+        "-"
       ],
       expect.objectContaining({
         cwd: "D:\\Projects\\assist"
       })
     );
+    expect(child.stdin.write).toHaveBeenCalledWith("Explain FastAPI updates");
+    expect(child.stdin.end).toHaveBeenCalledTimes(1);
   });
 
   it("resumes an existing codex session for follow-up messages", async () => {
@@ -131,12 +138,65 @@ describe("createCodexConversationRunner", () => {
         "--skip-git-repo-check",
         "--full-auto",
         "session-existing-1",
-        "And what changed in pydantic?"
+        "-"
       ],
       expect.objectContaining({
         cwd: "D:\\Projects\\assist"
       })
     );
+    expect(child.stdin.write).toHaveBeenCalledWith("And what changed in pydantic?");
+    expect(child.stdin.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes multi-word unicode prompts through stdin instead of argv when resuming", async () => {
+    const child = new MockChildProcess();
+    const spawnProcess = vi.fn(() => child);
+    const runner = createCodexConversationRunner({
+      codexExecutable: "codex",
+      spawnProcess
+    });
+
+    const handle = runner.start({
+      sessionId: "session-existing-2",
+      prompt: "мне нравится изучать нейросети",
+      workspaceRoot: "D:\\Projects\\assist"
+    });
+
+    child.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "item.completed",
+        item: {
+          type: "agent_message",
+          text: "Ответ готов."
+        }
+      })
+    );
+    child.emit("close", 0);
+
+    await expect(handle.result).resolves.toEqual({
+      sessionId: "session-existing-2",
+      text: "Ответ готов.",
+      partialText: "Ответ готов.",
+      cancelled: false
+    });
+    expect(spawnProcess).toHaveBeenCalledWith(
+      "codex",
+      [
+        "exec",
+        "resume",
+        "--json",
+        "--skip-git-repo-check",
+        "--full-auto",
+        "session-existing-2",
+        "-"
+      ],
+      expect.objectContaining({
+        cwd: "D:\\Projects\\assist"
+      })
+    );
+    expect(child.stdin.write).toHaveBeenCalledWith("мне нравится изучать нейросети");
+    expect(child.stdin.end).toHaveBeenCalledTimes(1);
   });
 
   it("cancels an active run and keeps the partial text", async () => {

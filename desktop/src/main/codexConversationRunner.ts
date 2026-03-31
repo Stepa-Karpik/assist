@@ -28,6 +28,10 @@ type ConversationRunResult = {
 };
 
 type SpawnedConversationProcess = {
+  stdin?: {
+    write: (chunk: string) => unknown;
+    end: () => unknown;
+  };
   stdout: {
     on: (event: "data", listener: (chunk: unknown) => void) => unknown;
   };
@@ -133,13 +137,16 @@ export function createCodexConversationRunner({
       const result = new Promise<ConversationRunResult>((resolve, reject) => {
         const args =
           sessionId === undefined
-            ? ["exec", "--json", "--skip-git-repo-check", "--full-auto", "--sandbox", sandboxMode, prompt]
-            : ["exec", "resume", "--json", "--skip-git-repo-check", "--full-auto", sessionId, prompt];
+            ? ["exec", "--json", "--skip-git-repo-check", "--full-auto", "--sandbox", sandboxMode, "-"]
+            : ["exec", "resume", "--json", "--skip-git-repo-check", "--full-auto", sessionId, "-"];
         const child = spawnProcess(codexExecutable, args, {
           cwd: workspaceRoot,
           shell: process.platform === "win32",
           windowsHide: true
         });
+
+        child.stdin?.write(prompt);
+        child.stdin?.end();
 
         let resolved = false;
         let seenSessionId = sessionId ?? null;
