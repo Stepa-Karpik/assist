@@ -4,6 +4,7 @@ from app.api.apps import router as apps_router
 from app.api.chat import router as chat_router
 from app.api.device import router as device_router
 from app.api.challenges import router as challenges_router
+from app.api.conversation_events import router as conversation_events_router
 from app.api.conversation_memory import router as conversation_memory_router
 from app.api.delivery import router as delivery_router
 from app.api.events import router as events_router
@@ -15,6 +16,7 @@ from app.config import get_settings
 from app.services.app_catalog_store import InMemoryAppCatalogStore
 from app.services.challenge_store import InMemoryChallengeStore
 from app.services.chat_responder import create_chat_responder
+from app.services.conversation_event_store import InMemoryConversationEventStore
 from app.services.device_presence_store import InMemoryDevicePresenceStore
 from app.services.conversation_memory_store import InMemoryConversationMemoryStore
 from app.services.delivery_store import InMemoryDeliveryStore
@@ -44,6 +46,9 @@ def create_app() -> FastAPI:
     application.state.task_store = InMemoryTaskStore(state_backend=state_backend)
     application.state.challenge_store = InMemoryChallengeStore(state_backend=state_backend)
     application.state.delivery_store = InMemoryDeliveryStore(state_backend=state_backend)
+    application.state.conversation_event_store = InMemoryConversationEventStore(
+        state_backend=state_backend
+    )
     application.state.conversation_memory_store = InMemoryConversationMemoryStore(
         state_backend=state_backend
     )
@@ -61,6 +66,7 @@ def create_app() -> FastAPI:
     application.include_router(events_router, prefix=settings.api_prefix)
     application.include_router(challenges_router, prefix=settings.api_prefix)
     application.include_router(delivery_router, prefix=settings.api_prefix)
+    application.include_router(conversation_events_router, prefix=settings.api_prefix)
     application.include_router(conversation_memory_router, prefix=settings.api_prefix)
     return application
 
