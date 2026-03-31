@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 
 import { createChatPlanner } from "./chatPlanner";
+import type { ChatSessionStore } from "./chatSessionStore";
 import type { ChatKnowledgeWrite, ChatPlan } from "./chatPlan";
 import type { ChatRunState, ChatRunStore } from "./chatRunStore";
+import type { CodexConversationHandle } from "./codexConversationRunner";
 import type { CodexWritePreviewDraft } from "./codexWritePreview";
 import type { LocalChatDetail, LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter, type LocalConversationResolution } from "./localConversationRouter";
@@ -18,10 +20,23 @@ type ConversationReplyResult = {
   sourceUrls?: string[];
 };
 
+type ConversationRunner = {
+  start: (input: {
+    chatId: string;
+    prompt: string;
+    workspaceRoot: string;
+    sessionId?: string;
+    onDelta?: (chunk: string) => void;
+  }) => CodexConversationHandle;
+};
+
 type LocalChatRuntimeOptions = {
   chatStore: LocalChatStore;
   chatRunStore: ChatRunStore;
+  chatSessionStore?: ChatSessionStore;
+  conversationRunner?: ConversationRunner;
   executeTask: (task: ExecutableTask) => Promise<TaskExecutionResult>;
+  deviceId?: string;
   recordKnowledgeInteraction?: (input: {
     origin: "local-chat" | "telegram-chat";
     prompt: string;
@@ -123,7 +138,10 @@ function buildHistoryContext(messages: LocalChatDetail["messages"]): string | nu
 export function createLocalChatRuntime({
   chatStore,
   chatRunStore,
+  chatSessionStore,
+  conversationRunner,
   executeTask,
+  deviceId = "desktop-local",
   recordKnowledgeInteraction,
   persistLocalApproval,
   streamReply,
@@ -137,6 +155,8 @@ export function createLocalChatRuntime({
   streamDelayMs = STREAM_DELAY_MS,
   logActivity
 }: LocalChatRuntimeOptions) {
+  const activeConversationCancels = new Map<string, () => void>();
+
   function emitRun(chatId: string) {
     onRunUpdated?.({
       chatId,
@@ -226,8 +246,130 @@ async function streamAssistantText(input: {
   }
 
   function finishRun(chatId: string, status: "completed" | "cancelled" | "failed") {
+    activeConversationCancels.delete(chatId);
     chatRunStore.finishRun(chatId, status);
     emitRun(chatId);
+  }
+
+  function updateAssistantMessage(chatId: string, messageId: string, text: string): LocalChatDetail {
+    const detail = chatStore.updateMessage(chatId, messageId, {
+      text,
+      role: "assistant"
+    });
+    onChatUpdated?.(detail);
+    return detail;
+  }
+
+  function startBackgroundCodexConversationReply({
+    chatId,
+    prompt,
+    plan,
+    ackMessageId,
+    placeholderMessageId,
+    runId,
+    workspaceRoot
+  }: {
+    chatId: string;
+    prompt: string;
+    plan: ChatPlan;
+    ackMessageId: string;
+    placeholderMessageId: string;
+    runId: string;
+    workspaceRoot: string;
+  }): void {
+    if (conversationRunner === undefined || chatSessionStore === undefined) {
+      throw new Error("Codex conversational runtime is not configured.");
+    }
+
+    void (async () => {
+      const memoryWrites = extractMemoryWrites(plan);
+      const existingSession = chatSessionStore.getByLocalChatId(chatId);
+      let streamedText = "";
+      const handle = conversationRunner.start({
+        chatId,
+        prompt,
+        workspaceRoot,
+        sessionId: existingSession?.codexSessionId,
+        onDelta: (chunk) => {
+          const run = chatRunStore.getRun(chatId);
+
+          if (run === null || run.runId !== runId || run.cancelRequested) {
+            return;
+          }
+
+          streamedText += chunk;
+          chatRunStore.updateStatus(chatId, "streaming");
+          emitRun(chatId);
+          updateAssistantMessage(chatId, placeholderMessageId, streamedText);
+        }
+      });
+      activeConversationCancels.set(chatId, handle.cancel);
+
+      try {
+        const reply = await handle.result;
+        removeAckMessage(chatId, ackMessageId);
+        chatSessionStore.saveLocalChatSession({
+          chatId,
+          deviceId,
+          codexSessionId: reply.sessionId
+        });
+        chatSessionStore.markInterrupted(chatId, reply.cancelled);
+
+        const finalText = reply.text.trim() || streamedText.trim() || CANCELLED_TEXT;
+        updateAssistantMessage(chatId, placeholderMessageId, finalText);
+
+        if (reply.cancelled) {
+          finishRun(chatId, "cancelled");
+          return;
+        }
+
+        try {
+          await recordKnowledgeInteraction?.({
+            origin: "local-chat",
+            prompt,
+            answer: finalText,
+            memoryWrites
+          });
+        } catch (error: unknown) {
+          logActivity?.({
+            kind: "local_result",
+            status: "warning",
+            title: "Knowledge write skipped",
+            detail: error instanceof Error ? error.message : "Knowledge write failed",
+            chatId
+          });
+        }
+
+        logActivity?.({
+          kind: "local_result",
+          status: "success",
+          title: "Local assistant reply",
+          detail: finalText,
+          chatId
+        });
+        finishRun(chatId, "completed");
+      } catch (error: unknown) {
+        chatSessionStore.markInterrupted(chatId, true);
+        updateAssistantMessage(
+          chatId,
+          placeholderMessageId,
+          "Не удалось подготовить ответ. Попробуй уточнить запрос."
+        );
+        try {
+          removeAckMessage(chatId, ackMessageId);
+        } catch {
+          // Ignore ack cleanup failure after primary error.
+        }
+        logActivity?.({
+          kind: "local_result",
+          status: "error",
+          title: "Local assistant reply failed",
+          detail: error instanceof Error ? error.message : "Conversation failed",
+          chatId
+        });
+        finishRun(chatId, "failed");
+      }
+    })();
   }
 
   function startBackgroundConversationReply({
@@ -345,6 +487,8 @@ async function streamAssistantText(input: {
       }
 
       chatRunStore.requestCancel(chatId);
+      chatSessionStore?.markInterrupted(chatId, true);
+      activeConversationCancels.get(chatId)?.();
       removeAckMessage(chatId, run.ackMessageId);
 
       const detail = chatStore.getChat(chatId);
@@ -393,6 +537,46 @@ async function streamAssistantText(input: {
       const historyContext = buildHistoryContext(priorMessages);
 
       if (plan.mode === "conversation") {
+        if (conversationRunner !== undefined && chatSessionStore !== undefined) {
+          const ackDetail = chatStore.appendMessage(chatId, {
+            role: "assistant",
+            text: ACK_TEXT
+          });
+          const ackMessageId = ackDetail.messages.at(-1)?.messageId;
+
+          if (!ackMessageId) {
+            throw new Error("Failed to create assistant acknowledgment message.");
+          }
+
+          const pendingDetail = chatStore.appendMessage(chatId, {
+            role: "assistant",
+            text: STREAM_PLACEHOLDER_TEXT
+          });
+          const placeholderMessageId = pendingDetail.messages.at(-1)?.messageId;
+
+          if (!placeholderMessageId) {
+            throw new Error("Failed to create assistant placeholder message.");
+          }
+
+          const run = chatRunStore.startRun({
+            chatId,
+            ackMessageId,
+            replyMessageId: placeholderMessageId
+          });
+          emitRun(chatId);
+          onChatUpdated?.(pendingDetail);
+          startBackgroundCodexConversationReply({
+            chatId,
+            prompt: normalizedText,
+            plan,
+            ackMessageId,
+            placeholderMessageId,
+            runId: run.runId,
+            workspaceRoot: getWorkspaceRootForChat?.(chatId) ?? process.cwd()
+          });
+          return pendingDetail;
+        }
+
         if (streamReply === undefined && replyToConversation === undefined) {
           const resolvedConversation = await resolveInput(normalizedText);
           const memoryWrites = extractMemoryWrites(plan);

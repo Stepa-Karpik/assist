@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { spawn, type SpawnOptionsWithoutStdio } from "node:child_process";
 import path from "node:path";
 
 type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
@@ -9,7 +9,7 @@ type CodexConversationRunnerOptions = {
     command: string,
     args: string[],
     options: SpawnOptionsWithoutStdio
-  ) => Pick<ChildProcessWithoutNullStreams, "stdout" | "stderr" | "kill" | "on">;
+  ) => SpawnedConversationProcess;
 };
 
 type StartConversationInput = {
@@ -25,6 +25,17 @@ type ConversationRunResult = {
   text: string;
   partialText: string;
   cancelled: boolean;
+};
+
+type SpawnedConversationProcess = {
+  stdout: {
+    on: (event: "data", listener: (chunk: unknown) => void) => unknown;
+  };
+  stderr: {
+    on: (event: "data", listener: (chunk: unknown) => void) => unknown;
+  };
+  kill: () => void;
+  on: (event: "error" | "close", listener: (...args: unknown[]) => void) => unknown;
 };
 
 export type CodexConversationHandle = {
@@ -189,14 +200,15 @@ export function createCodexConversationRunner({
         });
 
         child.on("error", (error) => {
-          const nodeError = error as NodeJS.ErrnoException;
+          const runtimeError = error instanceof Error ? error : new Error(String(error));
+          const nodeError = runtimeError as NodeJS.ErrnoException;
 
           if (nodeError.code === "ENOENT") {
             finishWithError(new Error("Codex CLI is unavailable."));
             return;
           }
 
-          finishWithError(error);
+          finishWithError(runtimeError);
         });
 
         child.on("close", (exitCode) => {

@@ -20,6 +20,8 @@ import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { createChatKnowledgeRetriever } from "./chatKnowledgeRetriever";
 import { createChatRunStore } from "./chatRunStore";
+import { ChatSessionStore } from "./chatSessionStore";
+import { createCodexConversationRunner } from "./codexConversationRunner";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
@@ -76,6 +78,7 @@ let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
 let chatRunStore: ReturnType<typeof createChatRunStore> | null = null;
+let chatSessionStore: ChatSessionStore | null = null;
 let knowledgeBackgroundWriter: ReturnType<typeof createKnowledgeBackgroundWriter> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
@@ -1089,6 +1092,9 @@ async function bootstrap() {
   localChatStore = new LocalChatStore({
     stateRoot: runtimeFolders.state
   });
+  chatSessionStore = new ChatSessionStore({
+    stateRoot: runtimeFolders.state
+  });
   codexSettingsStore = new CodexSettingsStore({
     settingsRoot: runtimeFolders.settings,
     defaultWorkspaceRoot: runtimeFolders.userRoot
@@ -1135,7 +1141,10 @@ async function bootstrap() {
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
     chatRunStore,
+    chatSessionStore,
+    conversationRunner: createCodexConversationRunner(),
     executeTask: (task) => taskExecutor!.execute(task),
+    deviceId,
     replyToConversation: async ({ prompt, historyContext }) => {
       const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
 
