@@ -380,4 +380,57 @@ describe("createLocalChatRuntime", () => {
       })
     );
   });
+
+  it("passes recent chat history into the conversational responder", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-03-31T00:01:00.000Z"),
+      generateChatId: () => "local-chat-history"
+    });
+    chatStore.createDesktopChat({
+      title: "History chat"
+    });
+    chatStore.appendMessage("local-chat-history", {
+      role: "user",
+      text: "Меня зовут Степан"
+    });
+    chatStore.appendMessage("local-chat-history", {
+      role: "assistant",
+      text: "Принял, Степан."
+    });
+
+    const replyToConversation = vi.fn(async () => ({
+      text: "Твоё предыдущее сообщение: Меня зовут Степан."
+    }));
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      replyToConversation,
+      streamDelayMs: 0
+    });
+
+    await runtime.sendMessage({
+      chatId: "local-chat-history",
+      text: "Какое было моё предыдущее сообщение?"
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(replyToConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        historyContext: expect.stringContaining("Пользователь: Меня зовут Степан")
+      })
+    );
+    expect(replyToConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        historyContext: expect.stringContaining("Ассистент: Принял, Степан.")
+      })
+    );
+  });
 });

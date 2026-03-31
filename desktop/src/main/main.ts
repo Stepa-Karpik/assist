@@ -1136,7 +1136,7 @@ async function bootstrap() {
     chatStore: localChatStore,
     chatRunStore,
     executeTask: (task) => taskExecutor!.execute(task),
-    replyToConversation: async ({ prompt }) => {
+    replyToConversation: async ({ prompt, historyContext }) => {
       const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
 
       if (localChatResponder !== null) {
@@ -1145,7 +1145,8 @@ async function bootstrap() {
             ownerProfileStore === null
               ? null
               : buildOwnerProfileContext(ownerProfileStore.getState()) || null,
-          knowledgeContext: knowledgeLookup.context
+          knowledgeContext: knowledgeLookup.context,
+          historyContext
         });
 
         return {
@@ -1157,6 +1158,7 @@ async function bootstrap() {
       const response = await syncClient.createConversationReply({
         prompt,
         knowledgeContext: knowledgeLookup.context,
+        historyContext,
         includeExternalDocs: true
       });
 

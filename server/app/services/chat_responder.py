@@ -17,6 +17,7 @@ class SupportsChatResponder:
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str: ...
 
 
@@ -27,8 +28,9 @@ class FallbackChatResponder:
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str:
-        del text, owner_profile_context, knowledge_context
+        del text, owner_profile_context, knowledge_context, history_context
         return FALLBACK_REPLY
 
 
@@ -43,6 +45,7 @@ class DeepSeekChatResponder:
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str:
         system_prompt = (
             "You are Karpik, a natural Russian-speaking personal assistant. "
@@ -59,6 +62,11 @@ class DeepSeekChatResponder:
             system_prompt = (
                 f"{system_prompt}\n\n"
                 f"Relevant notes and docs:\n{knowledge_context.strip()}"
+            )
+        if history_context is not None and history_context.strip():
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                f"Recent conversation context:\n{history_context.strip()}"
             )
 
         request_body = {

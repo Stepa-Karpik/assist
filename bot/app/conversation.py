@@ -47,6 +47,8 @@ PendingStateKind = Literal[
     "app_selection",
 ]
 AppSelectionAction = Literal["launch"]
+HistoryRole = Literal["user", "assistant"]
+HISTORY_MESSAGE_LIMIT = 8
 
 DEVICE_TEXT_PATTERN = re.compile(
     r"\b(что\s+с\s+пк|статус\s+пк|как\s+там\s+пк|состояние\s+пк|pc\s+status|device\s+status)\b",
@@ -142,6 +144,7 @@ class SupportsChatResponder(Protocol):
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str: ...
 
 
@@ -171,15 +174,44 @@ class PendingState:
     app_candidates: tuple[PendingAppCandidate, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True, slots=True)
+class HistoryEntry:
+    role: HistoryRole
+    text: str
+
+
 class BotConversationStore:
     def __init__(self) -> None:
         self._chat_state: dict[int, PendingState] = {}
+        self._chat_history: dict[int, list[HistoryEntry]] = {}
 
     def get(self, chat_id: int) -> PendingState | None:
         return self._chat_state.get(chat_id)
 
     def clear(self, chat_id: int) -> None:
         self._chat_state.pop(chat_id, None)
+
+    def add_history_entry(self, chat_id: int, *, role: HistoryRole, text: str) -> None:
+        normalized = " ".join(text.strip().split())
+
+        if not normalized:
+            return
+
+        history = self._chat_history.setdefault(chat_id, [])
+        history.append(HistoryEntry(role=role, text=normalized))
+        self._chat_history[chat_id] = history[-HISTORY_MESSAGE_LIMIT:]
+
+    def build_history_context(self, chat_id: int) -> str | None:
+        history = self._chat_history.get(chat_id, [])
+
+        if not history:
+            return None
+
+        lines = [
+            f"{'Пользователь' if entry.role == 'user' else 'Ассистент'}: {entry.text}"
+            for entry in history
+        ]
+        return "\n".join(lines) if lines else None
 
     def set_pending_auth(
         self,
@@ -434,10 +466,15 @@ def should_use_chat_responder(
     resolved = resolution.resolve(text) if hasattr(resolution, "resolve") else resolution
     normalized_text = text.strip()
     default_codex_intent = f"codex {normalized_text}"
+    resolved_intent = resolved.intent if resolved.kind == "task" else None
 
     return (
         resolved.kind == "task"
-        and resolved.intent == default_codex_intent
+        and resolved_intent is not None
+        and (
+            resolved_intent == default_codex_intent
+            or resolved_intent.startswith("codex ")
+        )
         and not has_explicit_codex_override(text)
         and not message_requires_codex(text)
     )
@@ -594,11 +631,13 @@ def process_text_message(
         if should_use_chat_responder(
             text, resolution=resolution, chat_responder=chat_responder
         ):
+            history_context = store.build_history_context(chat_id)
             knowledge_lookup = lookup_external_docs(normalized_text)
             reply_text = chat_responder.reply(
                 normalized_text,
                 owner_profile_context=task_client.fetch_owner_profile_context(),
                 knowledge_context=knowledge_lookup.context,
+                history_context=history_context,
             )
             source_urls = extract_source_urls(normalized_text, reply_text)
             for source_url in knowledge_lookup.source_urls:
@@ -617,6 +656,8 @@ def process_text_message(
             except Exception:
                 # Memory publication is best-effort and must not break the visible reply.
                 pass
+            store.add_history_entry(chat_id, role="user", text=normalized_text)
+            store.add_history_entry(chat_id, role="assistant", text=reply_text)
             return BotReply(text=reply_text)
 
         return _create_task_from_intent(

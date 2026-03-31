@@ -10,7 +10,27 @@ FULL_NAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 ROLE_PATTERN = re.compile(
-    r"\bя\s+(?:работаю|занимаюсь|программист|разработчик|инженер)(?:\s+на)?\s+([A-Za-zА-Яа-яЁё0-9+.\-/,\s]+)",
+    r"(?:^|[\s,.:;!?()])(?:я\s+)?(программист|разработчик|python[-\s]?разработчик|backend[-\s]?разработчик|frontend[-\s]?разработчик)(?=$|[\s,.:;!?()])",
+    re.IGNORECASE,
+)
+GPU_PATTERN = re.compile(
+    r"\b((?:AMD\s+Radeon|NVIDIA\s+GeForce|Intel\s+Arc)\s+[A-Za-z0-9!()+\-.\s]+?)(?=,|\.|;|$)",
+    re.IGNORECASE,
+)
+CPU_LABELED_PATTERN = re.compile(
+    r"(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)",
+    re.IGNORECASE,
+)
+CPU_DIRECT_PATTERN = re.compile(
+    r"\b((?:Ryzen|Intel\s+Core|Intel\s+Xeon|Apple\s+M)\s+[A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)",
+    re.IGNORECASE,
+)
+RAM_PATTERN = re.compile(
+    r"(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)",
+    re.IGNORECASE,
+)
+STORAGE_PATTERN = re.compile(
+    r"(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)",
     re.IGNORECASE,
 )
 
@@ -32,9 +52,17 @@ class ConversationMemoryWrite:
     value: str
 
 
+def _normalize_space(value: str) -> str:
+    return " ".join(value.split()).strip()
+
+
+def _normalize_capacity(value: str, unit: str) -> str:
+    return f"{value} {'TB' if unit.casefold() in {'tb', 'тб'} else 'GB'}"
+
+
 def extract_memory_writes(text: str) -> list[ConversationMemoryWrite]:
     writes: list[ConversationMemoryWrite] = []
-    normalized = text.strip()
+    normalized = _normalize_space(text)
 
     full_name_match = FULL_NAME_PATTERN.search(normalized)
     if full_name_match is not None:
@@ -42,7 +70,7 @@ def extract_memory_writes(text: str) -> list[ConversationMemoryWrite]:
             ConversationMemoryWrite(
                 target="assist/profile",
                 key="full_name",
-                value=full_name_match.group(1).strip(),
+                value=_normalize_space(full_name_match.group(1)),
             )
         )
 
@@ -52,7 +80,7 @@ def extract_memory_writes(text: str) -> list[ConversationMemoryWrite]:
             ConversationMemoryWrite(
                 target="assist/profile",
                 key="occupation",
-                value=role_match.group(1).strip(" ,."),
+                value=_normalize_space(role_match.group(1).lower()),
             )
         )
 
@@ -68,11 +96,71 @@ def extract_memory_writes(text: str) -> list[ConversationMemoryWrite]:
             )
         )
 
+    if re.search(r"(нравится|люблю)\s+(?:изучать\s+)?нейросети", normalized, re.IGNORECASE) or re.search(
+        r"\bнейросет", normalized, re.IGNORECASE
+    ):
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/preferences",
+                key="interests",
+                value="Нейросети",
+            )
+        )
+
+    gpu_match = GPU_PATTERN.search(normalized)
+    if gpu_match is not None:
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/profile",
+                key="gpu",
+                value=_normalize_space(gpu_match.group(1)),
+            )
+        )
+
+    cpu_match = CPU_LABELED_PATTERN.search(normalized) or CPU_DIRECT_PATTERN.search(normalized)
+    if cpu_match is not None:
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/profile",
+                key="cpu",
+                value=_normalize_space(cpu_match.group(1)),
+            )
+        )
+
+    ram_match = RAM_PATTERN.search(normalized)
+    if ram_match is not None:
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/profile",
+                key="ram",
+                value=_normalize_capacity(ram_match.group(1), ram_match.group(2)),
+            )
+        )
+
+    storage_match = STORAGE_PATTERN.search(normalized)
+    if storage_match is not None:
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/profile",
+                key="storage",
+                value=_normalize_capacity(storage_match.group(1), storage_match.group(2)),
+            )
+        )
+
     for url in extract_source_urls(text):
+        host_match = re.match(r"https?://([^/]+)", url)
+        host = host_match.group(1) if host_match is not None else url
         writes.append(
             ConversationMemoryWrite(
                 target="assist/docs/websites",
-                key="trusted_source",
+                key=f"https://{host}",
+                value=host,
+            )
+        )
+        writes.append(
+            ConversationMemoryWrite(
+                target="assist/docs/papers",
+                key=url,
                 value=url,
             )
         )

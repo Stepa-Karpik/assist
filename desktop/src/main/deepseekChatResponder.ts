@@ -9,6 +9,7 @@ type DeepSeekChatResponderOptions = {
 type DeepSeekReplyOptions = {
   ownerProfileContext?: string | null;
   knowledgeContext?: string | null;
+  historyContext?: string | null;
 };
 
 export function createDeepSeekChatResponder({
@@ -22,18 +23,21 @@ export function createDeepSeekChatResponder({
         "Ты Karpik, естественный русскоязычный персональный ассистент. Отвечай по-русски, спокойно и по делу, без роботизированных формулировок и без упоминания DeepSeek. Когда это уместно, заверши ответ одним коротким следующим полезным шагом.";
       const ownerProfileContext = options.ownerProfileContext?.trim();
       const knowledgeContext = options.knowledgeContext?.trim();
-      const systemPrompt =
-        [
-          systemPromptBase,
-          ownerProfileContext && ownerProfileContext.length > 0
-            ? `Контекст владельца устройства:\n${ownerProfileContext}`
-            : null,
-          knowledgeContext && knowledgeContext.length > 0
-            ? `Релевантные заметки из локальной базы знаний:\n${knowledgeContext}`
-            : null
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+      const historyContext = options.historyContext?.trim();
+      const systemPrompt = [
+        systemPromptBase,
+        ownerProfileContext && ownerProfileContext.length > 0
+          ? `Контекст владельца устройства:\n${ownerProfileContext}`
+          : null,
+        knowledgeContext && knowledgeContext.length > 0
+          ? `Релевантные заметки из локальной базы знаний:\n${knowledgeContext}`
+          : null,
+        historyContext && historyContext.length > 0
+          ? `Недавний контекст диалога:\n${historyContext}`
+          : null
+      ]
+        .filter(Boolean)
+        .join("\n\n");
 
       try {
         const response = await fetchImpl("https://api.deepseek.com/chat/completions", {

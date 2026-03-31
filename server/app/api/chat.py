@@ -56,6 +56,9 @@ def respond_to_conversation(
         payload.prompt,
         owner_profile_context=profile_context,
         knowledge_context="\n\n".join(knowledge_parts) if knowledge_parts else None,
+        history_context=payload.history_context.strip()
+        if payload.history_context
+        else None,
     )
     source_urls = unique(lookup.source_urls if lookup is not None else [])
     return ConversationReplyResponse(text=response_text, source_urls=source_urls)

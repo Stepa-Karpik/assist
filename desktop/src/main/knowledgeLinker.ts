@@ -23,6 +23,11 @@ type LinkSourceToTopicInput = {
   sourceTitle?: string;
 };
 
+type RecordSourceInput = {
+  sourceUrl: string;
+  sourceTitle?: string;
+};
+
 function appendUniqueLine(content: string, line: string): string {
   if (content.includes(line)) {
     return content;
@@ -103,6 +108,10 @@ async function deriveSourceTitle(
   return normalizeTitle(lastSegment ? decodeURIComponent(lastSegment) : sourceUrl.hostname);
 }
 
+function isWebsiteRoot(sourceUrl: URL): boolean {
+  return sourceUrl.pathname === "" || sourceUrl.pathname === "/";
+}
+
 export class KnowledgeLinker {
   private readonly vaultRoot: string;
   private readonly fetchImpl: KnowledgeFetch;
@@ -117,11 +126,34 @@ export class KnowledgeLinker {
     sourceUrl,
     sourceTitle
   }: LinkSourceToTopicInput): Promise<void> {
+    const topicTitle = deriveTopicTitle(topicRelativePath);
+    await this.recordSourceArtifacts({
+      sourceUrl,
+      sourceTitle,
+      topicTitle
+    });
+  }
+
+  async recordSource({ sourceUrl, sourceTitle }: RecordSourceInput): Promise<void> {
+    await this.recordSourceArtifacts({
+      sourceUrl,
+      sourceTitle
+    });
+  }
+
+  private async recordSourceArtifacts({
+    sourceUrl,
+    sourceTitle,
+    topicTitle
+  }: {
+    sourceUrl: string;
+    sourceTitle?: string;
+    topicTitle?: string;
+  }): Promise<void> {
     ensureKnowledgeVault(this.vaultRoot);
 
     const source = new URL(sourceUrl);
     const domain = source.hostname;
-    const topicTitle = deriveTopicTitle(topicRelativePath);
     const displayTitle = await deriveSourceTitle(source, sourceTitle, this.fetchImpl);
     const registryRoot = path.join(this.vaultRoot, "assist", "docs", "registry");
     const websitesRoot = path.join(this.vaultRoot, "assist", "docs", "websites");
@@ -138,22 +170,26 @@ export class KnowledgeLinker {
     await this.appendToFile(
       docsRegistryPath,
       DOCS_REGISTRY_INITIAL_CONTENT,
-      `[${displayTitle}](${sourceUrl}) -> [[${topicTitle}]]`
+      topicTitle ? `[${displayTitle}](${sourceUrl}) -> [[${topicTitle}]]` : `[${displayTitle}](${sourceUrl})`
     );
     await this.appendToFile(
       websiteNotePath,
-      `# ${domain}\n\n## Связанные темы\n\n`,
-      `[[${topicTitle}]]`
+      `# ${domain}\n\n## Источник\n\n- ${source.origin}\n`,
+      topicTitle ? `[[${topicTitle}]]` : `${source.origin}`
     );
-    await this.appendToFile(
-      paperNotePath,
-      `# ${displayTitle}\n\n## Ссылка\n\n- ${sourceUrl}\n\n## Связанные темы\n\n`,
-      `[[${topicTitle}]]`
-    );
+
+    if (!isWebsiteRoot(source)) {
+      await this.appendToFile(
+        paperNotePath,
+        `# ${displayTitle}\n\n## Ссылка\n\n- ${sourceUrl}\n`,
+        topicTitle ? `[[${topicTitle}]]` : sourceUrl
+      );
+    }
   }
 
   private async appendToFile(filePath: string, initialContent: string, line: string): Promise<void> {
     let content = initialContent;
+    let fileExists = true;
 
     try {
       content = await fs.readFile(filePath, "utf8");
@@ -163,11 +199,13 @@ export class KnowledgeLinker {
       if (nodeError.code !== "ENOENT") {
         throw error;
       }
+
+      fileExists = false;
     }
 
     const nextContent = appendUniqueLine(content, line);
 
-    if (nextContent !== content) {
+    if (!fileExists || nextContent !== content) {
       await fs.writeFile(filePath, nextContent, "utf8");
     }
   }

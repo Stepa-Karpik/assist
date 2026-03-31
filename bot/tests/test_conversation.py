@@ -39,14 +39,16 @@ class FakeChatResponder:
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str:
-        self.calls.append(
-            {
-                "text": text,
-                "owner_profile_context": owner_profile_context,
-                "knowledge_context": knowledge_context,
-            }
-        )
+        call = {
+            "text": text,
+            "owner_profile_context": owner_profile_context,
+            "knowledge_context": knowledge_context,
+        }
+        if history_context is not None:
+            call["history_context"] = history_context
+        self.calls.append(call)
         return self.reply_text
 
 
@@ -700,7 +702,45 @@ def test_article_message_that_mentions_codex_stays_conversational() -> None:
 
     assert reply == BotReply(text="Да, это материал про то, как Codex работает на практике.")
     assert client.task_calls == []
-    assert len(client.conversation_memory_calls) == 1
+    assert "history_context" not in chat_responder.calls[0]
+
+
+def test_conversational_reply_receives_recent_history() -> None:
+    store = BotConversationStore()
+    client = FakeTaskClient(owner_profile_context="Владелец: Степан Карпов")
+    responder = FakeChatResponder("Твоё предыдущее сообщение было про FastAPI.")
+    class HistoryResolver:
+        def resolve(self, text: str) -> IntentResolution:
+            return IntentResolution(kind="task", risk="high", intent=f"codex {text}")
+
+    first_reply = process_text_message(
+        "меня зовут Степан, я использую FastAPI",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=HistoryResolver(),
+        chat_responder=responder,
+    )
+    second_reply = process_text_message(
+        "какое было моё предыдущее сообщение?",
+        telegram_user_id=42,
+        chat_id=5001,
+        task_client=client,
+        store=store,
+        resolver=HistoryResolver(),
+        chat_responder=responder,
+    )
+
+    assert first_reply is not None
+    assert second_reply == BotReply(text="Твоё предыдущее сообщение было про FastAPI.")
+    assert responder.calls[-1] == {
+        "text": "какое было моё предыдущее сообщение?",
+        "owner_profile_context": "Владелец: Степан Карпов",
+        "knowledge_context": None,
+        "history_context": "Пользователь: меня зовут Степан, я использую FastAPI\nАссистент: Твоё предыдущее сообщение было про FastAPI."
+    }
+    assert len(client.conversation_memory_calls) == 2
 
 
 def test_conversational_reply_still_returns_when_memory_publish_fails() -> None:

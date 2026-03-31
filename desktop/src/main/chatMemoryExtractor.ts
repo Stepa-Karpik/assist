@@ -51,6 +51,49 @@ function extractStack(text: string): string | null {
   return stack.length > 0 ? stack.join(", ") : null;
 }
 
+function extractInterest(text: string): string | null {
+  if (/(нравится|люблю)\s+(?:изучать\s+)?нейросети/i.test(text) || /\bнейросет/i.test(text)) {
+    return "Нейросети";
+  }
+
+  return null;
+}
+
+function extractGpu(text: string): string | null {
+  const match = text.match(
+    /\b((?:AMD\s+Radeon|NVIDIA\s+GeForce|Intel\s+Arc)\s+[A-Za-z0-9!()+\-.\s]+?)(?=,|\.|;|$)/i
+  );
+  return match ? normalizeWhitespace(match[1]) : null;
+}
+
+function extractCpu(text: string): string | null {
+  const labeledMatch = text.match(
+    /(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/i
+  );
+  if (labeledMatch) {
+    return normalizeWhitespace(labeledMatch[1]);
+  }
+
+  const directMatch = text.match(
+    /\b((?:Ryzen|Intel\s+Core|Intel\s+Xeon|Apple\s+M)\s+[A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/i
+  );
+  return directMatch ? normalizeWhitespace(directMatch[1]) : null;
+}
+
+function normalizeCapacity(value: string, unit: string): string {
+  return `${value} ${unit.toUpperCase()}`;
+}
+
+function extractRam(text: string): string | null {
+  const match = text.match(/(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)/i);
+  return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
+}
+
+function extractStorage(text: string): string | null {
+  const match = text.match(/(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)/i);
+  return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
+}
+
 export function extractChatMemoryWrites(text: string): ChatKnowledgeWrite[] {
   const writes: ChatKnowledgeWrite[] = [];
   const normalized = normalizeWhitespace(text);
@@ -79,6 +122,51 @@ export function extractChatMemoryWrites(text: string): ChatKnowledgeWrite[] {
       target: "assist/preferences",
       key: "preferred_stack",
       value: preferredStack
+    });
+  }
+
+  const interest = extractInterest(normalized);
+  if (interest) {
+    writes.push({
+      target: "assist/preferences",
+      key: "interests",
+      value: interest
+    });
+  }
+
+  const gpu = extractGpu(normalized);
+  if (gpu) {
+    writes.push({
+      target: "assist/profile",
+      key: "gpu",
+      value: gpu
+    });
+  }
+
+  const cpu = extractCpu(normalized);
+  if (cpu) {
+    writes.push({
+      target: "assist/profile",
+      key: "cpu",
+      value: cpu
+    });
+  }
+
+  const ram = extractRam(normalized);
+  if (ram) {
+    writes.push({
+      target: "assist/profile",
+      key: "ram",
+      value: ram
+    });
+  }
+
+  const storage = extractStorage(normalized);
+  if (storage) {
+    writes.push({
+      target: "assist/profile",
+      key: "storage",
+      value: storage
     });
   }
 

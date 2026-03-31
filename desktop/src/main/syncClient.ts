@@ -214,6 +214,7 @@ export type ConversationReplyRequest = {
   device_id: string;
   prompt: string;
   knowledge_context: string | null;
+  history_context: string | null;
   include_external_docs: boolean;
 };
 
@@ -595,12 +596,14 @@ export function createSyncClient({
     createConversationReply(input: {
       prompt: string;
       knowledgeContext?: string | null;
+      historyContext?: string | null;
       includeExternalDocs?: boolean;
     }) {
       const payload: ConversationReplyRequest = {
         device_id: deviceId,
         prompt: input.prompt,
         knowledge_context: input.knowledgeContext ?? null,
+        history_context: input.historyContext ?? null,
         include_external_docs: input.includeExternalDocs ?? true
       };
       return fetchImpl(`${baseUrl}/api/chat/respond`, {

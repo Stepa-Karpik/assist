@@ -5,6 +5,7 @@ class ConversationReplyRequest(BaseModel):
     device_id: str
     prompt: str
     knowledge_context: str | None = None
+    history_context: str | None = None
     include_external_docs: bool = True
 
 

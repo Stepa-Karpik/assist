@@ -7,8 +7,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
-import { LocalApprovalStore } from "./localApprovalStore";
 import { DOCS_REGISTRY_FILE_NAME } from "./knowledgeVaultConstants";
+import { LocalApprovalStore } from "./localApprovalStore";
 
 const tempRoots: string[] = [];
 
@@ -25,6 +25,39 @@ afterEach(() => {
 });
 
 describe("createKnowledgeBackgroundWriter", () => {
+  it("persists website and paper memory writes into assist docs", async () => {
+    const root = createRoot();
+    const vaultRoot = path.join(root, "vault");
+    const writer = createKnowledgeBackgroundWriter({
+      getVaultRoot: () => vaultRoot
+    });
+
+    await writer.recordInteraction({
+      origin: "telegram-chat",
+      prompt: "читаю статью на хабре про Codex",
+      answer: "Это статья про то, как Codex работает на практике.",
+      memoryWrites: [
+        {
+          target: "assist/docs/websites",
+          key: "https://habr.com",
+          value: "habr.com"
+        },
+        {
+          target: "assist/docs/papers",
+          key: "https://habr.com/ru/articles/912576/",
+          value: "Как работает Codex на практике"
+        }
+      ]
+    });
+
+    expect(
+      fs.readFileSync(path.join(vaultRoot, "assist", "docs", "websites", "habr.com.md"), "utf8")
+    ).toContain("habr.com");
+    expect(fs.readdirSync(path.join(vaultRoot, "assist", "docs", "papers", "habr.com"))).toContain(
+      "Как работает Codex на практике.md"
+    );
+  });
+
   it("writes stable user and assist notes plus documentation registries", async () => {
     const root = createRoot();
     const vaultRoot = path.join(root, "vault");

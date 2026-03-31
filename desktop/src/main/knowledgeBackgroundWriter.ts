@@ -1,4 +1,6 @@
-import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import type { ChatKnowledgeWrite } from "./chatPlan";
 import {
   decideKnowledgeWrites,
@@ -6,10 +8,9 @@ import {
   type KnowledgeSkillApprovalDraft,
   type KnowledgeWritePlan
 } from "./knowledgeIngestDecider";
+import { ensureKnowledgeVault } from "./knowledgeVaultBootstrap";
 import { KnowledgeLinker } from "./knowledgeLinker";
 import { KnowledgeWriter } from "./knowledgeWriter";
-import fs from "node:fs/promises";
-import path from "node:path";
 
 type KnowledgeBackgroundWriterOptions = {
   getVaultRoot: () => string | null;
@@ -22,6 +23,11 @@ export type KnowledgeBackgroundWriteResult = {
   pendingApproval: boolean;
   userWriteCount: number;
   assistWriteCount: number;
+};
+
+type StandaloneSourceRecord = {
+  sourceUrl: string;
+  sourceTitle?: string;
 };
 
 const PROFILE_NOTE_PATH = ["assist", "profile", "Профиль владельца.md"] as const;
@@ -50,7 +56,7 @@ async function upsertSectionEntries(
     content = await fs.readFile(notePath, "utf8");
   } catch (error) {
     const nodeError = error as NodeJS.ErrnoException;
-    if (nodeError.code != "ENOENT") {
+    if (nodeError.code !== "ENOENT") {
       throw error;
     }
   }
@@ -143,6 +149,69 @@ async function applyStructuredMemoryWrites(
   return appliedCount;
 }
 
+function isUrlCandidate(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveStandaloneSourceRecords(
+  memoryWrites: ChatKnowledgeWrite[],
+  sourceUrls: string[]
+): StandaloneSourceRecord[] {
+  const records = new Map<string, StandaloneSourceRecord>();
+
+  for (const write of memoryWrites) {
+    if (write.target !== "assist/docs/websites" && write.target !== "assist/docs/papers") {
+      continue;
+    }
+
+    const sourceUrl = isUrlCandidate(write.key)
+      ? write.key
+      : isUrlCandidate(write.value)
+        ? write.value
+        : null;
+
+    if (sourceUrl === null) {
+      continue;
+    }
+
+    const preferredTitle =
+      !isUrlCandidate(write.value) ? write.value : undefined;
+    const existing = records.get(sourceUrl);
+
+    records.set(sourceUrl, {
+      sourceUrl,
+      sourceTitle: preferredTitle ?? existing?.sourceTitle
+    });
+  }
+
+  for (const sourceUrl of sourceUrls) {
+    if (!records.has(sourceUrl) && isUrlCandidate(sourceUrl)) {
+      records.set(sourceUrl, { sourceUrl });
+    }
+  }
+
+  return [...records.values()];
+}
+
+async function applyStandaloneSourceWrites(
+  linker: KnowledgeLinker,
+  memoryWrites: ChatKnowledgeWrite[],
+  sourceUrls: string[]
+): Promise<number> {
+  const records = resolveStandaloneSourceRecords(memoryWrites, sourceUrls);
+
+  for (const record of records) {
+    await linker.recordSource(record);
+  }
+
+  return records.length;
+}
+
 export function createKnowledgeBackgroundWriter({
   getVaultRoot,
   decide = decideKnowledgeWrites,
@@ -169,6 +238,11 @@ export function createKnowledgeBackgroundWriter({
         vaultRoot,
         input.memoryWrites ?? []
       );
+      const standaloneSourceWriteCount = await applyStandaloneSourceWrites(
+        linker,
+        input.memoryWrites ?? [],
+        input.sourceUrls ?? []
+      );
 
       for (const write of plan.userWrites) {
         await writer.writeUserTopic(write);
@@ -186,10 +260,12 @@ export function createKnowledgeBackgroundWriter({
         applied:
           plan.userWrites.length > 0 ||
           plan.assistWrites.length > 0 ||
-          structuredMemoryWriteCount > 0,
+          structuredMemoryWriteCount > 0 ||
+          standaloneSourceWriteCount > 0,
         pendingApproval: plan.skillApprovalDrafts.length > 0,
         userWriteCount: plan.userWrites.length,
-        assistWriteCount: plan.assistWrites.length + structuredMemoryWriteCount
+        assistWriteCount:
+          plan.assistWrites.length + structuredMemoryWriteCount + standaloneSourceWriteCount
       };
     }
   };

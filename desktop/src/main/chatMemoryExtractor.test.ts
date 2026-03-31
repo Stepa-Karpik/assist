@@ -37,4 +37,40 @@ describe("extractChatMemoryWrites", () => {
       ])
     );
   });
+
+  it("extracts stable hardware facts and interests", () => {
+    const writes = extractChatMemoryWrites(
+      "Мне нравится изучать нейросети. У меня AMD Radeon RX 5700 XT, процессор Ryzen 5 3600 6-core, 32gb ozu и диск на 512 гб."
+    );
+
+    expect(writes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "assist/preferences",
+          key: "interests",
+          value: "Нейросети"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "gpu",
+          value: "AMD Radeon RX 5700 XT"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "cpu",
+          value: "Ryzen 5 3600 6-core"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "ram",
+          value: "32 GB"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "storage",
+          value: "512 GB"
+        })
+      ])
+    );
+  });
 });

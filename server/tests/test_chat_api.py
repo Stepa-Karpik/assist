@@ -17,12 +17,14 @@ class FakeResponder:
         text: str,
         owner_profile_context: str | None = None,
         knowledge_context: str | None = None,
+        history_context: str | None = None,
     ) -> str:
         self.calls.append(
             {
                 "text": text,
                 "owner_profile_context": owner_profile_context,
                 "knowledge_context": knowledge_context,
+                "history_context": history_context,
             }
         )
         return "Вот краткий ответ по теме."
@@ -54,6 +56,7 @@ def test_chat_response_uses_device_profile_and_external_docs(monkeypatch) -> Non
             "device_id": "desktop-local",
             "prompt": "что нового в fastapi?",
             "knowledge_context": "Локальные заметки: уже использую FastAPI в проде.",
+            "history_context": "Пользователь: я backend-разработчик\nАссистент: принял, учту твой стек",
         },
     )
 
@@ -67,5 +70,6 @@ def test_chat_response_uses_device_profile_and_external_docs(monkeypatch) -> Non
             "text": "что нового в fastapi?",
             "owner_profile_context": "ФИО: Карпов Степан Викторович\nРоль: Python developer\nГород: Москва",
             "knowledge_context": "Локальные заметки: уже использую FastAPI в проде.\n\nExternal docs:\n\nFastAPI Release Notes: useful updates",
+            "history_context": "Пользователь: я backend-разработчик\nАссистент: принял, учту твой стек",
         }
     ]

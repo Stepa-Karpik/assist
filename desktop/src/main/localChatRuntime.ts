@@ -37,11 +37,13 @@ type LocalChatRuntimeOptions = {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
+    historyContext?: string | null;
   }) => Promise<string | ConversationReplyResult>;
   replyToConversation?: (input: {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
+    historyContext?: string | null;
   }) => Promise<string | ConversationReplyResult> | string | ConversationReplyResult;
   onChatUpdated?: (detail: LocalChatDetail) => void;
   onRunUpdated?: (input: { chatId: string; run: ChatRunState | null }) => void;
@@ -63,6 +65,7 @@ const ACK_TEXT = "Сейчас посмотрю и отвечу по сути.";
 const STREAM_PLACEHOLDER_TEXT = "Ассистент отвечает...";
 const CANCELLED_TEXT = "Ответ остановлен.";
 const STREAM_DELAY_MS = 24;
+const HISTORY_MESSAGE_LIMIT = 8;
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
@@ -90,6 +93,31 @@ function splitIntoStreamingChunks(text: string): string[] {
   }
 
   return chunks.length > 0 ? chunks : [text];
+}
+
+function toHistoryRoleLabel(role: LocalChatDetail["messages"][number]["role"]): string | null {
+  if (role === "user") {
+    return "Пользователь";
+  }
+
+  if (role === "assistant") {
+    return "Ассистент";
+  }
+
+  return null;
+}
+
+function buildHistoryContext(messages: LocalChatDetail["messages"]): string | null {
+  const relevantLines = messages
+    .filter((message) => message.text.trim().length > 0)
+    .map((message) => {
+      const label = toHistoryRoleLabel(message.role);
+      return label ? `${label}: ${message.text.trim()}` : null;
+    })
+    .filter((line): line is string => line !== null)
+    .slice(-HISTORY_MESSAGE_LIMIT);
+
+  return relevantLines.length > 0 ? relevantLines.join("\n") : null;
 }
 
 export function createLocalChatRuntime({
@@ -206,6 +234,7 @@ async function streamAssistantText(input: {
     chatId,
     prompt,
     plan,
+    historyContext,
     ackMessageId,
     placeholderMessageId,
     runId
@@ -213,6 +242,7 @@ async function streamAssistantText(input: {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
+    historyContext?: string | null;
     ackMessageId: string;
     placeholderMessageId: string;
     runId: string;
@@ -225,12 +255,14 @@ async function streamAssistantText(input: {
             ? await streamReply({
                 chatId,
                 prompt,
-                plan
+                plan,
+                historyContext
               })
             : await replyToConversation?.({
                 chatId,
                 prompt,
-                plan
+                plan,
+                historyContext
               });
         const finalText = (typeof reply === "string" ? reply : reply?.text)?.trim();
         const sourceUrls = typeof reply === "string" ? [] : reply?.sourceUrls ?? [];
@@ -344,6 +376,7 @@ async function streamAssistantText(input: {
         throw new Error("Assistant is already replying in this chat.");
       }
 
+      const priorMessages = chatStore.getChat(chatId)?.messages.filter((message) => message.role !== "system") ?? [];
       chatStore.appendMessage(chatId, {
         role: "user",
         text: normalizedText
@@ -357,6 +390,7 @@ async function streamAssistantText(input: {
       });
 
       const plan = planMessage(normalizedText);
+      const historyContext = buildHistoryContext(priorMessages);
 
       if (plan.mode === "conversation") {
         if (streamReply === undefined && replyToConversation === undefined) {
@@ -425,6 +459,7 @@ async function streamAssistantText(input: {
           chatId,
           prompt: normalizedText,
           plan,
+          historyContext,
           ackMessageId,
           placeholderMessageId,
           runId: run.runId
