@@ -51,6 +51,19 @@ ATTENTION_TASK_STATUSES: tuple[TaskLifecycleStatus, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationEventResult:
+    event_id: str
+    device_id: str
+    chat_id: int
+    telegram_user_id: int
+    prompt: str
+    status: str
+    revision: int
+    response_text: str | None = None
+    error_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AppCatalogEntry:
     app_id: str
     display_name: str
@@ -272,6 +285,45 @@ def parse_app_catalog_item(value: object) -> AppCatalogEntry | None:
     )
 
 
+def parse_conversation_event_item(value: object) -> ConversationEventResult | None:
+    if not isinstance(value, dict):
+        return None
+
+    event_id = value.get("event_id")
+    device_id = value.get("device_id")
+    chat_id = value.get("chat_id")
+    telegram_user_id = value.get("telegram_user_id")
+    prompt = value.get("prompt")
+    status = value.get("status")
+    revision = value.get("revision")
+
+    if (
+        not isinstance(event_id, str)
+        or not isinstance(device_id, str)
+        or not isinstance(chat_id, int)
+        or not isinstance(telegram_user_id, int)
+        or not isinstance(prompt, str)
+        or not isinstance(status, str)
+        or not isinstance(revision, int)
+    ):
+        return None
+
+    response_text = value.get("response_text")
+    error_text = value.get("error_text")
+
+    return ConversationEventResult(
+        event_id=event_id,
+        device_id=device_id,
+        chat_id=chat_id,
+        telegram_user_id=telegram_user_id,
+        prompt=prompt,
+        status=status,
+        revision=revision,
+        response_text=response_text if isinstance(response_text, str) else None,
+        error_text=error_text if isinstance(error_text, str) else None,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TaskServerClient:
     server_url: str
@@ -425,6 +477,42 @@ class TaskServerClient:
                 "source_urls": source_urls,
                 "memory_writes": memory_writes,
             },
+        )
+
+    def create_conversation_event(
+        self, *, telegram_user_id: int, chat_id: int, prompt: str
+    ) -> ConversationEventResult | None:
+        parsed = self._post_json(
+            "/api/conversation-events",
+            {
+                "device_id": self.device_id,
+                "chat_id": chat_id,
+                "telegram_user_id": telegram_user_id,
+                "prompt": prompt,
+            },
+        )
+        return parse_conversation_event_item(parsed)
+
+    def fetch_pending_conversation_events(self) -> list[ConversationEventResult]:
+        parsed = self._get_json("/api/conversation-events/outbox")
+
+        if not isinstance(parsed, dict):
+            return []
+
+        items = parsed.get("items")
+        if not isinstance(items, list):
+            return []
+
+        return [
+            item
+            for item in (parse_conversation_event_item(value) for value in items)
+            if item is not None
+        ]
+
+    def ack_conversation_event(self, event_id: str, revision: int) -> None:
+        self._post_json(
+            f"/api/conversation-events/{event_id}/ack",
+            {"revision": revision},
         )
 
     def _fetch_task_history(self, *, chat_id: int | None = None) -> list[TaskSummaryResult]:

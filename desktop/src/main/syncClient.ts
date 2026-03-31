@@ -223,6 +223,35 @@ export type ConversationReplyResponse = {
   source_urls: string[];
 };
 
+export type RemoteConversationEventStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type RemoteConversationEvent = {
+  event_id: string;
+  device_id: string;
+  chat_id: number;
+  telegram_user_id: number;
+  prompt: string;
+  status: RemoteConversationEventStatus;
+  response_text?: string | null;
+  error_text?: string | null;
+  revision: number;
+};
+
+export type ConversationEventListResponse = {
+  items: RemoteConversationEvent[];
+};
+
+export type ConversationEventUpdatePayload = {
+  status: Exclude<RemoteConversationEventStatus, "pending">;
+  response_text?: string | null;
+  error_text?: string | null;
+};
+
 export type AuthEventListResponse = {
   items: AuthInputEvent[];
 };
@@ -590,6 +619,23 @@ export function createSyncClient({
     ackConversationMemoryEvent(eventId: string) {
       return fetchImpl(`${baseUrl}/api/chat-memory/events/${eventId}/ack`, {
         method: "POST"
+      });
+    },
+
+    fetchConversationEvents() {
+      const params = new URLSearchParams(buildQueuePollPayload(deviceId));
+      return fetchImpl(`${baseUrl}/api/conversation-events?${params.toString()}`, {
+        method: "GET"
+      });
+    },
+
+    updateConversationEvent(eventId: string, payload: ConversationEventUpdatePayload) {
+      return fetchImpl(`${baseUrl}/api/conversation-events/${eventId}/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
       });
     },
 
