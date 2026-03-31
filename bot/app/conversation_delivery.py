@@ -87,8 +87,10 @@ async def run_conversation_delivery_poll_loop(
                         await pending.ack_message.delete()
                 pending_store.remove(event.event_id)
 
-            await asyncio.to_thread(
-                client.ack_conversation_event, event.event_id, event.revision
+            await asyncio.shield(
+                asyncio.to_thread(
+                    client.ack_conversation_event, event.event_id, event.revision
+                )
             )
 
         await asyncio.sleep(poll_interval_seconds)
