@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ChatSessionStore } from "./chatSessionStore";
 import { createChatRunStore } from "./chatRunStore";
 import { LocalChatStore } from "./localChatStore";
 import { createLocalConversationRouter } from "./localConversationRouter";
@@ -22,6 +24,183 @@ afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+  it("reuses the same codex session for follow-up messages in one local chat", async () => {
+    const stateRoot = createStateRoot();
+    const chatStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-31T01:00:00.000Z"),
+      generateChatId: () => "local-chat-codex"
+    });
+    chatStore.createDesktopChat({
+      title: "Codex session chat"
+    });
+    const chatSessionStore = new ChatSessionStore({
+      stateRoot
+    });
+    const startConversation = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        result: Promise.resolve({
+          sessionId: "session-local-1",
+          text: "First answer",
+          partialText: "First answer",
+          cancelled: false
+        }),
+        cancel: vi.fn()
+      }))
+      .mockImplementationOnce(() => ({
+        result: Promise.resolve({
+          sessionId: "session-local-1",
+          text: "Second answer",
+          partialText: "Second answer",
+          cancelled: false
+        }),
+        cancel: vi.fn()
+      }));
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      chatSessionStore,
+      conversationRunner: {
+        start: startConversation
+      },
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      deviceId: "stepa-desktop",
+      getWorkspaceRootForChat: () => "D:\\Projects\\assist"
+    });
+
+    await runtime.sendMessage({
+      chatId: "local-chat-codex",
+      text: "Привет"
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await runtime.sendMessage({
+      chatId: "local-chat-codex",
+      text: "А теперь продолжи"
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(startConversation).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        chatId: "local-chat-codex",
+        prompt: "Привет",
+        workspaceRoot: "D:\\Projects\\assist",
+        sessionId: undefined
+      })
+    );
+    expect(startConversation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        chatId: "local-chat-codex",
+        prompt: "А теперь продолжи",
+        workspaceRoot: "D:\\Projects\\assist",
+        sessionId: "session-local-1"
+      })
+    );
+    expect(chatSessionStore.getByLocalChatId("local-chat-codex")).toEqual({
+      chatId: "local-chat-codex",
+      telegramChatId: null,
+      deviceId: "stepa-desktop",
+      codexSessionId: "session-local-1",
+      interrupted: false
+    });
+  });
+
+  it("cancels only the active run of the selected chat", async () => {
+    const stateRoot = createStateRoot();
+    const chatIds = ["chat-a", "chat-b"];
+    const chatStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-03-31T01:05:00.000Z"),
+      generateChatId: () => chatIds.shift() ?? crypto.randomUUID()
+    });
+    const firstChat = chatStore.createDesktopChat({
+      title: "Chat A"
+    });
+    const secondChat = chatStore.createDesktopChat({
+      title: "Chat B"
+    });
+    const chatSessionStore = new ChatSessionStore({
+      stateRoot
+    });
+
+    let resolveFirst!: (value: { sessionId: string; text: string; partialText: string; cancelled: boolean }) => void;
+    let resolveSecond!: (value: { sessionId: string; text: string; partialText: string; cancelled: boolean }) => void;
+    const cancelFirst = vi.fn();
+    const cancelSecond = vi.fn();
+
+    const startConversation = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        result: new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+        cancel: cancelFirst
+      }))
+      .mockImplementationOnce(() => ({
+        result: new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+        cancel: cancelSecond
+      }));
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      chatSessionStore,
+      conversationRunner: {
+        start: startConversation
+      },
+      executeTask: vi.fn(async () => ({
+        ok: true as const,
+        resultText: "unused"
+      })),
+      deviceId: "stepa-desktop",
+      getWorkspaceRootForChat: () => "D:\\Projects\\assist"
+    });
+
+    await runtime.sendMessage({
+      chatId: firstChat.chatId,
+      text: "Первый чат"
+    });
+    await runtime.sendMessage({
+      chatId: secondChat.chatId,
+      text: "Второй чат"
+    });
+
+    expect(runtime.cancelRun(firstChat.chatId)).toBe(true);
+    expect(cancelFirst).toHaveBeenCalledTimes(1);
+    expect(cancelSecond).not.toHaveBeenCalled();
+
+    resolveFirst({
+      sessionId: "session-a",
+      text: "Partial A",
+      partialText: "Partial A",
+      cancelled: true
+    });
+    resolveSecond({
+      sessionId: "session-b",
+      text: "Reply B",
+      partialText: "Reply B",
+      cancelled: false
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtime.getRun(firstChat.chatId)).toBeNull();
+    expect(runtime.getRun(secondChat.chatId)).toBeNull();
+    expect(chatSessionStore.getByLocalChatId(firstChat.chatId)?.interrupted).toBe(true);
+    expect(chatSessionStore.getByLocalChatId(secondChat.chatId)?.interrupted).toBe(false);
+  });
 
 describe("createLocalChatRuntime", () => {
   it("returns immediately with ack and a pending assistant placeholder for conversational replies", async () => {

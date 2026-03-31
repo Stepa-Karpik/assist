@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from contextlib import suppress
 import logging
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
@@ -26,7 +26,11 @@ from app.conversation import (
     process_manual_decision,
     process_manual_task_command,
     process_text_message,
-    should_use_chat_responder,
+)
+from app.conversation_delivery import (
+    PendingConversationReply,
+    PendingConversationReplyStore,
+    run_conversation_delivery_poll_loop,
 )
 from app.delivery import run_delivery_poll_loop
 from app.delivery_client import DeliveryServerClient
@@ -47,8 +51,11 @@ from app.handlers.task import (
     resolve_queue_command,
     resolve_status_command,
 )
-from app.intent_resolver import DeepSeekIntentResolver, RuleBasedIntentResolver
-from app.message_delivery import publish_final_reply
+from app.intent_resolver import (
+    DeepSeekIntentResolver,
+    RuleBasedIntentResolver,
+    message_requires_codex,
+)
 from app.pairing_client import PairingServerClient
 from app.task_client import TaskServerClient
 
@@ -77,18 +84,41 @@ def to_inline_keyboard(reply: BotReply) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-class FixedIntentResolver:
-    def __init__(self, resolution) -> None:
-        self._resolution = resolution
+def should_start_conversation_event(text: str, *, resolution) -> bool:
+    normalized = " ".join(text.strip().split())
+    if not normalized:
+        return False
 
-    def resolve(self, _text: str):
-        return self._resolution
+    normalized_key = (
+        normalized.casefold()
+        .replace("ё", "е")
+        .replace(",", " ")
+        .replace(".", " ")
+    )
+    tokens = [token for token in normalized_key.split() if token]
+    first_token = tokens[0] if tokens else None
+    last_token = tokens[-1] if tokens else None
+
+    if (
+        first_token in {"codex", "кодекс"}
+        or last_token in {"codex", "кодекс"}
+        or "через codex" in normalized_key
+        or message_requires_codex(text)
+    ):
+        return False
+
+    if resolution.kind != "task" or resolution.intent is None:
+        return False
+
+    default_codex_intent = f"codex {normalized}"
+    return resolution.intent == default_codex_intent or resolution.intent.startswith("codex ")
 
 
 def create_dispatcher(
     settings: Settings | None = None,
     pairing_client: PairingServerClient | None = None,
     task_client: TaskServerClient | None = None,
+    pending_conversation_replies: PendingConversationReplyStore | None = None,
 ) -> Dispatcher:
     resolved_settings = settings or get_settings()
     resolved_pairing_client = pairing_client or PairingServerClient(
@@ -119,67 +149,41 @@ def create_dispatcher(
         else None
     )
     conversation_store = BotConversationStore()
+    pending_replies = pending_conversation_replies or PendingConversationReplyStore()
     dispatcher = Dispatcher()
 
-    async def start_chat_reply(*, message: Message, text: str, resolution) -> None:
+    async def start_chat_reply(*, message: Message, text: str) -> None:
         ack = await message.answer("Сейчас посмотрю и отвечу по сути.")
         placeholder = await message.answer("Ассистент отвечает...")
 
-        async def finalize() -> None:
-            try:
-                response = await asyncio.to_thread(
-                    process_text_message,
-                    text,
-                    telegram_user_id=message.from_user.id,
-                    chat_id=message.chat.id,
-                    task_client=resolved_task_client,
-                    store=conversation_store,
-                    resolver=FixedIntentResolver(resolution),
-                    chat_responder=chat_responder,
-                )
-                reply_markup = to_inline_keyboard(response) if response is not None else None
-                reply_text = (
-                    response.text
-                    if response is not None and response.text is not None
-                    else "Не удалось подготовить ответ. Попробуй уточнить запрос."
-                )
+        event = await asyncio.to_thread(
+            resolved_task_client.create_conversation_event,
+            telegram_user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            prompt=text,
+        )
 
-                await publish_final_reply(
-                    message=message,
-                    placeholder=placeholder,
-                    text=reply_text,
-                    reply_markup=reply_markup,
-                    ack=ack,
+        if event is None:
+            logger.error(
+                "Failed to create conversation event for chat_id=%s",
+                message.chat.id,
+            )
+            with suppress(Exception):
+                await placeholder.edit_text(
+                    "Не удалось подготовить ответ. Попробуй уточнить запрос."
                 )
-                with suppress(Exception):
-                    await ack.delete()
-            except Exception:
-                logger.exception("Failed to prepare conversational reply")
-                await publish_final_reply(
-                    message=message,
-                    placeholder=placeholder,
-                    text="РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚. РџРѕРїСЂРѕР±СѓР№ СѓС‚РѕС‡РЅРёС‚СЊ Р·Р°РїСЂРѕСЃ.",
-                    ack=ack,
-                )
-                with suppress(Exception):
-                    await ack.delete()
-                return
-                await publish_final_reply(
-                    message=message,
-                    placeholder=placeholder,
-                    text="РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚. РџРѕРїСЂРѕР±СѓР№ СѓС‚РѕС‡РЅРёС‚СЊ Р·Р°РїСЂРѕСЃ.",
-                )
-                with suppress(Exception):
-                    await ack.delete()
-                return
-                with suppress(Exception):
-                    await placeholder.edit_text(
-                        "Не удалось подготовить ответ. Попробуй уточнить запрос."
-                    )
-                with suppress(Exception):
-                    await ack.delete()
+            with suppress(Exception):
+                await ack.delete()
+            return
 
-        asyncio.create_task(finalize())
+        pending_replies.register(
+            PendingConversationReply(
+                event_id=event.event_id,
+                chat_id=message.chat.id,
+                ack_message=ack,
+                placeholder_message=placeholder,
+            )
+        )
 
     @dispatcher.message(CommandStart())
     async def start_handler(message: Message) -> None:
@@ -246,7 +250,9 @@ def create_dispatcher(
         )
 
         if response is not None:
-            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
+            await message.answer(
+                response.text or "", reply_markup=to_inline_keyboard(response)
+            )
 
     @dispatcher.message(Command("auth"))
     async def auth_handler(message: Message) -> None:
@@ -269,7 +275,9 @@ def create_dispatcher(
         )
 
         if response is not None:
-            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
+            await message.answer(
+                response.text or "", reply_markup=to_inline_keyboard(response)
+            )
 
     @dispatcher.message(Command("confirm"))
     async def confirm_handler(message: Message) -> None:
@@ -286,7 +294,9 @@ def create_dispatcher(
         )
 
         if response is not None:
-            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
+            await message.answer(
+                response.text or "", reply_markup=to_inline_keyboard(response)
+            )
 
     @dispatcher.message(Command("decline"))
     async def decline_handler(message: Message) -> None:
@@ -303,7 +313,9 @@ def create_dispatcher(
         )
 
         if response is not None:
-            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
+            await message.answer(
+                response.text or "", reply_markup=to_inline_keyboard(response)
+            )
 
     @dispatcher.message(Command("status"))
     async def status_handler(message: Message) -> None:
@@ -388,15 +400,11 @@ def create_dispatcher(
             await message.answer(resolve_last_command(task_client=resolved_task_client))
             return
 
-        if chat_responder is not None and conversation_store.get(message.chat.id) is None:
+        if conversation_store.get(message.chat.id) is None:
             resolution = await asyncio.to_thread(resolved_intent_resolver.resolve, text)
 
-            if should_use_chat_responder(
-                text,
-                resolution=resolution,
-                chat_responder=chat_responder,
-            ):
-                await start_chat_reply(message=message, text=text, resolution=resolution)
+            if should_start_conversation_event(text, resolution=resolution):
+                await start_chat_reply(message=message, text=text)
                 return
 
         response = await asyncio.to_thread(
@@ -411,7 +419,9 @@ def create_dispatcher(
         )
 
         if response is not None:
-            await message.answer(response.text or "", reply_markup=to_inline_keyboard(response))
+            await message.answer(
+                response.text or "", reply_markup=to_inline_keyboard(response)
+            )
 
     return dispatcher
 
@@ -423,12 +433,22 @@ async def main() -> None:
         raise RuntimeError("KARPIK_TELEGRAM_TOKEN is not set")
 
     bot = Bot(token=settings.bot_token)
-    dispatcher = create_dispatcher(settings=settings)
+    pending_conversation_replies = PendingConversationReplyStore()
+    dispatcher = create_dispatcher(
+        settings=settings,
+        pending_conversation_replies=pending_conversation_replies,
+    )
     delivery_client = DeliveryServerClient(
         server_url=settings.server_url,
         device_id=settings.device_id,
         wait_seconds=settings.auth_wait_seconds,
     )
+    task_client = TaskServerClient(
+        server_url=settings.server_url,
+        device_id=settings.device_id,
+        wait_seconds=settings.auth_wait_seconds,
+    )
+
     delivery_task = asyncio.create_task(
         run_delivery_poll_loop(
             client=delivery_client,
@@ -452,11 +472,22 @@ async def main() -> None:
             poll_interval_seconds=settings.delivery_poll_seconds,
         )
     )
+    conversation_delivery_task = asyncio.create_task(
+        run_conversation_delivery_poll_loop(
+            client=task_client,
+            pending_store=pending_conversation_replies,
+            send_message=lambda chat_id, text: bot.send_message(chat_id, text),
+            poll_interval_seconds=settings.delivery_poll_seconds,
+        )
+    )
 
     try:
         await dispatcher.start_polling(bot)
     finally:
+        conversation_delivery_task.cancel()
         delivery_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await conversation_delivery_task
         with suppress(asyncio.CancelledError):
             await delivery_task
 

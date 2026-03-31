@@ -20,6 +20,9 @@ import { createDevicePresenceTracker } from "./devicePresenceTracker";
 import { createDeepSeekChatResponder } from "./deepseekChatResponder";
 import { createChatKnowledgeRetriever } from "./chatKnowledgeRetriever";
 import { createChatRunStore } from "./chatRunStore";
+import { ChatSessionStore } from "./chatSessionStore";
+import { createCodexConversationRunner } from "./codexConversationRunner";
+import { createConversationEventRuntime } from "./conversationEventRuntime";
 import { getDataRoot } from "./dataRoot";
 import { DeviceIdentityStore } from "./deviceIdentityStore";
 import { createKnowledgeBackgroundWriter } from "./knowledgeBackgroundWriter";
@@ -76,6 +79,8 @@ let localApprovalStore: LocalApprovalStore | null = null;
 let localChatStore: LocalChatStore | null = null;
 let localChatRuntime: ReturnType<typeof createLocalChatRuntime> | null = null;
 let chatRunStore: ReturnType<typeof createChatRunStore> | null = null;
+let chatSessionStore: ChatSessionStore | null = null;
+let conversationEventRuntime: ReturnType<typeof createConversationEventRuntime> | null = null;
 let knowledgeBackgroundWriter: ReturnType<typeof createKnowledgeBackgroundWriter> | null = null;
 let onboardingStateStore: OnboardingStateStore | null = null;
 let ownerProfileStore: OwnerProfileStore | null = null;
@@ -364,6 +369,7 @@ async function pollTaskState() {
     });
     updateTaskSnapshot(await hydrateTaskSnapshot(nextSnapshot));
     await pollConversationMemoryEvents();
+    await conversationEventRuntime?.syncPendingEvents();
   } finally {
     taskPollInFlight = false;
   }
@@ -913,7 +919,17 @@ function registerIpcHandlers() {
         throw new Error("Local chat store is not initialized");
       }
 
-      return localChatStore.createContinuationChat(payload);
+      const chat = localChatStore.createContinuationChat(payload);
+      const telegramSession = chatSessionStore?.getByTelegramChatId(payload.telegramChatId);
+
+      if (telegramSession !== null && telegramSession !== undefined) {
+        chatSessionStore?.linkLocalChatToTelegramChat({
+          chatId: chat.chatId,
+          telegramChatId: payload.telegramChatId
+        });
+      }
+
+      return chat;
     }
   );
   ipcMain.handle(
@@ -1089,6 +1105,22 @@ async function bootstrap() {
   localChatStore = new LocalChatStore({
     stateRoot: runtimeFolders.state
   });
+  chatSessionStore = new ChatSessionStore({
+    stateRoot: runtimeFolders.state
+  });
+  conversationEventRuntime = createConversationEventRuntime({
+    client: syncClient,
+    conversationRunner: createCodexConversationRunner(),
+    chatSessionStore,
+    deviceId,
+    resolveWorkspaceRoot: (telegramChatId) =>
+      codexSettingsStore?.getWorkspaceForChat(telegramChatId).rootPath ??
+      runtimeFolders.userRoot,
+    recordKnowledgeInteraction: async (input) => {
+      await applyKnowledgeInteraction(input);
+    },
+    logResponseError
+  });
   codexSettingsStore = new CodexSettingsStore({
     settingsRoot: runtimeFolders.settings,
     defaultWorkspaceRoot: runtimeFolders.userRoot
@@ -1135,7 +1167,10 @@ async function bootstrap() {
   localChatRuntime = createLocalChatRuntime({
     chatStore: localChatStore,
     chatRunStore,
+    chatSessionStore,
+    conversationRunner: createCodexConversationRunner(),
     executeTask: (task) => taskExecutor!.execute(task),
+    deviceId,
     replyToConversation: async ({ prompt, historyContext }) => {
       const knowledgeLookup = await chatKnowledgeRetriever.lookup(prompt);
 
