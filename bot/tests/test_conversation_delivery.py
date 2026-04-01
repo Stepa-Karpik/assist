@@ -48,6 +48,21 @@ def test_render_conversation_event_text_prefers_response_text() -> None:
     assert render_conversation_event_text(event) == "Привет. Чем помочь?"
 
 
+def test_render_conversation_event_text_uses_compact_placeholder_for_running_events() -> None:
+    event = ConversationEventResult(
+        event_id="conv-running",
+        device_id="desktop-local",
+        chat_id=5001,
+        telegram_user_id=101,
+        prompt="Привет",
+        status="running",
+        revision=1,
+        response_text=None,
+    )
+
+    assert render_conversation_event_text(event) == "…"
+
+
 def test_conversation_delivery_loop_edits_placeholder_and_acks_revision() -> None:
     event = ConversationEventResult(
         event_id="conv-2",
@@ -67,7 +82,7 @@ def test_conversation_delivery_loop_edits_placeholder_and_acks_revision() -> Non
         PendingConversationReply(
             event_id="conv-2",
             chat_id=5001,
-            ack_message=ack_message,
+            ack_message=None,
             placeholder_message=placeholder_message,
         )
     )
@@ -95,7 +110,47 @@ def test_conversation_delivery_loop_edits_placeholder_and_acks_revision() -> Non
     asyncio.run(run_once())
 
     assert placeholder_message.edits == ["Обычно считают 195 государств."]
-    assert ack_message.deleted is True
+    assert ack_message.deleted is False
     assert sent_messages == []
     assert client.ack_calls == [("conv-2", 1)]
     assert pending_store.get("conv-2") is None
+
+
+def test_conversation_delivery_loop_skips_running_event_without_pending_placeholder() -> None:
+    event = ConversationEventResult(
+        event_id="conv-3",
+        device_id="desktop-local",
+        chat_id=5001,
+        telegram_user_id=101,
+        prompt="Привет",
+        status="running",
+        revision=2,
+        response_text="Частичный ответ",
+    )
+    client = FakeConversationClient(events=[event])
+    pending_store = PendingConversationReplyStore()
+    sent_messages: list[tuple[int, str]] = []
+
+    async def sender(chat_id: int, text: str) -> None:
+        sent_messages.append((chat_id, text))
+
+    async def run_once() -> None:
+        task = asyncio.create_task(
+            run_conversation_delivery_poll_loop(
+                client=client,
+                pending_store=pending_store,
+                send_message=sender,
+                poll_interval_seconds=0.01,
+            )
+        )
+        await asyncio.sleep(0.02)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run_once())
+
+    assert sent_messages == []
+    assert client.ack_calls == [("conv-3", 2)]

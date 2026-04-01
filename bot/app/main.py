@@ -91,7 +91,7 @@ def should_start_conversation_event(text: str, *, resolution) -> bool:
 
     normalized_key = (
         normalized.casefold()
-        .replace("ё", "е")
+        .replace("РЎвЂ", "Р Вµ")
         .replace(",", " ")
         .replace(".", " ")
     )
@@ -100,9 +100,9 @@ def should_start_conversation_event(text: str, *, resolution) -> bool:
     last_token = tokens[-1] if tokens else None
 
     if (
-        first_token in {"codex", "кодекс"}
-        or last_token in {"codex", "кодекс"}
-        or "через codex" in normalized_key
+        first_token in {"codex", "Р С”Р С•Р Т‘Р ВµР С”РЎРѓ"}
+        or last_token in {"codex", "Р С”Р С•Р Т‘Р ВµР С”РЎРѓ"}
+        or "РЎвЂЎР ВµРЎР‚Р ВµР В· codex" in normalized_key
         or message_requires_codex(text)
     ):
         return False
@@ -153,8 +153,7 @@ def create_dispatcher(
     dispatcher = Dispatcher()
 
     async def start_chat_reply(*, message: Message, text: str) -> None:
-        ack = await message.answer("Сейчас посмотрю и отвечу по сути.")
-        placeholder = await message.answer("Ассистент отвечает...")
+        placeholder = await message.answer("…")
 
         event = await asyncio.to_thread(
             resolved_task_client.create_conversation_event,
@@ -170,17 +169,15 @@ def create_dispatcher(
             )
             with suppress(Exception):
                 await placeholder.edit_text(
-                    "Не удалось подготовить ответ. Попробуй уточнить запрос."
+                    "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚. РџРѕРїСЂРѕР±СѓР№ СѓС‚РѕС‡РЅРёС‚СЊ Р·Р°РїСЂРѕСЃ."
                 )
-            with suppress(Exception):
-                await ack.delete()
             return
 
         pending_replies.register(
             PendingConversationReply(
                 event_id=event.event_id,
                 chat_id=message.chat.id,
-                ack_message=ack,
+                ack_message=None,
                 placeholder_message=placeholder,
             )
         )
@@ -235,7 +232,7 @@ def create_dispatcher(
         parsed = parse_task_command(message.text or "")
 
         if parsed is None:
-            await message.answer("Используйте /task <low|medium|high> <intent>.")
+            await message.answer("Р ВРЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р в„–РЎвЂљР Вµ /task <low|medium|high> <intent>.")
             return
 
         risk, intent = parsed
@@ -262,7 +259,7 @@ def create_dispatcher(
         value = parse_auth_command(message.text or "")
 
         if value is None:
-            await message.answer("Используйте /auth <значение>.")
+            await message.answer("Р ВРЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р в„–РЎвЂљР Вµ /auth <Р В·Р Р…Р В°РЎвЂЎР ВµР Р…Р С‘Р Вµ>.")
             return
 
         response = await asyncio.to_thread(
@@ -323,7 +320,7 @@ def create_dispatcher(
             return
 
         if parse_status_command(message.text or "") is None:
-            await message.answer("Используйте /status [task_id].")
+            await message.answer("Р ВРЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р в„–РЎвЂљР Вµ /status [task_id].")
             return
 
         response = await asyncio.to_thread(
@@ -353,7 +350,7 @@ def create_dispatcher(
     @dispatcher.message(Command("kill"))
     async def kill_handler(message: Message) -> None:
         if parse_cancel_command(message.text or "") is None:
-            await message.answer("Используйте /kill <task_id>.")
+            await message.answer("Р ВРЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р в„–РЎвЂљР Вµ /kill <task_id>.")
             return
 
         await message.answer(
@@ -494,3 +491,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+

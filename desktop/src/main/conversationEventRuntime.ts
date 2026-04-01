@@ -38,7 +38,7 @@ type ConversationEventRuntimeOptions = {
   logResponseError?: (action: string, response: Response) => void;
 };
 
-const STREAMING_PLACEHOLDER = "Ассистент отвечает...";
+const STREAMING_PLACEHOLDER = "…";
 const PROGRESS_PUSH_INTERVAL_MS = 250;
 
 function isUpdateTerminal(event: RemoteConversationEvent): boolean {
@@ -126,7 +126,7 @@ export function createConversationEventRuntime({
         const errorText =
           error instanceof Error && error.message.trim().length > 0
             ? error.message
-            : "Не удалось подготовить ответ.";
+            : "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚.";
 
         await pushUpdate(event.event_id, {
           status: "failed",
@@ -159,3 +159,4 @@ export function createConversationEventRuntime({
     }
   };
 }
+

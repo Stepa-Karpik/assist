@@ -44,15 +44,15 @@ def render_conversation_event_text(event: ConversationEventResult) -> str:
         return event.error_text
 
     if event.status == "completed":
-        return "Ответ готов."
+        return "РћС‚РІРµС‚ РіРѕС‚РѕРІ."
 
     if event.status == "failed":
-        return "Не удалось подготовить ответ."
+        return "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РѕС‚РІРµС‚."
 
     if event.status == "cancelled":
         return "Ответ остановлен."
 
-    return "Ассистент отвечает..."
+    return "…"
 
 
 def is_terminal_conversation_event(event: ConversationEventResult) -> bool:
@@ -66,17 +66,26 @@ async def run_conversation_delivery_poll_loop(
     send_message,
     poll_interval_seconds: float,
 ) -> None:
+    acked_revisions: dict[str, int] = {}
+
     while True:
         events = await asyncio.to_thread(client.fetch_pending_conversation_events)
 
         for event in events:
+            last_acked_revision = acked_revisions.get(event.event_id)
+            if last_acked_revision is not None and event.revision <= last_acked_revision:
+                continue
+
             text = render_conversation_event_text(event)
             pending = pending_store.get(event.event_id)
+            should_deliver_without_pending = (
+                pending is None and is_terminal_conversation_event(event)
+            )
 
             try:
                 if pending is not None and pending.placeholder_message is not None:
                     await pending.placeholder_message.edit_text(text)
-                else:
+                elif should_deliver_without_pending:
                     await send_message(event.chat_id, text)
             except Exception:
                 continue
@@ -92,5 +101,6 @@ async def run_conversation_delivery_poll_loop(
                     client.ack_conversation_event, event.event_id, event.revision
                 )
             )
+            acked_revisions[event.event_id] = event.revision
 
         await asyncio.sleep(poll_interval_seconds)
