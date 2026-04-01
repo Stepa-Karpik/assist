@@ -39,6 +39,22 @@ describe("createChatPlanner", () => {
     ]);
   });
 
+  it("keeps ordinary personal messages about projects in conversation mode", () => {
+    const planner = createChatPlanner();
+
+    const plan = planner.plan(
+      "Занимаюсь учебой, учусь в ДГТУ на кафедре Кибербезопасность, параллельно делаю свои проекты."
+    );
+
+    expect(plan.mode).toBe("conversation");
+    expect(plan.actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "visible_reply" })])
+    );
+    expect(plan.actions).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "device_task" })])
+    );
+  });
+
   it("keeps article discussion about codex in conversational mode", () => {
     const planner = createChatPlanner();
 

@@ -1,6 +1,6 @@
 import { extractChatMemoryWrites } from "./chatMemoryExtractor";
 import type { ChatPlan } from "./chatPlan";
-import { messageExplicitlyRequestsCodex, messageRequiresCodex, normalizeLocalIntent } from "./localIntentResolver";
+import { createChatCommandInterceptor } from "./chatCommandInterceptor";
 
 const technicalTopics: Array<{ pattern: RegExp; query: string }> = [
   { pattern: /\bfastapi\b/i, query: "FastAPI" },
@@ -46,21 +46,20 @@ function normalizePlannedTaskIntent(text: string, normalizedIntent: string): str
 }
 
 export function createChatPlanner() {
+  const commandInterceptor = createChatCommandInterceptor();
+
   return {
     plan(text: string): ChatPlan {
       const normalizedText = text.trim();
-      const normalizedIntent = normalizeLocalIntent(normalizedText);
-      const isExplicitCodex = messageExplicitlyRequestsCodex(normalizedText);
-      const requiresCodex = messageRequiresCodex(normalizedText);
-      const fallsBackToCodex = normalizedIntent === `codex ${normalizedText}`;
+      const interception = commandInterceptor.intercept(normalizedText);
 
-      if (isExplicitCodex || requiresCodex || !fallsBackToCodex) {
+      if (interception.kind === "tool_action") {
         return {
           mode: "task",
           actions: [
             {
               kind: "device_task",
-              intent: normalizePlannedTaskIntent(normalizedText, normalizedIntent)
+              intent: normalizePlannedTaskIntent(normalizedText, interception.intent)
             }
           ]
         };
