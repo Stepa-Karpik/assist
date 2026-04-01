@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+
 import type { ChatKnowledgeWrite } from "./chatPlan";
 
 export type KnowledgeWriteInstruction = {
@@ -42,8 +43,10 @@ type TopicResolution = {
 };
 
 const knowledgeIntentPattern =
-  /\b(документац|запомни|сохрани|добавь|объясни|обьясни|расскажи|разбери|как работает|что такое|guide|docs?)\b/i;
-const greetingPattern = /^(привет|hello|hi|здравствуй|добрый день)\b/i;
+  /\b(документац|запомни|сохрани|добавь|объясни|расскажи|разбери|как работает|что такое|guide|docs?)\b/iu;
+const greetingPattern = /^(привет|hello|hi|здравствуй|добрый день)\b/iu;
+const selfDescriptionPattern =
+  /\b(учусь|занимаюсь|предпочитаю|играю|хочу стать|ценю|мне нравится|люблю|у меня)\b/iu;
 
 const stopTopicWords = new Set([
   "то",
@@ -93,7 +96,7 @@ function toTitleCase(value: string): string {
 }
 
 function extractFallbackTopic(prompt: string): string {
-  const tokens = prompt.match(/[A-Za-zА-Яа-я0-9+!._-]+/g) ?? [];
+  const tokens = prompt.match(/[A-Za-zА-Яа-яЁё0-9+!._-]+/g) ?? [];
 
   for (const token of tokens) {
     const normalizedToken = token.toLowerCase();
@@ -175,7 +178,7 @@ function resolveTopic(prompt: string): TopicResolution {
   }
 
   const topicMatch = prompt.match(
-    /(?:документац(?:ию|ия)\s+по|добавь\s+документац(?:ию|ия)\s+по|объясни|обьясни|расскажи|разбери|про|по|о)\s+([A-Za-zА-Яа-я0-9+!._-]+)/i
+    /(?:документац(?:ию|ия)\s+по|добавь\s+документац(?:ию|ия)\s+по|объясни|расскажи|разбери|про|по|о)\s+([A-Za-zА-Яа-яЁё0-9+!._-]+)/iu
   );
   const matchedTopic = topicMatch?.[1];
   const rawTopic =
@@ -194,7 +197,7 @@ function buildKnowledgeSectionTitle(prompt: string, sourceUrls: string[]): strin
     return "Полезные материалы";
   }
 
-  if (/документац/i.test(prompt)) {
+  if (/документац/iu.test(prompt)) {
     return "Практическая выжимка";
   }
 
@@ -213,9 +216,19 @@ function isKnowledgeWorthWriting(prompt: string, answer: string, sourceUrls: str
   return knowledgeIntentPattern.test(prompt) || sourceUrls.length > 0;
 }
 
+function isRichSelfDescription(prompt: string, memoryWrites: ChatKnowledgeWrite[]): boolean {
+  if (memoryWrites.length >= 3 && selfDescriptionPattern.test(prompt)) {
+    return true;
+  }
+
+  return /(учусь|занимаюсь|предпочитаю|играю|хочу стать|ценю|мне нравится|люблю|у меня)/iu.test(
+    prompt
+  );
+}
+
 function buildSkillDraft(prompt: string, answer: string): KnowledgeSkillApprovalDraft {
   const skillName = normalizeTopicPhrase(
-    prompt.replace(/^(научись|освой|запомни)\s+/i, "").trim() || "Новый навык"
+    prompt.replace(/^(научись|освой|запомни)\s+/iu, "").trim() || "Новый навык"
   );
   const title = `Навык ${skillName}`;
   const targetPath = `assist/skills/${title}.md`;
@@ -231,6 +244,15 @@ function buildSkillDraft(prompt: string, answer: string): KnowledgeSkillApproval
     changedFiles: [targetPath],
     targetPath,
     content
+  };
+}
+
+function buildSelfDescriptionSummary(answer: string): KnowledgeWriteInstruction {
+  return {
+    topicTrail: ["Память владельца", "Самоописание"],
+    preferredLeaf: "Самоописание",
+    sectionTitle: "Подтверждённые выводы",
+    body: answer
   };
 }
 
@@ -257,6 +279,14 @@ export function decideKnowledgeWrites({
       userWrites: [],
       assistWrites: [],
       skillApprovalDrafts: [buildSkillDraft(normalizedPrompt, normalizedAnswer)]
+    };
+  }
+
+  if (isRichSelfDescription(normalizedPrompt, memoryWrites)) {
+    return {
+      userWrites: [],
+      assistWrites: [buildSelfDescriptionSummary(normalizedAnswer)],
+      skillApprovalDrafts: []
     };
   }
 

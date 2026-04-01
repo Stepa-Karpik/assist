@@ -90,4 +90,18 @@ describe("decideKnowledgeWrites", () => {
       "https://fastapi.tiangolo.com/release-notes/"
     );
   });
+
+  it("treats rich self-description as memory-worthy even without documentation urls", () => {
+    const plan = decideKnowledgeWrites({
+      origin: "local-chat",
+      prompt:
+        "Занимаюсь учебой, учусь в ДГТУ на кафедре Кибербезопасность на втором курсе, параллельно делаю свои проекты. Предпочитаю быть в тишине. Играю в osu. Хочу стать фрилансером. Ценю честность.",
+      answer:
+        "Профиль выглядит спокойным, технически ориентированным и нацеленным на автономную работу."
+    });
+
+    expect(plan.assistWrites.length).toBeGreaterThan(0);
+    expect(plan.userWrites).toHaveLength(0);
+    expect(plan.skillApprovalDrafts).toHaveLength(0);
+  });
 });

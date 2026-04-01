@@ -30,9 +30,142 @@ type StandaloneSourceRecord = {
   sourceTitle?: string;
 };
 
-const PROFILE_NOTE_PATH = ["assist", "profile", "Профиль владельца.md"] as const;
-const PREFERENCES_NOTE_PATH = ["assist", "preferences", "Предпочтения общения.md"] as const;
-const OBSERVATIONS_NOTE_PATH = ["assist", "observations", "Временные наблюдения.md"] as const;
+type StructuredNoteConfig = {
+  parts: readonly string[];
+  title: string;
+  sectionTitle: string;
+  label: string;
+};
+
+type StructuredGroup = {
+  notePath: string;
+  title: string;
+  sectionTitle: string;
+  entries: string[];
+};
+
+const STRUCTURED_NOTE_MAP: Record<string, StructuredNoteConfig> = {
+  full_name: {
+    parts: ["assist", "profile", "Личность.md"],
+    title: "Личность",
+    sectionTitle: "Подтверждённые факты",
+    label: "ФИО"
+  },
+  occupation: {
+    parts: ["assist", "profile", "Деятельность.md"],
+    title: "Деятельность",
+    sectionTitle: "Подтверждённые факты",
+    label: "Роль"
+  },
+  current_activity: {
+    parts: ["assist", "profile", "Деятельность.md"],
+    title: "Деятельность",
+    sectionTitle: "Подтверждённые факты",
+    label: "Текущая деятельность"
+  },
+  personal_project: {
+    parts: ["assist", "profile", "Деятельность.md"],
+    title: "Деятельность",
+    sectionTitle: "Подтверждённые факты",
+    label: "Личный проект"
+  },
+  education_university: {
+    parts: ["assist", "profile", "Образование.md"],
+    title: "Образование",
+    sectionTitle: "Подтверждённые факты",
+    label: "Вуз"
+  },
+  education_department: {
+    parts: ["assist", "profile", "Образование.md"],
+    title: "Образование",
+    sectionTitle: "Подтверждённые факты",
+    label: "Кафедра"
+  },
+  education_course: {
+    parts: ["assist", "profile", "Образование.md"],
+    title: "Образование",
+    sectionTitle: "Подтверждённые факты",
+    label: "Курс"
+  },
+  gpu: {
+    parts: ["assist", "profile", "Устройства и железо.md"],
+    title: "Устройства и железо",
+    sectionTitle: "Подтверждённые факты",
+    label: "Видеокарта"
+  },
+  cpu: {
+    parts: ["assist", "profile", "Устройства и железо.md"],
+    title: "Устройства и железо",
+    sectionTitle: "Подтверждённые факты",
+    label: "Процессор"
+  },
+  ram: {
+    parts: ["assist", "profile", "Устройства и железо.md"],
+    title: "Устройства и железо",
+    sectionTitle: "Подтверждённые факты",
+    label: "Оперативная память"
+  },
+  storage: {
+    parts: ["assist", "profile", "Устройства и железо.md"],
+    title: "Устройства и железо",
+    sectionTitle: "Подтверждённые факты",
+    label: "Накопитель"
+  },
+  preferred_stack: {
+    parts: ["assist", "preferences", "Стек и технологии.md"],
+    title: "Стек и технологии",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Предпочитаемый стек"
+  },
+  interests: {
+    parts: ["assist", "preferences", "Досуг и интересы.md"],
+    title: "Досуг и интересы",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Интерес"
+  },
+  hobbies: {
+    parts: ["assist", "preferences", "Досуг и интересы.md"],
+    title: "Досуг и интересы",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Хобби"
+  },
+  preferred_environment: {
+    parts: ["assist", "preferences", "Условия работы.md"],
+    title: "Условия работы",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Предпочитаемая среда"
+  },
+  career_preference: {
+    parts: ["assist", "preferences", "Карьерные ориентиры.md"],
+    title: "Карьерные ориентиры",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Карьерный ориентир"
+  },
+  core_values: {
+    parts: ["assist", "preferences", "Ценности и принципы.md"],
+    title: "Ценности и принципы",
+    sectionTitle: "Подтверждённые предпочтения",
+    label: "Ключевая ценность"
+  },
+  communication_style: {
+    parts: ["assist", "observations", "Поведенческие наблюдения.md"],
+    title: "Поведенческие наблюдения",
+    sectionTitle: "Наблюдения",
+    label: "Стиль коммуникации"
+  },
+  life_period: {
+    parts: ["assist", "observations", "Поведенческие наблюдения.md"],
+    title: "Поведенческие наблюдения",
+    sectionTitle: "Наблюдения",
+    label: "Период жизни"
+  },
+  recent_emotional_signal: {
+    parts: ["assist", "observations", "Эмоциональные сигналы.md"],
+    title: "Эмоциональные сигналы",
+    sectionTitle: "Наблюдения",
+    label: "Эмоциональный сигнал"
+  }
+};
 
 function toAbsolutePath(vaultRoot: string, parts: readonly string[]): string {
   return path.join(vaultRoot, ...parts);
@@ -43,9 +176,9 @@ async function upsertSectionEntries(
   title: string,
   sectionTitle: string,
   entries: string[]
-): Promise<boolean> {
+): Promise<number> {
   if (entries.length === 0) {
-    return false;
+    return 0;
   }
 
   await fs.mkdir(path.dirname(notePath), { recursive: true });
@@ -63,23 +196,21 @@ async function upsertSectionEntries(
   }
 
   const normalizedEntries = entries.filter((entry) => entry.trim().length > 0);
-  let changed = false;
 
   if (content.trim().length === 0) {
     content = `${heading}\n\n${sectionHeading}\n\n${normalizedEntries.join("\n")}\n`;
     await fs.writeFile(notePath, content, "utf8");
-    return true;
+    return normalizedEntries.length;
   }
+
+  let changed = 0;
 
   if (!content.includes(heading)) {
     content = `${heading}\n\n${content.trim()}\n`;
-    changed = true;
   }
 
   if (!content.includes(sectionHeading)) {
-    content = `${content.trimEnd()}\n\n${sectionHeading}\n\n${normalizedEntries.join("\n")}\n`;
-    await fs.writeFile(notePath, content, "utf8");
-    return true;
+    content = `${content.trimEnd()}\n\n${sectionHeading}\n\n`;
   }
 
   for (const entry of normalizedEntries) {
@@ -88,77 +219,62 @@ async function upsertSectionEntries(
     }
 
     content = `${content.trimEnd()}\n${entry}\n`;
-    changed = true;
+    changed += 1;
   }
 
-  if (changed) {
+  if (changed > 0) {
     await fs.writeFile(notePath, content, "utf8");
   }
 
   return changed;
 }
 
+function buildStructuredGroups(
+  vaultRoot: string,
+  memoryWrites: ChatKnowledgeWrite[]
+): StructuredGroup[] {
+  const groups = new Map<string, StructuredGroup>();
+
+  for (const write of memoryWrites) {
+    const config = STRUCTURED_NOTE_MAP[write.key];
+    if (!config) {
+      continue;
+    }
+
+    const notePath = toAbsolutePath(vaultRoot, config.parts);
+    const entry = `- **${config.label}:** ${write.value}`;
+    const existing = groups.get(notePath);
+
+    if (existing) {
+      existing.entries.push(entry);
+      continue;
+    }
+
+    groups.set(notePath, {
+      notePath,
+      title: config.title,
+      sectionTitle: config.sectionTitle,
+      entries: [entry]
+    });
+  }
+
+  return [...groups.values()];
+}
+
 async function applyStructuredMemoryWrites(
   vaultRoot: string,
   memoryWrites: ChatKnowledgeWrite[]
 ): Promise<number> {
-  const profileEntries: string[] = [];
-  const preferenceEntries: string[] = [];
-  const observationEntries: string[] = [];
-
-  for (const write of memoryWrites) {
-    if (write.target === "assist/profile") {
-      if (write.key === "full_name") {
-        profileEntries.push(`- **ФИО:** ${write.value}`);
-      } else if (write.key === "occupation") {
-        profileEntries.push(`- **Роль:** ${write.value}`);
-      } else {
-        profileEntries.push(`- **${write.key}:** ${write.value}`);
-      }
-    } else if (write.target === "assist/preferences") {
-      if (write.key === "preferred_stack") {
-        preferenceEntries.push(`- **Предпочитаемый стек:** ${write.value}`);
-      } else {
-        preferenceEntries.push(`- **${write.key}:** ${write.value}`);
-      }
-    } else if (write.target === "assist/observations") {
-      observationEntries.push(`- **${write.key}:** ${write.value}`);
-    }
-  }
-
+  const groups = buildStructuredGroups(vaultRoot, memoryWrites);
   let appliedCount = 0;
 
-  if (
-    await upsertSectionEntries(
-      toAbsolutePath(vaultRoot, PROFILE_NOTE_PATH),
-      "Профиль владельца",
-      "Подтверждённые факты",
-      profileEntries
-    )
-  ) {
-    appliedCount += profileEntries.length;
-  }
-
-  if (
-    await upsertSectionEntries(
-      toAbsolutePath(vaultRoot, PREFERENCES_NOTE_PATH),
-      "Предпочтения общения",
-      "Подтверждённые предпочтения",
-      preferenceEntries
-    )
-  ) {
-    appliedCount += preferenceEntries.length;
-  }
-
-  if (
-    await upsertSectionEntries(
-      toAbsolutePath(vaultRoot, OBSERVATIONS_NOTE_PATH),
-      "Временные наблюдения",
-      "Пока неподтверждённые выводы",
-      observationEntries
-    )
-  ) {
-    appliedCount += observationEntries.length;
+  for (const group of groups) {
+    appliedCount += await upsertSectionEntries(
+      group.notePath,
+      group.title,
+      group.sectionTitle,
+      group.entries
+    );
   }
 
   return appliedCount;

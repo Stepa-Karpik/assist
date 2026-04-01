@@ -164,11 +164,17 @@ describe("createKnowledgeBackgroundWriter", () => {
       assistWriteCount: 3
     });
     expect(
-      fs.readFileSync(path.join(vaultRoot, "assist", "profile", "Профиль владельца.md"), "utf8")
+      fs.readFileSync(path.join(vaultRoot, "assist", "profile", "Личность.md"), "utf8")
     ).toContain("Карпов Степан Викторович");
     expect(
       fs.readFileSync(
-        path.join(vaultRoot, "assist", "preferences", "Предпочтения общения.md"),
+        path.join(vaultRoot, "assist", "profile", "Деятельность.md"),
+        "utf8"
+      )
+    ).toContain("- **Роль:** программист");
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "preferences", "Стек и технологии.md"),
         "utf8"
       )
     ).toContain("Python, FastAPI");
@@ -202,9 +208,88 @@ describe("createKnowledgeBackgroundWriter", () => {
     });
     expect(
       fs.readFileSync(
-        path.join(vaultRoot, "assist", "observations", "Временные наблюдения.md"),
+        path.join(vaultRoot, "assist", "observations", "Поведенческие наблюдения.md"),
         "utf8"
       )
-    ).toContain("communication_style");
+    ).toContain("Стиль коммуникации");
+  });
+
+  it("stores rich self-description in Russian structured notes", async () => {
+    const root = createRoot();
+    const vaultRoot = path.join(root, "vault");
+    const writer = createKnowledgeBackgroundWriter({
+      getVaultRoot: () => vaultRoot
+    });
+
+    const result = await writer.recordInteraction({
+      origin: "local-chat",
+      prompt:
+        "Занимаюсь учебой, учусь в ДГТУ на кафедре Кибербезопасность на втором курсе, параллельно делаю свои проекты. Предпочитаю быть в тишине. Играю в osu. Хочу стать фрилансером. Ценю честность. Сейчас у меня спокойный период жизни.",
+      answer:
+        "Вижу спокойный и технически ориентированный профиль: учеба, свои проекты, тишина, ценность честности и ориентир на автономную работу.",
+      memoryWrites: [
+        {
+          target: "assist/profile",
+          key: "education_university",
+          value: "ДГТУ"
+        },
+        {
+          target: "assist/profile",
+          key: "education_department",
+          value: "Кибербезопасность"
+        },
+        {
+          target: "assist/profile",
+          key: "education_course",
+          value: "2 курс"
+        },
+        {
+          target: "assist/preferences",
+          key: "hobbies",
+          value: "osu"
+        },
+        {
+          target: "assist/preferences",
+          key: "career_preference",
+          value: "Фриланс и автономная работа"
+        },
+        {
+          target: "assist/preferences",
+          key: "core_values",
+          value: "Честность"
+        },
+        {
+          target: "assist/observations",
+          key: "life_period",
+          value: "Спокойный период"
+        }
+      ]
+    });
+
+    expect(result.applied).toBe(true);
+    expect(
+      fs.readFileSync(path.join(vaultRoot, "assist", "profile", "Образование.md"), "utf8")
+    ).toContain("- **Вуз:** ДГТУ");
+    expect(
+      fs.readFileSync(path.join(vaultRoot, "assist", "profile", "Образование.md"), "utf8")
+    ).toContain("- **Кафедра:** Кибербезопасность");
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "preferences", "Досуг и интересы.md"),
+        "utf8"
+      )
+    ).toContain("- **Хобби:** osu");
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "preferences", "Карьерные ориентиры.md"),
+        "utf8"
+      )
+    ).toContain("- **Карьерный ориентир:** Фриланс и автономная работа");
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "observations", "Поведенческие наблюдения.md"),
+        "utf8"
+      )
+    ).toContain("- **Период жизни:** Спокойный период");
   });
 });

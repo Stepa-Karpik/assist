@@ -19,14 +19,14 @@ function extractUrls(text: string): string[] {
 
 function extractFullName(text: string): string | null {
   const match = text.match(
-    /меня\s+зовут\s+([А-ЯЁA-Z][а-яёa-z-]+(?:\s+[А-ЯЁA-Z][а-яёa-z-]+){1,2})/i
+    /меня\s+зовут\s+([А-ЯЁA-Z][а-яёa-z-]+(?:\s+[А-ЯЁA-Z][а-яёa-z-]+){1,2})/iu
   );
   return match ? normalizeWhitespace(match[1]) : null;
 }
 
 function extractOccupation(text: string): string | null {
   const match = text.match(
-    /(?:^|[\s,.:;!?()])(?:я\s+)?(программист|разработчик|python[-\s]?разработчик|backend[-\s]?разработчик|frontend[-\s]?разработчик)(?=$|[\s,.:;!?()])/i
+    /(?:^|[\s,.:;!?()])(?:я\s+)?(программист|разработчик|python[-\s]?разработчик|backend[-\s]?разработчик|frontend[-\s]?разработчик)(?=$|[\s,.:;!?()])/iu
   );
 
   return match ? normalizeWhitespace(match[1].toLowerCase()) : null;
@@ -55,10 +55,7 @@ function extractStack(text: string): string | null {
 }
 
 function extractInterest(text: string): string | null {
-  if (
-    /(нравится|люблю)\s+(?:изучать\s+)?нейросети/i.test(text) ||
-    /\bнейросет/i.test(text)
-  ) {
+  if (/(нравится|люблю)\s+(?:изучать\s+)?нейросети/iu.test(text) || /нейросет/iu.test(text)) {
     return "Нейросети";
   }
 
@@ -66,8 +63,88 @@ function extractInterest(text: string): string | null {
 }
 
 function extractQuietPreference(text: string): string | null {
-  if (/(предпочитаю|люблю).{0,20}(тишин|в тишине)/i.test(text)) {
+  if (/(предпочитаю|люблю).{0,24}(тишин|в тишине)/iu.test(text)) {
     return "Тишина";
+  }
+
+  return null;
+}
+
+function extractUniversity(text: string): string | null {
+  const match = text.match(/учусь\s+в\s+([А-ЯЁA-Z]{2,}(?:-[А-ЯЁA-Z]{2,})?)/u);
+  return match ? normalizeWhitespace(match[1]) : null;
+}
+
+function extractDepartment(text: string): string | null {
+  const match = text.match(
+    /кафедр[аеи]\s+([А-ЯЁA-Z][^,.]+?)(?=\s+на\s+(?:\d+|первом|втором|третьем|четвертом|пятом|шестом)\s+курсе|,|\.|;|$)/u
+  );
+  return match ? normalizeWhitespace(match[1]) : null;
+}
+
+function extractCourse(text: string): string | null {
+  const digitMatch = text.match(/на\s+(\d+)\s+курсе/iu);
+  if (digitMatch) {
+    return `${digitMatch[1]} курс`;
+  }
+
+  const courseMap: Record<string, string> = {
+    первом: "1 курс",
+    втором: "2 курс",
+    третьем: "3 курс",
+    четвертом: "4 курс",
+    пятом: "5 курс",
+    шестом: "6 курс"
+  };
+  const wordMatch = text.match(/на\s+(первом|втором|третьем|четвертом|пятом|шестом)\s+курсе/iu);
+  return wordMatch ? courseMap[wordMatch[1].toLowerCase()] ?? null : null;
+}
+
+function extractCurrentActivity(text: string): string | null {
+  const parts: string[] = [];
+
+  if (/занимаюсь\s+учеб/iu.test(text) || /учусь\b/iu.test(text)) {
+    parts.push("Учёба");
+  }
+
+  if (/личн(ыми|ые)\s+проект/iu.test(text) || /свои\s+проект/iu.test(text)) {
+    parts.push("Личные проекты");
+  }
+
+  return parts.length > 0 ? parts.join(" и ") : null;
+}
+
+function extractPersonalProject(text: string): string | null {
+  if (/ии\s+ассистент[а-яё\s]+пк/iu.test(text) || /ассистент[а-яё\s]+телефон/iu.test(text)) {
+    return "ИИ-ассистент для ПК и телефона";
+  }
+
+  return null;
+}
+
+function extractHobby(text: string): string | null {
+  if (/\bosu!?/i.test(text)) {
+    return "osu";
+  }
+
+  return null;
+}
+
+function extractCareerPreference(text: string): string | null {
+  if (/(хочу|ближе|думаю).{0,40}фриланс|фрилансер/iu.test(text)) {
+    return "Фриланс и автономная работа";
+  }
+
+  if (/(крупн(ой|ую)\s+компан|сбербанк)/iu.test(text)) {
+    return "Работа в крупной компании";
+  }
+
+  return null;
+}
+
+function extractCoreValue(text: string): string | null {
+  if (/ценю\s+честност/iu.test(text)) {
+    return "Честность";
   }
 
   return null;
@@ -81,7 +158,7 @@ function extractGpu(text: string): string | null {
 }
 
 function extractCpu(text: string): string | null {
-  const labeledMatch = text.match(/(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/i);
+  const labeledMatch = text.match(/(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/iu);
   if (labeledMatch) {
     return normalizeWhitespace(labeledMatch[1]);
   }
@@ -98,32 +175,32 @@ function normalizeCapacity(value: string, unit: string): string {
 
 function extractRam(text: string): string | null {
   const match = text.match(
-    /(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)/i
+    /(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)/iu
   );
   return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
 }
 
 function extractStorage(text: string): string | null {
   const match = text.match(
-    /(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)/i
+    /(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)/iu
   );
   return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
 }
 
-function extractObservation(text: string): MemoryCandidate[] {
+function extractObservationCandidates(text: string): MemoryCandidate[] {
   const observations: MemoryCandidate[] = [];
 
-  if (/(грустн|тяжело|тревожн|уста(л|ю|ет|ем))/i.test(text)) {
+  if (/(грустн|тяжело|тревожн|уста(л|ю|ет|ем))/iu.test(text)) {
     observations.push({
       kind: "observation",
       target: "assist/observations",
       key: "recent_emotional_signal",
-      value: "Пользователь описывает устойчиво негативное или уставшее состояние.",
+      value: "Пользователь описывает устойчивое негативное или уставшее состояние.",
       confidence: "inferred"
     });
   }
 
-  if (/(ошибк|опечатк)/i.test(text) && /(пишу|пишет|грамот)/i.test(text)) {
+  if (/(ошибк|опечатк)/iu.test(text) && /(пишу|пишет|грамот)/iu.test(text)) {
     observations.push({
       kind: "observation",
       target: "assist/observations",
@@ -133,113 +210,64 @@ function extractObservation(text: string): MemoryCandidate[] {
     });
   }
 
+  if (/(спокойн(ый|ая|ое)|спокойный период)/iu.test(text)) {
+    observations.push({
+      kind: "observation",
+      target: "assist/observations",
+      key: "life_period",
+      value: "Спокойный период",
+      confidence: "direct"
+    });
+  }
+
   return observations;
+}
+
+function pushFact(
+  candidates: MemoryCandidate[],
+  key: string,
+  value: string | null,
+  target: "assist/profile" | "assist/preferences" | "assist/observations",
+  kind: MemoryCandidate["kind"] = target === "assist/profile" ? "fact" : "preference"
+) {
+  if (!value) {
+    return;
+  }
+
+  candidates.push({
+    kind,
+    target,
+    key,
+    value,
+    confidence: "direct"
+  });
 }
 
 export function extractChatMemoryCandidates(text: string): MemoryCandidate[] {
   const candidates: MemoryCandidate[] = [];
   const normalized = normalizeWhitespace(text);
 
-  const fullName = extractFullName(normalized);
-  if (fullName) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "full_name",
-      value: fullName,
-      confidence: "direct"
-    });
-  }
+  pushFact(candidates, "full_name", extractFullName(normalized), "assist/profile");
+  pushFact(candidates, "occupation", extractOccupation(normalized), "assist/profile");
+  pushFact(candidates, "education_university", extractUniversity(normalized), "assist/profile");
+  pushFact(candidates, "education_department", extractDepartment(normalized), "assist/profile");
+  pushFact(candidates, "education_course", extractCourse(normalized), "assist/profile");
+  pushFact(candidates, "current_activity", extractCurrentActivity(normalized), "assist/profile");
+  pushFact(candidates, "personal_project", extractPersonalProject(normalized), "assist/profile");
 
-  const occupation = extractOccupation(normalized);
-  if (occupation) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "occupation",
-      value: occupation,
-      confidence: "direct"
-    });
-  }
+  pushFact(candidates, "preferred_stack", extractStack(normalized), "assist/preferences");
+  pushFact(candidates, "interests", extractInterest(normalized), "assist/preferences");
+  pushFact(candidates, "preferred_environment", extractQuietPreference(normalized), "assist/preferences");
+  pushFact(candidates, "hobbies", extractHobby(normalized), "assist/preferences");
+  pushFact(candidates, "career_preference", extractCareerPreference(normalized), "assist/preferences");
+  pushFact(candidates, "core_values", extractCoreValue(normalized), "assist/preferences");
 
-  const preferredStack = extractStack(normalized);
-  if (preferredStack) {
-    candidates.push({
-      kind: "preference",
-      target: "assist/preferences",
-      key: "preferred_stack",
-      value: preferredStack,
-      confidence: "direct"
-    });
-  }
+  pushFact(candidates, "gpu", extractGpu(normalized), "assist/profile");
+  pushFact(candidates, "cpu", extractCpu(normalized), "assist/profile");
+  pushFact(candidates, "ram", extractRam(normalized), "assist/profile");
+  pushFact(candidates, "storage", extractStorage(normalized), "assist/profile");
 
-  const interest = extractInterest(normalized);
-  if (interest) {
-    candidates.push({
-      kind: "preference",
-      target: "assist/preferences",
-      key: "interests",
-      value: interest,
-      confidence: "direct"
-    });
-  }
-
-  const quietPreference = extractQuietPreference(normalized);
-  if (quietPreference) {
-    candidates.push({
-      kind: "preference",
-      target: "assist/preferences",
-      key: "preferred_environment",
-      value: quietPreference,
-      confidence: "direct"
-    });
-  }
-
-  const gpu = extractGpu(normalized);
-  if (gpu) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "gpu",
-      value: gpu,
-      confidence: "direct"
-    });
-  }
-
-  const cpu = extractCpu(normalized);
-  if (cpu) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "cpu",
-      value: cpu,
-      confidence: "direct"
-    });
-  }
-
-  const ram = extractRam(normalized);
-  if (ram) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "ram",
-      value: ram,
-      confidence: "direct"
-    });
-  }
-
-  const storage = extractStorage(normalized);
-  if (storage) {
-    candidates.push({
-      kind: "fact",
-      target: "assist/profile",
-      key: "storage",
-      value: storage,
-      confidence: "direct"
-    });
-  }
-
-  candidates.push(...extractObservation(normalized));
+  candidates.push(...extractObservationCandidates(normalized));
 
   for (const sourceUrl of extractUrls(normalized)) {
     try {

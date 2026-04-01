@@ -104,4 +104,50 @@ describe("extractChatMemoryWrites", () => {
       ])
     );
   });
+
+  it("extracts rich self-description for education, hobbies, goals, values, and calm-period observations", () => {
+    const writes = extractChatMemoryWrites(
+      "Занимаюсь учебой, учусь в ДГТУ на кафедре Кибербезопасность на втором курсе, параллельно делаю свои проекты. Предпочитаю быть в тишине. Играю в osu. Хочу стать фрилансером. Ценю честность. Сейчас у меня спокойный период жизни."
+    );
+
+    expect(writes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "education_university",
+          value: "ДГТУ"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "education_department",
+          value: "Кибербезопасность"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "education_course",
+          value: "2 курс"
+        }),
+        expect.objectContaining({
+          target: "assist/preferences",
+          key: "hobbies",
+          value: "osu"
+        }),
+        expect.objectContaining({
+          target: "assist/preferences",
+          key: "career_preference",
+          value: "Фриланс и автономная работа"
+        }),
+        expect.objectContaining({
+          target: "assist/preferences",
+          key: "core_values",
+          value: "Честность"
+        }),
+        expect.objectContaining({
+          target: "assist/observations",
+          key: "life_period",
+          value: "Спокойный период"
+        })
+      ])
+    );
+  });
 });
