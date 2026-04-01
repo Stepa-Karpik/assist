@@ -203,6 +203,106 @@ afterEach(() => {
   });
 
 describe("createLocalChatRuntime", () => {
+  it("returns a clarification reply without starting Codex for ambiguous file-send requests", async () => {
+    const chatStore = new LocalChatStore({
+      stateRoot: createStateRoot(),
+      now: () => new Date("2026-04-01T17:00:00.000Z"),
+      generateChatId: () => "local-chat-clarify"
+    });
+    chatStore.createDesktopChat({
+      title: "Clarify chat"
+    });
+
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      resultText: "unused"
+    }));
+    const startConversation = vi.fn(() => ({
+      result: Promise.resolve({
+        sessionId: "session-clarify",
+        text: "unused",
+        partialText: "unused",
+        cancelled: false
+      }),
+      cancel: vi.fn()
+    }));
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      chatSessionStore: new ChatSessionStore({
+        stateRoot: createStateRoot()
+      }),
+      conversationRunner: {
+        start: startConversation
+      },
+      executeTask,
+      streamDelayMs: 0
+    });
+
+    const detail = await runtime.sendMessage({
+      chatId: "local-chat-clarify",
+      text: "Скинь файл"
+    });
+
+    expect(startConversation).not.toHaveBeenCalled();
+    expect(executeTask).not.toHaveBeenCalled();
+    expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      "user:Скинь файл",
+      "assistant:Уточни, какой именно файл нужно отправить."
+    ]);
+  });
+
+  it("routes ordinary self-description with project mentions through the conversation runner instead of task execution", async () => {
+    const stateRoot = createStateRoot();
+    const chatStore = new LocalChatStore({
+      stateRoot,
+      now: () => new Date("2026-04-01T17:05:00.000Z"),
+      generateChatId: () => "local-chat-about-self"
+    });
+    chatStore.createDesktopChat({
+      title: "About self"
+    });
+
+    const executeTask = vi.fn(async () => ({
+      ok: true as const,
+      resultText: "unused"
+    }));
+    const startConversation = vi.fn(() => ({
+      result: Promise.resolve({
+        sessionId: "session-about-self",
+        text: "Понял. Расскажи, что тебе сейчас интереснее всего в этих проектах.",
+        partialText: "Понял. Расскажи, что тебе сейчас интереснее всего в этих проектах.",
+        cancelled: false
+      }),
+      cancel: vi.fn()
+    }));
+
+    const runtime = createLocalChatRuntime({
+      chatStore,
+      chatRunStore: createChatRunStore(),
+      chatSessionStore: new ChatSessionStore({
+        stateRoot
+      }),
+      conversationRunner: {
+        start: startConversation
+      },
+      executeTask,
+      streamDelayMs: 0
+    });
+
+    await runtime.sendMessage({
+      chatId: "local-chat-about-self",
+      text: "Занимаюсь учебой, учусь в ДГТУ и параллельно делаю свои проекты."
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(startConversation).toHaveBeenCalledTimes(1);
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
   it("returns immediately with ack and a pending assistant placeholder for conversational replies", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),

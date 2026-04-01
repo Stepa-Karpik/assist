@@ -17,8 +17,14 @@ function isScreenshotRequest(text: string): boolean {
   return /(скрин|screenshot|screen|экран|монитор)/i.test(text);
 }
 
+function isExplicitToolIntent(text: string): boolean {
+  return /^(status|screenshot(?:\s+(?:screen-1|screen-2|both))?|open-site\s+.+|launch-app\s+.+|kill-app\s+.+|send-file\s+.+|read\s+.+|list\s+.+|write-note\s+.+::.+|codex-write(?:\s+.+)?)$/i.test(
+    text
+  );
+}
+
 function isStatusRequest(text: string): boolean {
-  return /(статус|онлайн|online|жив|пинг|что сейчас с задач|что с задач|что с пк|какие задачи|очередь)/i.test(
+  return /(status|статус|онлайн|online|жив|пинг|что сейчас с задач|что с задач|что с пк|какие задачи|очередь)/i.test(
     text
   );
 }
@@ -43,6 +49,13 @@ export function createChatCommandInterceptor() {
 
       if (!normalizedText) {
         return { kind: "conversation" };
+      }
+
+      if (isExplicitToolIntent(normalizedText)) {
+        return {
+          kind: "tool_action",
+          intent: normalizeLocalIntent(normalizedText)
+        };
       }
 
       if (isScreenshotRequest(normalizedText)) {

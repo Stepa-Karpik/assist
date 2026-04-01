@@ -18,6 +18,10 @@ export type ChatPlanAction =
       writes: ChatKnowledgeWrite[];
     }
   | {
+      kind: "clarify";
+      text: string;
+    }
+  | {
       kind: "device_task";
       intent: string;
     }

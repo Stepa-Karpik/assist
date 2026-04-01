@@ -65,6 +65,18 @@ export function createChatPlanner() {
         };
       }
 
+      if (interception.kind === "clarify") {
+        return {
+          mode: "conversation",
+          actions: [
+            {
+              kind: "clarify",
+              text: interception.question
+            }
+          ]
+        };
+      }
+
       const writes = extractChatMemoryWrites(normalizedText);
       const knowledgeQuery = resolveKnowledgeQuery(normalizedText);
       const actions: ChatPlan["actions"] = [

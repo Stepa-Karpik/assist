@@ -535,8 +535,28 @@ async function streamAssistantText(input: {
 
       const plan = planMessage(normalizedText);
       const historyContext = buildHistoryContext(priorMessages);
+      const clarificationAction = plan.actions.find(
+        (
+          action
+        ): action is Extract<ChatPlan["actions"][number], { kind: "clarify"; text: string }> =>
+          action.kind === "clarify"
+      );
 
       if (plan.mode === "conversation") {
+        if (clarificationAction !== undefined) {
+          logActivity?.({
+            kind: "local_result",
+            status: "success",
+            title: "Local assistant reply",
+            detail: clarificationAction.text,
+            chatId
+          });
+          return chatStore.appendMessage(chatId, {
+            role: "assistant",
+            text: clarificationAction.text
+          });
+        }
+
         if (conversationRunner !== undefined && chatSessionStore !== undefined) {
           const ackDetail = chatStore.appendMessage(chatId, {
             role: "assistant",
