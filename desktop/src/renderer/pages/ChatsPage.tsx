@@ -15,7 +15,7 @@ type OptimisticRunState = {
   chatId: string;
   status: "thinking";
   cancelRequested: false;
-  ackMessageId: string;
+  ackMessageId: string | null;
   replyMessageId: string;
 };
 
@@ -80,6 +80,18 @@ function buildChatSubtitle(chat: LocalChatItem): string {
   }
 
   return chat.source === "local_continuation_chat" ? "Продолжение Telegram-диалога" : "Локальный диалог";
+}
+
+function isTypingMessage(
+  message: LocalChatDetail["messages"][number],
+  run: LocalChatRunState | OptimisticRunState | null
+): boolean {
+  return (
+    run !== null &&
+    message.role === "assistant" &&
+    message.messageId === run.replyMessageId &&
+    message.text.trim().length === 0
+  );
 }
 
 type ChatsPageProps = {
@@ -327,7 +339,6 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
     run: OptimisticRunState;
   } {
     const createdAt = new Date().toISOString();
-    const ackMessageId = `optimistic-ack-${chatId}-${createdAt}`;
     const replyMessageId = `optimistic-reply-${chatId}-${createdAt}`;
 
     return {
@@ -339,15 +350,9 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
           createdAt
         },
         {
-          messageId: ackMessageId,
-          role: "assistant",
-          text: "Сейчас посмотрю и отвечу по сути.",
-          createdAt
-        },
-        {
           messageId: replyMessageId,
           role: "assistant",
-          text: "Ассистент отвечает...",
+          text: "",
           createdAt
         }
       ],
@@ -356,7 +361,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
         chatId,
         status: "thinking",
         cancelRequested: false,
-        ackMessageId,
+        ackMessageId: null,
         replyMessageId
       }
     };
@@ -475,7 +480,18 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
             return (
               <div className={`reference-message reference-message--${message.role}`} key={message.messageId}>
                 <div className="reference-message__bubble">
-                  <p>{message.text}</p>
+                  {isTypingMessage(message, effectiveRun) ? (
+                    <div
+                      className="reference-message__typing"
+                      data-testid="local-chat-typing-indicator"
+                    >
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  ) : (
+                    <p>{message.text}</p>
+                  )}
                   <span className="reference-message__time">{formatMessageTime(message.createdAt)}</span>
                 </div>
                 {imageUrl !== null ? (
@@ -511,7 +527,7 @@ export function ChatsPage({ selectedChatId, onSelectChat }: ChatsPageProps) {
           <button
             aria-label={isChatBusy ? "Остановить ответ" : "Отправить"}
             className={`reference-thread-shell__submit${isSending || isChatBusy ? " is-busy" : ""}`}
-            disabled={isSending || (!isChatBusy && requestText.trim().length === 0)}
+            disabled={!isChatBusy && requestText.trim().length === 0}
             onClick={() => {
               if (isChatBusy) {
                 void handleCancelLocalRun();

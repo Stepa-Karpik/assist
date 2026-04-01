@@ -167,7 +167,7 @@ type LocalChatRunState = {
   chatId: string;
   status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
   cancelRequested: boolean;
-  ackMessageId: string;
+  ackMessageId: string | null;
   replyMessageId: string;
 };
 

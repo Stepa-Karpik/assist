@@ -102,7 +102,7 @@ type LocalChatRunState = {
   chatId: string;
   status: "thinking" | "streaming" | "cancelled" | "failed" | "completed";
   cancelRequested: boolean;
-  ackMessageId: string;
+  ackMessageId: string | null;
   replyMessageId: string;
 };
 
@@ -938,7 +938,7 @@ describe("App navigation", () => {
           {
             messageId: "assistant-stream-1",
             role: "assistant",
-            text: "Ассистент отвечает...",
+            text: "",
             createdAt: "2026-03-30T12:01:01.000Z"
           }
         ]
@@ -956,7 +956,7 @@ describe("App navigation", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: "Отправить" }));
 
-    expect(await screen.findByText("Ассистент отвечает...")).toBeInTheDocument();
+    expect(await screen.findByTestId("local-chat-typing-indicator")).toBeInTheDocument();
 
     subscribeLocalChatEvents.listener?.({
       chatId: "local-chat-stream-ui",
@@ -1022,7 +1022,7 @@ describe("App navigation", () => {
     resolveDelivery({
       ...localChatsState[0],
       updatedAt: "2026-03-30T12:01:00.000Z",
-      messageCount: 3,
+      messageCount: 2,
       messages: [
         {
           messageId: "user-optimistic-1",
@@ -1031,21 +1031,15 @@ describe("App navigation", () => {
           createdAt: "2026-03-30T12:01:00.000Z"
         },
         {
-          messageId: "assistant-ack-1",
-          role: "assistant",
-          text: "Сейчас посмотрю и отвечу по сути.",
-          createdAt: "2026-03-30T12:01:01.000Z"
-        },
-        {
           messageId: "assistant-stream-1",
           role: "assistant",
-          text: "Ассистент отвечает...",
-          createdAt: "2026-03-30T12:01:02.000Z"
+          text: "",
+          createdAt: "2026-03-30T12:01:01.000Z"
         }
       ]
     });
 
-    expect(await screen.findByText("Ассистент отвечает...")).toBeInTheDocument();
+    expect(await screen.findByTestId("local-chat-typing-indicator")).toBeInTheDocument();
   });
 
   it("shows pairing controls and workspace registry settings", async () => {

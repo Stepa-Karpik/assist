@@ -303,7 +303,7 @@ describe("createLocalChatRuntime", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
-  it("returns immediately with ack and a pending assistant placeholder for conversational replies", async () => {
+  it("returns immediately with one pending assistant bubble for conversational replies", async () => {
     const chatStore = new LocalChatStore({
       stateRoot: createStateRoot(),
       now: () => new Date("2026-03-30T14:00:00.000Z"),
@@ -341,8 +341,7 @@ describe("createLocalChatRuntime", () => {
 
     expect(detail.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
       "user:что нового в FastAPI?",
-      "assistant:Сейчас посмотрю и отвечу по сути.",
-      "assistant:Ассистент отвечает..."
+      "assistant:"
     ]);
     expect(streamReply).toHaveBeenCalledWith(
       expect.objectContaining({

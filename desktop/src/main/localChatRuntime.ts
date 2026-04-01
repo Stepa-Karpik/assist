@@ -76,8 +76,7 @@ type LocalChatRuntimeOptions = {
   }) => void;
 };
 
-const ACK_TEXT = "Сейчас посмотрю и отвечу по сути.";
-const STREAM_PLACEHOLDER_TEXT = "Ассистент отвечает...";
+const STREAM_PLACEHOLDER_TEXT = "";
 const CANCELLED_TEXT = "Ответ остановлен.";
 const STREAM_DELAY_MS = 24;
 const HISTORY_MESSAGE_LIMIT = 8;
@@ -200,7 +199,17 @@ export function createLocalChatRuntime({
   return "РќРµ СЃРјРѕРі СЃСЂР°Р·Сѓ РґР°С‚СЊ РЅРѕСЂРјР°Р»СЊРЅС‹Р№ РѕС‚РІРµС‚. РЈС‚РѕС‡РЅРё, С‡С‚Рѕ РёРјРµРЅРЅРѕ С‚РµР±Рµ РІР°Р¶РЅРѕ, Рё СЏ СЂР°Р·Р±РµСЂСѓ СЌС‚Рѕ РїРѕ С€Р°РіР°Рј.";
 }
 
-  function removeAckMessage(chatId: string, ackMessageId: string): LocalChatDetail {
+  function removeAckMessage(chatId: string, ackMessageId: string | null | undefined): LocalChatDetail {
+    if (!ackMessageId) {
+      const detail = chatStore.getChat(chatId);
+
+      if (!detail) {
+        throw new Error(`Local chat ${chatId} was not found.`);
+      }
+
+      return detail;
+    }
+
     const detail = chatStore.deleteMessage(chatId, ackMessageId);
     onChatUpdated?.(detail);
     return detail;
@@ -272,7 +281,7 @@ async function streamAssistantText(input: {
     chatId: string;
     prompt: string;
     plan: ChatPlan;
-    ackMessageId: string;
+    ackMessageId?: string | null;
     placeholderMessageId: string;
     runId: string;
     workspaceRoot: string;
@@ -385,7 +394,7 @@ async function streamAssistantText(input: {
     prompt: string;
     plan: ChatPlan;
     historyContext?: string | null;
-    ackMessageId: string;
+    ackMessageId?: string | null;
     placeholderMessageId: string;
     runId: string;
   }): void {
@@ -558,16 +567,6 @@ async function streamAssistantText(input: {
         }
 
         if (conversationRunner !== undefined && chatSessionStore !== undefined) {
-          const ackDetail = chatStore.appendMessage(chatId, {
-            role: "assistant",
-            text: ACK_TEXT
-          });
-          const ackMessageId = ackDetail.messages.at(-1)?.messageId;
-
-          if (!ackMessageId) {
-            throw new Error("Failed to create assistant acknowledgment message.");
-          }
-
           const pendingDetail = chatStore.appendMessage(chatId, {
             role: "assistant",
             text: STREAM_PLACEHOLDER_TEXT
@@ -580,7 +579,7 @@ async function streamAssistantText(input: {
 
           const run = chatRunStore.startRun({
             chatId,
-            ackMessageId,
+            ackMessageId: null,
             replyMessageId: placeholderMessageId
           });
           emitRun(chatId);
@@ -589,7 +588,6 @@ async function streamAssistantText(input: {
             chatId,
             prompt: normalizedText,
             plan,
-            ackMessageId,
             placeholderMessageId,
             runId: run.runId,
             workspaceRoot: getWorkspaceRootForChat?.(chatId) ?? process.cwd()
@@ -632,16 +630,6 @@ async function streamAssistantText(input: {
           }
         }
 
-        const ackDetail = chatStore.appendMessage(chatId, {
-          role: "assistant",
-          text: ACK_TEXT
-        });
-        const ackMessageId = ackDetail.messages.at(-1)?.messageId;
-
-        if (!ackMessageId) {
-          throw new Error("Failed to create assistant acknowledgment message.");
-        }
-
         const pendingDetail = chatStore.appendMessage(chatId, {
           role: "assistant",
           text: STREAM_PLACEHOLDER_TEXT
@@ -654,7 +642,7 @@ async function streamAssistantText(input: {
 
         const run = chatRunStore.startRun({
           chatId,
-          ackMessageId,
+          ackMessageId: null,
           replyMessageId: placeholderMessageId
         });
         emitRun(chatId);
@@ -664,7 +652,6 @@ async function streamAssistantText(input: {
           prompt: normalizedText,
           plan,
           historyContext,
-          ackMessageId,
           placeholderMessageId,
           runId: run.runId
         });

@@ -7,13 +7,13 @@ export type ChatRunState = {
   chatId: string;
   status: ChatRunStatus;
   cancelRequested: boolean;
-  ackMessageId: string;
+  ackMessageId: string | null;
   replyMessageId: string;
 };
 
 type StartChatRunInput = {
   chatId: string;
-  ackMessageId: string;
+  ackMessageId?: string | null;
   replyMessageId: string;
 };
 
@@ -34,7 +34,7 @@ export function createChatRunStore() {
         chatId: input.chatId,
         status: "thinking",
         cancelRequested: false,
-        ackMessageId: input.ackMessageId,
+        ackMessageId: input.ackMessageId ?? null,
         replyMessageId: input.replyMessageId
       };
       runsByChatId.set(input.chatId, nextRun);
