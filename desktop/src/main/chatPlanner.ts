@@ -1,6 +1,6 @@
-import { extractChatMemoryWrites } from "./chatMemoryExtractor";
 import type { ChatPlan } from "./chatPlan";
 import { createChatCommandInterceptor } from "./chatCommandInterceptor";
+import { createMemoryModel } from "./memoryModel";
 
 const technicalTopics: Array<{ pattern: RegExp; query: string }> = [
   { pattern: /\bfastapi\b/i, query: "FastAPI" },
@@ -47,6 +47,7 @@ function normalizePlannedTaskIntent(text: string, normalizedIntent: string): str
 
 export function createChatPlanner() {
   const commandInterceptor = createChatCommandInterceptor();
+  const memoryModel = createMemoryModel();
 
   return {
     plan(text: string): ChatPlan {
@@ -77,7 +78,7 @@ export function createChatPlanner() {
         };
       }
 
-      const writes = extractChatMemoryWrites(normalizedText);
+      const writes = memoryModel.plan(normalizedText).writes;
       const knowledgeQuery = resolveKnowledgeQuery(normalizedText);
       const actions: ChatPlan["actions"] = [
         {

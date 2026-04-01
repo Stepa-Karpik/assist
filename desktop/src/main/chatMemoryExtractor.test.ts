@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractChatMemoryWrites } from "./chatMemoryExtractor";
+import { extractChatMemoryCandidates, extractChatMemoryWrites } from "./chatMemoryExtractor";
 
 describe("extractChatMemoryWrites", () => {
   it("extracts direct profile facts and stack preferences", () => {
@@ -10,9 +10,21 @@ describe("extractChatMemoryWrites", () => {
 
     expect(writes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ target: "assist/profile", key: "full_name", value: "Карпов Степан Викторович" }),
-        expect.objectContaining({ target: "assist/profile", key: "occupation", value: "программист" }),
-        expect.objectContaining({ target: "assist/preferences", key: "preferred_stack", value: "Python, FastAPI" })
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "full_name",
+          value: "Карпов Степан Викторович"
+        }),
+        expect.objectContaining({
+          target: "assist/profile",
+          key: "occupation",
+          value: "программист"
+        }),
+        expect.objectContaining({
+          target: "assist/preferences",
+          key: "preferred_stack",
+          value: "Python, FastAPI"
+        })
       ])
     );
   });
@@ -69,6 +81,25 @@ describe("extractChatMemoryWrites", () => {
           target: "assist/profile",
           key: "storage",
           value: "512 GB"
+        })
+      ])
+    );
+  });
+
+  it("distinguishes temporary observations from confirmed facts", () => {
+    const candidates = extractChatMemoryCandidates(
+      "Мне кажется, я часто пишу с ошибками и иногда устаю к вечеру."
+    );
+
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "assist/observations",
+          key: "communication_style"
+        }),
+        expect.objectContaining({
+          target: "assist/observations",
+          key: "recent_emotional_signal"
         })
       ])
     );

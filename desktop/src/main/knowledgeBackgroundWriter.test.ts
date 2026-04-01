@@ -53,9 +53,9 @@ describe("createKnowledgeBackgroundWriter", () => {
     expect(
       fs.readFileSync(path.join(vaultRoot, "assist", "docs", "websites", "habr.com.md"), "utf8")
     ).toContain("habr.com");
-    expect(fs.readdirSync(path.join(vaultRoot, "assist", "docs", "papers", "habr.com"))).toContain(
-      "Как работает Codex на практике.md"
-    );
+    expect(
+      fs.readdirSync(path.join(vaultRoot, "assist", "docs", "papers", "habr.com"))
+    ).toContain("Как работает Codex на практике.md");
   });
 
   it("writes stable user and assist notes plus documentation registries", async () => {
@@ -172,5 +172,39 @@ describe("createKnowledgeBackgroundWriter", () => {
         "utf8"
       )
     ).toContain("Python, FastAPI");
+  });
+
+  it("stores observations separately from confirmed profile facts", async () => {
+    const root = createRoot();
+    const vaultRoot = path.join(root, "vault");
+    const writer = createKnowledgeBackgroundWriter({
+      getVaultRoot: () => vaultRoot
+    });
+
+    const result = await writer.recordInteraction({
+      origin: "local-chat",
+      prompt: "Мне кажется, я часто пишу с ошибками.",
+      answer: "Понял, буду учитывать это при формулировках.",
+      memoryWrites: [
+        {
+          target: "assist/observations",
+          key: "communication_style",
+          value: "Возможны устойчивые орфографические ошибки, стоит упрощать формулировки."
+        }
+      ]
+    });
+
+    expect(result).toEqual({
+      applied: true,
+      pendingApproval: false,
+      userWriteCount: 0,
+      assistWriteCount: 1
+    });
+    expect(
+      fs.readFileSync(
+        path.join(vaultRoot, "assist", "observations", "Временные наблюдения.md"),
+        "utf8"
+      )
+    ).toContain("communication_style");
   });
 });

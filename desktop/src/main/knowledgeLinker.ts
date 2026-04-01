@@ -23,7 +23,7 @@ type LinkSourceToTopicInput = {
   sourceTitle?: string;
 };
 
-type RecordSourceInput = {
+export type KnowledgeSourceRecord = {
   sourceUrl: string;
   sourceTitle?: string;
 };
@@ -134,7 +134,7 @@ export class KnowledgeLinker {
     });
   }
 
-  async recordSource({ sourceUrl, sourceTitle }: RecordSourceInput): Promise<void> {
+  async recordSource({ sourceUrl, sourceTitle }: KnowledgeSourceRecord): Promise<void> {
     await this.recordSourceArtifacts({
       sourceUrl,
       sourceTitle

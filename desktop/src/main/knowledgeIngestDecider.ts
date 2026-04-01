@@ -238,11 +238,19 @@ export function decideKnowledgeWrites({
   prompt,
   answer,
   sourceUrls = [],
-  skillChangeSeverity
+  skillChangeSeverity,
+  memoryWrites = []
 }: KnowledgeIngestInput): KnowledgeWritePlan {
   const normalizedPrompt = prompt.trim();
   const normalizedAnswer = answer.trim();
-  const mergedSourceUrls = unique(extractUrls(normalizedPrompt, normalizedAnswer, ...sourceUrls));
+  const mergedSourceUrls = unique(
+    extractUrls(
+      normalizedPrompt,
+      normalizedAnswer,
+      ...sourceUrls,
+      ...memoryWrites.flatMap((write) => [write.key, write.value])
+    )
+  );
 
   if (skillChangeSeverity === "significant") {
     return {

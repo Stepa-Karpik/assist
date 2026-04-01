@@ -1,6 +1,7 @@
 import { URL } from "node:url";
 
 import type { ChatKnowledgeWrite } from "./chatPlan";
+import type { MemoryCandidate } from "./memoryModel";
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
@@ -17,7 +18,9 @@ function extractUrls(text: string): string[] {
 }
 
 function extractFullName(text: string): string | null {
-  const match = text.match(/меня\s+зовут\s+([А-ЯЁA-Z][а-яёa-z-]+(?:\s+[А-ЯЁA-Z][а-яёa-z-]+){1,2})/i);
+  const match = text.match(
+    /меня\s+зовут\s+([А-ЯЁA-Z][а-яёa-z-]+(?:\s+[А-ЯЁA-Z][а-яёa-z-]+){1,2})/i
+  );
   return match ? normalizeWhitespace(match[1]) : null;
 }
 
@@ -52,8 +55,19 @@ function extractStack(text: string): string | null {
 }
 
 function extractInterest(text: string): string | null {
-  if (/(нравится|люблю)\s+(?:изучать\s+)?нейросети/i.test(text) || /\bнейросет/i.test(text)) {
+  if (
+    /(нравится|люблю)\s+(?:изучать\s+)?нейросети/i.test(text) ||
+    /\bнейросет/i.test(text)
+  ) {
     return "Нейросети";
+  }
+
+  return null;
+}
+
+function extractQuietPreference(text: string): string | null {
+  if (/(предпочитаю|люблю).{0,20}(тишин|в тишине)/i.test(text)) {
+    return "Тишина";
   }
 
   return null;
@@ -67,9 +81,7 @@ function extractGpu(text: string): string | null {
 }
 
 function extractCpu(text: string): string | null {
-  const labeledMatch = text.match(
-    /(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/i
-  );
+  const labeledMatch = text.match(/(?:процессор|cpu)\s+([A-Za-z0-9+\-.\s]+?)(?=,|\.|;|$)/i);
   if (labeledMatch) {
     return normalizeWhitespace(labeledMatch[1]);
   }
@@ -85,108 +97,179 @@ function normalizeCapacity(value: string, unit: string): string {
 }
 
 function extractRam(text: string): string | null {
-  const match = text.match(/(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)/i);
+  const match = text.match(
+    /(\d+)\s*(gb|гб|tb|тб)\s*(?:ozu|озу|ram|оператив(?:ной)? памяти?)/i
+  );
   return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
 }
 
 function extractStorage(text: string): string | null {
-  const match = text.match(/(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)/i);
+  const match = text.match(
+    /(?:диск|ssd|hdd|накопитель)(?:\s+\w+)*\s+(?:на\s*)?(\d+)\s*(gb|гб|tb|тб)/i
+  );
   return match ? normalizeCapacity(match[1], /tb|тб/i.test(match[2]) ? "TB" : "GB") : null;
 }
 
-export function extractChatMemoryWrites(text: string): ChatKnowledgeWrite[] {
-  const writes: ChatKnowledgeWrite[] = [];
+function extractObservation(text: string): MemoryCandidate[] {
+  const observations: MemoryCandidate[] = [];
+
+  if (/(грустн|тяжело|тревожн|уста(л|ю|ет|ем))/i.test(text)) {
+    observations.push({
+      kind: "observation",
+      target: "assist/observations",
+      key: "recent_emotional_signal",
+      value: "Пользователь описывает устойчиво негативное или уставшее состояние.",
+      confidence: "inferred"
+    });
+  }
+
+  if (/(ошибк|опечатк)/i.test(text) && /(пишу|пишет|грамот)/i.test(text)) {
+    observations.push({
+      kind: "observation",
+      target: "assist/observations",
+      key: "communication_style",
+      value: "Возможны устойчивые орфографические ошибки, стоит упрощать формулировки.",
+      confidence: "inferred"
+    });
+  }
+
+  return observations;
+}
+
+export function extractChatMemoryCandidates(text: string): MemoryCandidate[] {
+  const candidates: MemoryCandidate[] = [];
   const normalized = normalizeWhitespace(text);
 
   const fullName = extractFullName(normalized);
   if (fullName) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "full_name",
-      value: fullName
+      value: fullName,
+      confidence: "direct"
     });
   }
 
   const occupation = extractOccupation(normalized);
   if (occupation) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "occupation",
-      value: occupation
+      value: occupation,
+      confidence: "direct"
     });
   }
 
   const preferredStack = extractStack(normalized);
   if (preferredStack) {
-    writes.push({
+    candidates.push({
+      kind: "preference",
       target: "assist/preferences",
       key: "preferred_stack",
-      value: preferredStack
+      value: preferredStack,
+      confidence: "direct"
     });
   }
 
   const interest = extractInterest(normalized);
   if (interest) {
-    writes.push({
+    candidates.push({
+      kind: "preference",
       target: "assist/preferences",
       key: "interests",
-      value: interest
+      value: interest,
+      confidence: "direct"
+    });
+  }
+
+  const quietPreference = extractQuietPreference(normalized);
+  if (quietPreference) {
+    candidates.push({
+      kind: "preference",
+      target: "assist/preferences",
+      key: "preferred_environment",
+      value: quietPreference,
+      confidence: "direct"
     });
   }
 
   const gpu = extractGpu(normalized);
   if (gpu) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "gpu",
-      value: gpu
+      value: gpu,
+      confidence: "direct"
     });
   }
 
   const cpu = extractCpu(normalized);
   if (cpu) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "cpu",
-      value: cpu
+      value: cpu,
+      confidence: "direct"
     });
   }
 
   const ram = extractRam(normalized);
   if (ram) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "ram",
-      value: ram
+      value: ram,
+      confidence: "direct"
     });
   }
 
   const storage = extractStorage(normalized);
   if (storage) {
-    writes.push({
+    candidates.push({
+      kind: "fact",
       target: "assist/profile",
       key: "storage",
-      value: storage
+      value: storage,
+      confidence: "direct"
     });
   }
+
+  candidates.push(...extractObservation(normalized));
 
   for (const sourceUrl of extractUrls(normalized)) {
     try {
       const parsed = new URL(sourceUrl);
-      writes.push({
+      candidates.push({
+        kind: "source",
         target: "assist/docs/websites",
         key: `${parsed.protocol}//${parsed.host}`,
-        value: parsed.host
+        value: parsed.host,
+        confidence: "direct"
       });
-      writes.push({
+      candidates.push({
+        kind: "source",
         target: "assist/docs/papers",
         key: sourceUrl,
-        value: sourceUrl
+        value: sourceUrl,
+        confidence: "direct"
       });
     } catch {
       continue;
     }
   }
 
-  return writes;
+  return candidates;
+}
+
+export function extractChatMemoryWrites(text: string): ChatKnowledgeWrite[] {
+  return extractChatMemoryCandidates(text).map((candidate) => ({
+    target: candidate.target,
+    key: candidate.key,
+    value: candidate.value
+  }));
 }

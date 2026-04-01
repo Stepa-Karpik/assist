@@ -54,6 +54,7 @@ describe("decideKnowledgeWrites", () => {
       })
     ]);
   });
+
   it("does not turn pronouns into topic names for article questions", () => {
     const plan = decideKnowledgeWrites({
       origin: "telegram-chat",
@@ -66,5 +67,27 @@ describe("decideKnowledgeWrites", () => {
     expect(plan.assistWrites).toHaveLength(1);
     expect(plan.userWrites[0]?.preferredLeaf).toBe("Codex");
     expect(plan.assistWrites[0]?.preferredLeaf).toBe("Codex");
+  });
+
+  it("merges source urls from structured memory writes", () => {
+    const plan = decideKnowledgeWrites({
+      origin: "telegram-chat",
+      prompt: "добавь документацию по FastAPI",
+      answer: "FastAPI строит API вокруг type hints.",
+      memoryWrites: [
+        {
+          target: "assist/docs/papers",
+          key: "https://fastapi.tiangolo.com/release-notes/",
+          value: "Release Notes"
+        }
+      ]
+    });
+
+    expect(plan.userWrites[0]?.sourceUrls).toContain(
+      "https://fastapi.tiangolo.com/release-notes/"
+    );
+    expect(plan.assistWrites[0]?.sourceUrls).toContain(
+      "https://fastapi.tiangolo.com/release-notes/"
+    );
   });
 });

@@ -32,6 +32,7 @@ type StandaloneSourceRecord = {
 
 const PROFILE_NOTE_PATH = ["assist", "profile", "Профиль владельца.md"] as const;
 const PREFERENCES_NOTE_PATH = ["assist", "preferences", "Предпочтения общения.md"] as const;
+const OBSERVATIONS_NOTE_PATH = ["assist", "observations", "Временные наблюдения.md"] as const;
 
 function toAbsolutePath(vaultRoot: string, parts: readonly string[]): string {
   return path.join(vaultRoot, ...parts);
@@ -103,6 +104,7 @@ async function applyStructuredMemoryWrites(
 ): Promise<number> {
   const profileEntries: string[] = [];
   const preferenceEntries: string[] = [];
+  const observationEntries: string[] = [];
 
   for (const write of memoryWrites) {
     if (write.target === "assist/profile") {
@@ -119,6 +121,8 @@ async function applyStructuredMemoryWrites(
       } else {
         preferenceEntries.push(`- **${write.key}:** ${write.value}`);
       }
+    } else if (write.target === "assist/observations") {
+      observationEntries.push(`- **${write.key}:** ${write.value}`);
     }
   }
 
@@ -144,6 +148,17 @@ async function applyStructuredMemoryWrites(
     )
   ) {
     appliedCount += preferenceEntries.length;
+  }
+
+  if (
+    await upsertSectionEntries(
+      toAbsolutePath(vaultRoot, OBSERVATIONS_NOTE_PATH),
+      "Временные наблюдения",
+      "Пока неподтверждённые выводы",
+      observationEntries
+    )
+  ) {
+    appliedCount += observationEntries.length;
   }
 
   return appliedCount;
@@ -179,8 +194,7 @@ function resolveStandaloneSourceRecords(
       continue;
     }
 
-    const preferredTitle =
-      !isUrlCandidate(write.value) ? write.value : undefined;
+    const preferredTitle = !isUrlCandidate(write.value) ? write.value : undefined;
     const existing = records.get(sourceUrl);
 
     records.set(sourceUrl, {
