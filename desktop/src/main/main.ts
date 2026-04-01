@@ -381,7 +381,12 @@ async function applyKnowledgeInteraction(input: {
   answer: string;
   sourceUrls?: string[];
   memoryWrites?: Array<{
-    target: "assist/profile" | "assist/preferences" | "assist/docs/websites" | "assist/docs/papers";
+    target:
+      | "assist/profile"
+      | "assist/preferences"
+      | "assist/observations"
+      | "assist/docs/websites"
+      | "assist/docs/papers";
     key: string;
     value: string;
   }>;

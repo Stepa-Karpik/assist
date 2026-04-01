@@ -10,6 +10,24 @@ type LocalChatDetail = NonNullable<
 type LocalChatRunState = NonNullable<
   Awaited<ReturnType<NonNullable<Window["karpik"]>["getLocalChatRunState"]>>
 >;
+type LocalChatStreamEvent = {
+  chatId: string;
+  detail: LocalChatDetail;
+};
+type LocalChatRunEvent = {
+  chatId: string;
+  run: LocalChatRunState | null;
+};
+type SubscribeLocalChatEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatStreamEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatStreamEvent) => void) | null;
+};
+type SubscribeLocalChatRunEventsMock = ReturnType<
+  typeof vi.fn<(listener: (event: LocalChatRunEvent) => void) => () => void>
+> & {
+  listener: ((event: LocalChatRunEvent) => void) | null;
+};
 
 describe("ChatsPage", () => {
   const baseChat: LocalChatDetail = {
@@ -35,25 +53,21 @@ describe("ChatsPage", () => {
   const getLocalChatRunState = vi.fn<
     (chatId: string) => Promise<LocalChatRunState | null>
   >(async () => null);
-  const subscribeLocalChatEvents = vi.fn((listener: (event: { chatId: string; detail: LocalChatDetail }) => void) => {
+  const subscribeLocalChatEvents = vi.fn((listener: (event: LocalChatStreamEvent) => void) => {
     subscribeLocalChatEvents.listener = listener;
     return () => {
       subscribeLocalChatEvents.listener = null;
     };
-  }) as ReturnType<typeof vi.fn> & {
-    listener: ((event: { chatId: string; detail: LocalChatDetail }) => void) | null;
-  };
+  }) as SubscribeLocalChatEventsMock;
   subscribeLocalChatEvents.listener = null;
   const subscribeLocalChatRunEvents = vi.fn(
-    (listener: (event: { chatId: string; run: LocalChatRunState | null }) => void) => {
+    (listener: (event: LocalChatRunEvent) => void) => {
       subscribeLocalChatRunEvents.listener = listener;
       return () => {
         subscribeLocalChatRunEvents.listener = null;
       };
     }
-  ) as ReturnType<typeof vi.fn> & {
-    listener: ((event: { chatId: string; run: LocalChatRunState | null }) => void) | null;
-  };
+  ) as SubscribeLocalChatRunEventsMock;
   subscribeLocalChatRunEvents.listener = null;
   const sendLocalChatMessage = vi.fn(
     async (_payload: { chatId: string; text: string }) =>
@@ -66,6 +80,7 @@ describe("ChatsPage", () => {
   beforeEach(() => {
     window.karpik = {
       ...(window.karpik ?? {}),
+      view: window.karpik?.view ?? "main",
       getLocalChats,
       getLocalChatDetail,
       getLocalChatRunState,
@@ -73,7 +88,7 @@ describe("ChatsPage", () => {
       subscribeLocalChatRunEvents,
       sendLocalChatMessage,
       cancelLocalChatRun
-    };
+    } as NonNullable<Window["karpik"]>;
   });
 
   afterEach(() => {
